@@ -83,10 +83,7 @@ fn keywords() {
 fn comment() {
     let mut lexer = Lexer::new("//hello, world!\nif let");
     let tokens: Vec<_> = lexer.tokenize();
-    assert_tokens!(
-        tokens,
-        [T::If, T::Let,]
-    );
+    assert_tokens!(tokens, [T::If, T::Let,]);
 }
 
 #[test]

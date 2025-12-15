@@ -4,11 +4,25 @@ pub struct Ast {}
 pub enum Expr {
     Literal(Lit),
     Ident(String),
-    FnCall { fun: Box<Expr>, args: Vec<Expr> },
-    BinaryOp { op: Bop, lhs: Box<Expr>, rhs: Box<Expr> },
-    UnaryOp { op: Unop, expr: Box<Expr> },
+    FnCall {
+        fun: Box<Expr>,
+        args: Vec<Expr>,
+    },
+    BinaryOp {
+        op: Bop,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    UnaryOp {
+        op: Unop,
+        expr: Box<Expr>,
+    },
     //Let(Binding, Box<Expr>),
-    If { cond: Box<Expr>, th: Box<Expr>, el: Box<Expr>},
+    If {
+        cond: Box<Expr>,
+        th: Box<Expr>,
+        el: Box<Expr>,
+    },
     Block(Vec<Expr>),
 }
 

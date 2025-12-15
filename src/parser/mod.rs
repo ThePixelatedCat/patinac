@@ -1,7 +1,7 @@
 mod ast;
 
-use ast::Ast;
 use crate::lexer::Token;
+use ast::Ast;
 
 pub fn parse(tokens: Vec<Token>) -> Ast {
     todo!()
