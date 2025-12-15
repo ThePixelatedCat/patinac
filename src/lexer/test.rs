@@ -80,6 +80,16 @@ fn keywords() {
 }
 
 #[test]
+fn comment() {
+    let mut lexer = Lexer::new("//hello, world!\nif let");
+    let tokens: Vec<_> = lexer.tokenize();
+    assert_tokens!(
+        tokens,
+        [T::If, T::Let,]
+    );
+}
+
+#[test]
 fn literals() {
     let mut lexer = Lexer::new(r#"1 .5 0.211 -1. true "test"'\n'"#);
     let tokens: Vec<_> = lexer.tokenize();
@@ -101,6 +111,7 @@ fn literals() {
 #[test]
 fn function() {
     let input = r#"
+        // this is a comment!
         fn test(var: Type, var2_: bool) {
             let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2^4;
             let chars = x.chars();
@@ -111,7 +122,6 @@ fn function() {
             }
         }
     "#;
-    let input = unindent::unindent(input);
     let mut lexer = Lexer::new(&input);
     let tokens = lexer.tokenize();
     assert_tokens!(

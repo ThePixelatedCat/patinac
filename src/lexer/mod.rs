@@ -47,6 +47,16 @@ impl<'input> Lexer<'input> {
 
     /// Returns `None` if the lexer cannot find a token at the start of `input`.
     fn valid_token(&mut self, input: &str) -> Option<Token> {
+        if input.starts_with("//") {
+            self.position += 
+                input
+                .char_indices()
+                .find(|(_, c)| *c == '\n')
+                .expect("expected newline to terminate comment")
+                .0;
+            return self.next();
+        }
+
         let next = input.chars().next().unwrap();
 
         if next.is_whitespace() {

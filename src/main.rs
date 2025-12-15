@@ -1,11 +1,10 @@
 use anyhow::anyhow;
 use std::{env, fs};
 
-mod ast;
-mod lex;
-mod parse;
+mod lexer;
+mod parser;
 
-use lex::Lexer;
+use lexer::Lexer;
 
 fn main() -> anyhow::Result<()> {
     let source_path = env::args()
@@ -16,7 +15,7 @@ fn main() -> anyhow::Result<()> {
     let mut lexer = Lexer::new(&source);
     let tokens = lexer.tokenize();
 
-    let ast = parse::parse(tokens);
+    let ast = parser::parse(tokens);
 
     Ok(())
 }
