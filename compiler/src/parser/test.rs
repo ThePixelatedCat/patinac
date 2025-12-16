@@ -3,12 +3,12 @@ use super::ast::{Bop, Expr, Lit, Stmt, Unop};
 
 fn parse_expr(input: &str) -> Expr {
     let mut parser = Parser::new(input);
-    parser.expression()
+    parser.expression().unwrap()
 }
 
 fn parse_stmt(input: &str) -> Stmt {
     let mut parser = Parser::new(input);
-    parser.statement()
+    parser.statement().unwrap()
 }
 
 #[test]

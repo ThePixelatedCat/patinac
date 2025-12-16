@@ -1,7 +1,5 @@
-use std::mem::discriminant as dis;
-
 use super::{
-    Parser, Token,
+    Parser, Token, ParseError,
     ast::{Bop, Expr, Lit, Unop},
 };
 
@@ -36,16 +34,16 @@ impl InfixOperator for Bop {
 }
 
 impl<I: Iterator<Item = Token>> Parser<I> {
-    pub fn expression(&mut self) -> Expr {
+    pub fn expression(&mut self) -> Result<Expr, ParseError> {
         self.parse_expression(0)
     }
 
-    pub fn parse_expression(&mut self, binding_power: u8) -> Expr {
+    pub fn parse_expression(&mut self, binding_power: u8) -> Result<Expr, ParseError> {
         let mut lhs = match self.peek() {
             Token::LParen => {
-                self.consume(Token::LParen.ty());
-                let expr = self.expression();
-                self.consume(Token::RParen.ty());
+                self.next();
+                let expr = self.expression()?;
+                self.consume(Token::RParen.ty())?;
                 expr
             }
             Token::IntLit(_)
@@ -72,17 +70,17 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 let ident = Expr::Ident(ident);
 
                 if self.at(Token::LParen.ty()) {
-                    self.consume(Token::LParen.ty());
+                    self.next();
 
                     let mut args = Vec::new();
                     while !self.at(Token::RParen.ty()) {
-                        args.push(self.expression());
+                        args.push(self.expression()?);
 
                         if self.at(Token::Comma.ty()) {
-                            self.consume(Token::Comma.ty());
+                            self.next();
                         }
                     }
-                    self.consume(Token::RParen.ty());
+                    self.consume(Token::RParen.ty())?;
 
                     Expr::FnCall {
                         fun: Box::new(ident),
@@ -93,17 +91,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 }
             }
             Token::If => {
-                self.consume(Token::If.ty());
-                self.consume(Token::LParen.ty());
-                let cond = self.expression();
-                self.consume(Token::RParen.ty());
+                self.next();
+                self.consume(Token::LParen.ty())?;
+                let cond = self.expression()?;
+                self.consume(Token::RParen.ty())?;
 
-                let th = self.expression();
+                let th = self.expression()?;
 
-                let el = self.at(Token::Else.ty()).then(|| {
-                    self.consume(Token::Else.ty());
-                    Box::new(self.expression())
-                });
+                let el = if self.at(Token::Else.ty()) {
+                    self.next();
+                    Some(Box::new(self.expression()?))
+                } else {
+                    None
+                };
 
                 Expr::If {
                     cond: Box::new(cond),
@@ -112,15 +112,16 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 }
             }
             op @ (Token::Minus | Token::Bang) => {
-                let dis = dis(op);
                 let op = match op {
                     Token::Minus => Unop::Neg,
                     Token::Bang => Unop::Not,
                     _ => unreachable!(),
                 };
-                self.consume(dis);
+                
+                self.next();
+
                 let right_binding_power = op.binding_power();
-                let expr = self.parse_expression(right_binding_power);
+                let expr = self.parse_expression(right_binding_power)?;
                 Expr::UnaryOp {
                     op,
                     expr: Box::new(expr),
@@ -148,7 +149,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 Token::RParen | Token::RBrace | Token::Comma | Token::Semicolon | Token::Else => {
                     break;
                 }
-                token => panic!("unknown token `{token:?}`"),
+                token => return Err(ParseError::UnexpectedToken(token.ty())),
             };
 
             let (left_binding_power, right_binding_power) = op.binding_power();
@@ -157,10 +158,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 break;
             }
 
-            let dis = dis(token);
-            self.consume(dis);
+            self.next();
 
-            let rhs = self.parse_expression(right_binding_power);
+            let rhs = self.parse_expression(right_binding_power)?;
             lhs = Expr::BinaryOp {
                 op,
                 lhs: Box::new(lhs),
@@ -168,6 +168,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             };
         }
 
-        lhs
+        Ok(lhs)
     }
 }

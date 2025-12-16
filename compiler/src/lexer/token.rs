@@ -55,7 +55,7 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn ty(&self) -> Discriminant<Self> {
+    pub const fn ty(&self) -> Discriminant<Self> {
         mem::discriminant(self)
     }
 }
