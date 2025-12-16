@@ -77,13 +77,12 @@ impl<'input> Lexer<'input> {
 
     /// Always "succeeds", because it creates an error `Token`.
     fn invalid_token(&mut self, input: &str) -> Token {
-        let start = self.position; // <- NEW!
+        let start = self.position;
         let len = input
             .char_indices()
             .map(|(pos, _)| pos)
             .find(|pos| self.valid_token(&input[*pos..]).is_some())
             .unwrap_or(input.len());
-        debug_assert!(len <= input.len());
 
         self.position = start + len;
         Token::Error {

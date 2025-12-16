@@ -44,16 +44,16 @@ pub(super) const RULES: [Rule; 42] = {
     [
         |input| {
             match_regex(input, &INT_REGEX)
-                .map(|len| (Token::IntLit(i64::from_str(&input[..len]).unwrap()), len))
+                .map(|len| (T::IntLit(i64::from_str(&input[..len]).unwrap()), len))
         },
         |input| {
             match_regex(input, &FLOAT_REGEX)
-                .map(|len| (Token::FloatLit(f64::from_str(&input[..len]).unwrap()), len))
+                .map(|len| (T::FloatLit(f64::from_str(&input[..len]).unwrap()), len))
         },
         |input| {
             match_regex(input, &STRING_REGEX).map(|len| {
                 (
-                    Token::StringLit(
+                    T::StringLit(
                         input[1..len - 1]
                             .replace("\\n", "\n")
                             .replace("\\\"", "\"")
@@ -66,7 +66,7 @@ pub(super) const RULES: [Rule; 42] = {
         |input| {
             match_regex(input, &CHAR_REGEX).map(|len| {
                 (
-                    Token::CharLit(
+                    T::CharLit(
                         input[1..len - 1]
                             .replace("\\n", "\n")
                             .replace("\\\'", "'")
@@ -118,7 +118,7 @@ pub(super) const RULES: [Rule; 42] = {
         |input| match_keyword(input, "false").map(|len| (T::False, len)),
         |input| {
             match_regex(input, &IDENTIFIER_REGEX)
-                .map(|len| (Token::Ident(input[..len].into()), len))
+                .map(|len| (T::Ident(input[..len].into()), len))
         },
     ]
 };
