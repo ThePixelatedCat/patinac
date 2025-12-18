@@ -123,7 +123,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     value: Box::new(value),
                 }
             }
-            Token::Pipe => {               
+            Token::Pipe => {
                 let params = self.delimited_list(Self::binding, &Token::Pipe, &Token::Pipe)?;
 
                 let return_type = if self.consume_at(&Token::Colon) {
@@ -186,8 +186,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 Token::Leq => Bop::Leq,
                 Token::RAngle => Bop::Gt,
                 Token::Geq => Bop::Geq,
-                Token::LParen => {                    
-                    let args = self.delimited_list(Self::expression, &Token::LParen, &Token::RParen)?;
+                Token::LParen => {
+                    let args =
+                        self.delimited_list(Self::expression, &Token::LParen, &Token::RParen)?;
 
                     return Ok(Expr::FnCall {
                         fun: Box::new(lhs),

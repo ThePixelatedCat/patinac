@@ -47,9 +47,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }
     }
 
-    pub fn delimited_list<T, F>(&mut self, mut f: F, start: &Token, end: &Token) -> ParseResult<Vec<T>> 
+    pub fn delimited_list<T, F>(
+        &mut self,
+        mut f: F,
+        start: &Token,
+        end: &Token,
+    ) -> ParseResult<Vec<T>>
     where
-        F: FnMut(&mut Self) -> ParseResult<T>
+        F: FnMut(&mut Self) -> ParseResult<T>,
     {
         self.consume(start)?;
 

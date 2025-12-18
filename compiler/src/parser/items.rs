@@ -70,8 +70,10 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                         Ok(match this.peek() {
                             Token::LBrace => Variant::Struct(variant_name, this.fields()?),
-                            Token::LParen => 
-                                Variant::Tuple(variant_name, this.delimited_list(Self::type_, &Token::LParen, &Token::RParen)?),
+                            Token::LParen => Variant::Tuple(
+                                variant_name,
+                                this.delimited_list(Self::type_, &Token::LParen, &Token::RParen)?,
+                            ),
                             Token::Comma => Variant::Unit(variant_name),
                             token => {
                                 return Err(ParseError::MismatchedToken {
@@ -80,9 +82,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                                 });
                             }
                         })
-                    }, 
-                    &Token::LBrace, 
-                    &Token::RBrace
+                    },
+                    &Token::LBrace,
+                    &Token::RBrace,
                 )?;
 
                 Item::Enum { name, variants }
@@ -105,9 +107,9 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 let ty = this.type_()?;
 
                 Ok(Field { name, ty })
-            }, 
-            &Token::LBrace, 
-            &Token::RBrace
+            },
+            &Token::LBrace,
+            &Token::RBrace,
         )
     }
 }

@@ -163,7 +163,7 @@ fn parse_compound_expressions() {
     let expr = parse_expr("(|a, b: Int| -> a + b)(1, 2)");
     assert_eq!(
         expr,
-        Expr::FnCall { 
+        Expr::FnCall {
             fun: Expr::Lambda {
                 params: vec![
                     Binding {
@@ -187,11 +187,9 @@ fn parse_compound_expressions() {
                     rhs: Expr::Ident("b".into()).into()
                 }
                 .into()
-            }.into(), 
-            args: vec![
-                Lit::Int(1).into(),
-                Lit::Int(2).into()
-            ]
+            }
+            .into(),
+            args: vec![Lit::Int(1).into(), Lit::Int(2).into()]
         }
     );
 }
