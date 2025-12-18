@@ -32,17 +32,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                 let name = self.ident()?;
 
-                self.consume(&Token::LParen)?;
-
-                let mut params = Vec::new();
-                while !self.at(&Token::RParen) {
-                    params.push(self.binding()?);
-
-                    if !self.consume_at(&Token::Comma) {
-                        break;
-                    }
-                }
-                self.next();
+                let params = self.delimited_list(Self::binding, &Token::LParen, &Token::RParen)?;
 
                 let return_type = if self.consume_at(&Token::Colon) {
                     Some(self.type_()?)
@@ -74,44 +64,26 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                 let name = self.type_()?;
 
-                self.consume(&Token::LBrace)?;
+                let variants = self.delimited_list(
+                    |this| {
+                        let variant_name = this.ident()?;
 
-                let mut variants = Vec::new();
-                while !self.at(&Token::RBrace) {
-                    let variant_name = self.ident()?;
-
-                    let variant = match self.peek() {
-                        Token::LBrace => Variant::Struct(variant_name, self.fields()?),
-                        Token::LParen => {
-                            self.next();
-
-                            let mut types = Vec::new();
-                            while !self.at(&Token::RParen) {
-                                types.push(self.type_()?);
-
-                                if !self.consume_at(&Token::Comma) {
-                                    break;
-                                }
+                        Ok(match this.peek() {
+                            Token::LBrace => Variant::Struct(variant_name, this.fields()?),
+                            Token::LParen => 
+                                Variant::Tuple(variant_name, this.delimited_list(Self::type_, &Token::LParen, &Token::RParen)?),
+                            Token::Comma => Variant::Unit(variant_name),
+                            token => {
+                                return Err(ParseError::MismatchedToken {
+                                    expected: "one of `,` `(` `{`".into(),
+                                    found: token.to_string(),
+                                });
                             }
-                            self.next();
-
-                            Variant::Tuple(variant_name, types)
-                        }
-                        Token::Comma => Variant::Unit(variant_name),
-                        token => {
-                            return Err(ParseError::MismatchedToken {
-                                expected: "one of `,` `(` `{`".into(),
-                                found: token.to_string(),
-                            });
-                        }
-                    };
-                    variants.push(variant);
-
-                    if !self.consume_at(&Token::Comma) {
-                        break;
-                    }
-                }
-                self.next();
+                        })
+                    }, 
+                    &Token::LBrace, 
+                    &Token::RBrace
+                )?;
 
                 Item::Enum { name, variants }
             }
@@ -125,22 +97,17 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn fields(&mut self) -> ParseResult<Vec<Field>> {
-        self.consume(&Token::LBrace)?;
+        self.delimited_list(
+            |this| {
+                let name = this.ident()?;
 
-        let mut fields = Vec::new();
-        while !self.at(&Token::RBrace) {
-            let name = self.ident()?;
+                this.consume(&Token::Colon)?;
+                let ty = this.type_()?;
 
-            self.consume(&Token::Colon)?;
-            let ty = self.type_()?;
-
-            fields.push(Field { name, ty });
-            if !self.consume_at(&Token::Comma) {
-                break;
-            }
-        }
-        self.next();
-
-        Ok(fields)
+                Ok(Field { name, ty })
+            }, 
+            &Token::LBrace, 
+            &Token::RBrace
+        )
     }
 }
