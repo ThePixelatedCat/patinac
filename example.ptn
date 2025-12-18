@@ -3,7 +3,7 @@ fn sum_annotated(a: Int, b: Int): Int -> a + b
 fn sum_block(a: Int, b: Int): Int -> {
     a + b
 }
-let sum_lambda = (a, b) -> a + b;
+let sum_lambda = |a, b| -> a + b;
 
 const twelve: Int = 12;
 let inc = sum(1, _)

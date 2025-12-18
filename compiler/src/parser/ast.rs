@@ -75,9 +75,10 @@ pub enum Expr {
         binding: Binding,
         value: Box<Expr>,
     },
-    Assign {
-        ident: String,
-        value: Box<Expr>,
+    Lambda {
+        params: Vec<Binding>,
+        return_type: Option<Type>,
+        body: Box<Expr>,
     },
     Block {
         exprs: Vec<Expr>,
@@ -118,12 +119,15 @@ pub enum Bop {
     And,
     Or,
     Xor,
+    BOr,
+    BAnd,
     Gt,
     Lt,
     Eqq,
     Neq,
     Geq,
     Leq,
+    Assign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

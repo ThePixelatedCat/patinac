@@ -159,6 +159,41 @@ fn parse_compound_expressions() {
             el: Some(Expr::Ident("bar".into()).into())
         }
     );
+
+    let expr = parse_expr("(|a, b: Int| -> a + b)(1, 2)");
+    assert_eq!(
+        expr,
+        Expr::FnCall { 
+            fun: Expr::Lambda {
+                params: vec![
+                    Binding {
+                        mutable: false,
+                        name: "a".into(),
+                        type_annotation: None
+                    },
+                    Binding {
+                        mutable: false,
+                        name: "b".into(),
+                        type_annotation: Some(Type {
+                            name: "Int".into(),
+                            generics: vec![]
+                        })
+                    }
+                ],
+                return_type: None,
+                body: Expr::BinaryOp {
+                    op: Bop::Add,
+                    lhs: Expr::Ident("a".into()).into(),
+                    rhs: Expr::Ident("b".into()).into()
+                }
+                .into()
+            }.into(), 
+            args: vec![
+                Lit::Int(1).into(),
+                Lit::Int(2).into()
+            ]
+        }
+    );
 }
 
 #[test]
@@ -204,9 +239,10 @@ fn parse_var_expresssions() {
     let expr = parse_expr("y = 3 + 7 * 0.5");
     assert_eq!(
         expr,
-        Expr::Assign {
-            ident: "y".into(),
-            value: Expr::BinaryOp {
+        Expr::BinaryOp {
+            op: Bop::Assign,
+            lhs: Expr::Ident("y".into()).into(),
+            rhs: Expr::BinaryOp {
                 op: Bop::Add,
                 lhs: Lit::Int(3).into(),
                 rhs: Expr::BinaryOp {
@@ -256,9 +292,10 @@ fn parse_block_expressions() {
                     .into(),
                     rhs: Lit::Int(2).into()
                 },
-                Expr::Assign {
-                    ident: "y".into(),
-                    value: Lit::Int(1).into()
+                Expr::BinaryOp {
+                    op: Bop::Assign,
+                    lhs: Expr::Ident("y".into()).into(),
+                    rhs: Lit::Int(1).into()
                 },
                 Expr::If {
                     cond: Expr::BinaryOp {
@@ -522,9 +559,10 @@ fn parse_file() {
                         }
                         .into()
                     },
-                    Expr::Assign {
-                        ident: "x".into(),
-                        value: Expr::If {
+                    Expr::BinaryOp {
+                        op: Bop::Assign,
+                        lhs: Expr::Ident("x".into()).into(),
+                        rhs: Expr::If {
                             cond: Expr::BinaryOp {
                                 op: Bop::Lt,
                                 lhs: Expr::Ident("bar".into()).into(),

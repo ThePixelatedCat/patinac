@@ -87,7 +87,7 @@ pub(super) const RULES: [Rule; 47] = {
         |input| match_single_char(input, ')').map(|len| (T::RParen, len)),
         |input| match_single_char(input, '=').map(|len| (T::Eq, len)),
         |input| match_single_char(input, '&').map(|len| (T::Ampersand, len)),
-        |input| match_single_char(input, '|').map(|len| (T::Bar, len)),
+        |input| match_single_char(input, '|').map(|len| (T::Pipe, len)),
         |input| match_single_char(input, '!').map(|len| (T::Bang, len)),
         |input| match_single_char(input, '^').map(|len| (T::Xor, len)),
         |input| match_single_char(input, '<').map(|len| (T::LAngle, len)),

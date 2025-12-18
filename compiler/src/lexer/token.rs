@@ -17,7 +17,7 @@ pub enum Token {
     // Symbols
     Eq,
     Ampersand,
-    Bar,
+    Pipe,
     Bang,
     LAngle,
     RAngle,
@@ -77,7 +77,7 @@ impl Display for Token {
                 Token::RBracket => "]",
                 Token::Eq => "=",
                 Token::Ampersand => "&",
-                Token::Bar => "|",
+                Token::Pipe => "|",
                 Token::Bang => "!",
                 Token::LAngle => "<",
                 Token::RAngle => ">",

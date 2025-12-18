@@ -22,12 +22,16 @@ impl PrefixOperator for Unop {
 impl InfixOperator for Bop {
     fn binding_power(&self) -> (u8, u8) {
         match self {
-            Bop::Or => (1, 2),
-            Bop::And => (3, 4),
-            Bop::Xor | Bop::Eqq | Bop::Neq => (5, 6),
-            Bop::Gt | Bop::Lt | Bop::Leq | Bop::Geq => (7, 8),
-            Bop::Add | Bop::Sub => (9, 10),
-            Bop::Mul | Bop::Div => (11, 12),
+            Bop::Assign => (1, 2),
+            Bop::Or => (3, 4),
+            Bop::And => (5, 6),
+            Bop::Eqq | Bop::Neq => (7, 8),
+            Bop::Gt | Bop::Lt | Bop::Leq | Bop::Geq => (9, 10),
+            Bop::BOr => (11, 12),
+            Bop::Xor => (13, 14),
+            Bop::BAnd => (15, 16),
+            Bop::Add | Bop::Sub => (17, 18),
+            Bop::Mul | Bop::Div => (19, 20),
             Bop::Exp => (22, 21),
         }
     }
@@ -68,29 +72,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     unreachable!()
                 };
 
-                if self.consume_at(&Token::LParen) {
-                    let mut args = Vec::new();
-                    while !self.at(&Token::RParen) {
-                        args.push(self.expression()?);
-
-                        if !self.consume_at(&Token::Comma) {
-                            break;
-                        }
-                    }
-                    self.next();
-
-                    Expr::FnCall {
-                        fun: Box::new(Expr::Ident(ident)),
-                        args,
-                    }
-                } else if self.consume_at(&Token::Eq) {
-                    Expr::Assign {
-                        ident,
-                        value: self.expression()?.into(),
-                    }
-                } else {
-                    Expr::Ident(ident)
-                }
+                Expr::Ident(ident)
             }
             Token::If => {
                 self.next();
@@ -135,11 +117,39 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                 self.consume(&Token::Eq)?;
                 let value = self.expression()?;
-                //self.consume(&Token::Semicolon)?;
 
                 Expr::Let {
                     binding,
                     value: Box::new(value),
+                }
+            }
+            Token::Pipe => {
+                self.next();
+
+                let mut params = Vec::new();
+                while !self.at(&Token::Pipe) {
+                    params.push(self.binding()?);
+
+                    if !self.consume_at(&Token::Comma) {
+                        break;
+                    }
+                }
+                self.next();
+
+                let return_type = if self.consume_at(&Token::Colon) {
+                    Some(self.type_()?)
+                } else {
+                    None
+                };
+
+                self.consume(&Token::Arrow)?;
+
+                let body = Box::new(self.expression()?);
+
+                Expr::Lambda {
+                    params,
+                    return_type,
+                    body,
                 }
             }
             Token::LBrace => {
@@ -169,11 +179,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         loop {
             let token = self.peek();
             let op = match token {
+                Token::Eq => Bop::Assign,
                 Token::Plus => Bop::Add,
                 Token::Minus => Bop::Sub,
                 Token::Times => Bop::Mul,
                 Token::FSlash => Bop::Div,
                 Token::Xor => Bop::Xor,
+                Token::Ampersand => Bop::BAnd,
+                Token::Pipe => Bop::BOr,
                 Token::Exponent => Bop::Exp,
                 Token::Eqq => Bop::Eqq,
                 Token::Neq => Bop::Neq,
@@ -183,6 +196,24 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 Token::Leq => Bop::Leq,
                 Token::RAngle => Bop::Gt,
                 Token::Geq => Bop::Geq,
+                Token::LParen => { 
+                    self.next();
+                    
+                    let mut args = Vec::new();
+                    while !self.at(&Token::RParen) {
+                        args.push(self.expression()?);
+
+                        if !self.consume_at(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.next();
+
+                    return Ok(Expr::FnCall {
+                        fun: Box::new(lhs),
+                        args,
+                    });
+                }
                 Token::Eof => break,
                 Token::RParen
                 | Token::RBrace
