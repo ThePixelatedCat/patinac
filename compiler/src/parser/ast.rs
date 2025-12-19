@@ -94,7 +94,7 @@ pub enum Lit {
     Char(char),
     Bool(bool),
     Array(Vec<Expr>),
-    Map(Vec<(Expr, Expr)>),
+    Tuple(Vec<Expr>)
 }
 
 impl From<Lit> for Expr {

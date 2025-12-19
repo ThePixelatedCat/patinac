@@ -47,8 +47,23 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             Token::LParen => {
                 self.next();
                 let expr = self.expression()?;
-                self.consume(&Token::RParen)?;
-                expr
+                if self.consume_at(&Token::Comma) {
+                    let mut exprs = vec![expr];
+                    while !self.at(&Token::RParen) {
+                        exprs.push(self.expression()?);
+
+                        if !self.consume_at(&Token::Comma) {
+                            break;
+                        }
+                    }
+                    self.consume(&Token::RParen)?;
+
+                    Expr::Literal(Lit::Tuple(exprs))
+                    
+                } else {
+                    self.consume(&Token::RParen)?;
+                    expr
+                }
             }
             Token::IntLit(_)
             | Token::FloatLit(_)
@@ -155,7 +170,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                         break;
                     }
                 }
-                self.next();
+                self.consume(&Token::RBrace)?;
 
                 Expr::Block { exprs, trailing }
             }

@@ -27,6 +27,9 @@ fn parse_lit_expressions() {
     let expr = parse_expr(r#""I am a Str!""#);
     assert_eq!(expr, Lit::Str("I am a Str!".into()).into());
 
+    let expr = parse_expr(r#"(42,(2,),"end")"#);
+    assert_eq!(expr, Lit::Tuple(vec![Lit::Int(42).into(), Lit::Tuple(vec![Lit::Int(2).into()]).into(), Lit::Str("end".into()).into()]).into());
+
     let expr = parse_expr("foo");
     assert_eq!(expr, Expr::Ident("foo".into()));
 }
