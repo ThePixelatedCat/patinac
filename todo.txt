@@ -1,7 +1,3 @@
 - Struct/Enum Literals
 - Indexing
 - Field Access
-- Special Types
-    - Tuple Types
-    - Array Types  
-    - Fn Types

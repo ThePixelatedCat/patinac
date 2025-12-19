@@ -3,6 +3,6 @@ fn sum_annotated(a: Int, b: Int): Int -> a + b
 fn sum_block(a: Int, b: Int): Int -> {
     a + b
 }
-const sum_lambda: Ph = |a, b| -> a + b
+const sum_lambda: fn(Int, Int): Int = |a, b| -> a + b
 
 const twelve: Int = 12
