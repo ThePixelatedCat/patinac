@@ -59,7 +59,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     self.consume(&Token::RParen)?;
 
                     Expr::Literal(Lit::Tuple(exprs))
-                    
                 } else {
                     self.consume(&Token::RParen)?;
                     expr
@@ -174,15 +173,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                 Expr::Block { exprs, trailing }
             }
-            Token::LBracket => Expr::Literal(
-                Lit::Array(
-                    self.delimited_list(
-                        Self::expression, 
-                        &Token::LBracket, 
-                        &Token::RBracket
-                    )?
-                )
-            ),
+            Token::LBracket => Expr::Literal(Lit::Array(self.delimited_list(
+                Self::expression,
+                &Token::LBracket,
+                &Token::RBracket,
+            )?)),
             token => {
                 return Err(ParseError::UnexpectedToken(
                     token.to_string(),

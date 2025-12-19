@@ -14,11 +14,13 @@ pub enum Item {
         body: Expr,
     },
     Struct {
-        name: Type,
+        name: String,
+        generic_params: Vec<String>,
         fields: Vec<Field>,
     },
     Enum {
-        name: Type,
+        name: String,
+        generic_params: Vec<String>,
         variants: Vec<Variant>,
     },
 }
@@ -44,9 +46,17 @@ pub struct Binding {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Type {
-    pub name: String,
-    pub generics: Vec<Type>,
+pub enum Type {
+    Ident {
+        name: String,
+        generics: Vec<Type>,
+    },
+    Array(Box<Type>),
+    Tuple(Vec<Type>),
+    Fn {
+        params: Vec<Type>,
+        result: Box<Type>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +104,7 @@ pub enum Lit {
     Char(char),
     Bool(bool),
     Array(Vec<Expr>),
-    Tuple(Vec<Expr>)
+    Tuple(Vec<Expr>),
 }
 
 impl From<Lit> for Expr {

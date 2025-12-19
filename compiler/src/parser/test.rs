@@ -28,10 +28,27 @@ fn parse_lit_expressions() {
     assert_eq!(expr, Lit::Str("I am a Str!".into()).into());
 
     let expr = parse_expr(r#"(42,(2,),"end")"#);
-    assert_eq!(expr, Lit::Tuple(vec![Lit::Int(42).into(), Lit::Tuple(vec![Lit::Int(2).into()]).into(), Lit::Str("end".into()).into()]).into());
+    assert_eq!(
+        expr,
+        Lit::Tuple(vec![
+            Lit::Int(42).into(),
+            Lit::Tuple(vec![Lit::Int(2).into()]).into(),
+            Lit::Str("end".into()).into()
+        ])
+        .into()
+    );
 
     let expr = parse_expr("[1, 4, 3, 2]");
-    assert_eq!(expr, Lit::Array(vec![Lit::Int(1).into(), Lit::Int(4).into(), Lit::Int(3).into(), Lit::Int(2).into()]).into());
+    assert_eq!(
+        expr,
+        Lit::Array(vec![
+            Lit::Int(1).into(),
+            Lit::Int(4).into(),
+            Lit::Int(3).into(),
+            Lit::Int(2).into()
+        ])
+        .into()
+    );
 
     let expr = parse_expr("foo");
     assert_eq!(expr, Expr::Ident("foo".into()));
@@ -180,7 +197,7 @@ fn parse_compound_expressions() {
                     Binding {
                         mutable: false,
                         name: "b".into(),
-                        type_annotation: Some(Type {
+                        type_annotation: Some(Type::Ident {
                             name: "Int".into(),
                             generics: vec![]
                         })
@@ -231,7 +248,7 @@ fn parse_var_expresssions() {
             binding: Binding {
                 mutable: true,
                 name: "y".into(),
-                type_annotation: Some(Type {
+                type_annotation: Some(Type::Ident {
                     name: "Int".into(),
                     generics: vec![]
                 })
@@ -338,7 +355,7 @@ fn parse_const_items() {
         item,
         Item::Const {
             ident: "HELLO_WORLD".into(),
-            ty: Type {
+            ty: Type::Ident {
                 name: "Str".into(),
                 generics: vec![]
             },
@@ -360,34 +377,23 @@ fn parse_struct_items() {
     assert_eq!(
         item,
         Item::Struct {
-            name: Type {
-                name: "Foo".into(),
-                generics: vec![
-                    Type {
-                        name: "T".into(),
-                        generics: vec![]
-                    },
-                    Type {
-                        name: "U".into(),
-                        generics: vec![]
-                    }
-                ]
-            },
+            name: "Foo".into(),
+            generic_params: vec!["T".into(), "U".into()],
             fields: vec![
                 Field {
                     name: "x".into(),
-                    ty: Type {
+                    ty: Type::Ident {
                         name: "Str".into(),
                         generics: vec![]
                     }
                 },
                 Field {
                     name: "bar".into(),
-                    ty: Type {
+                    ty: Type::Ident {
                         name: "Bar".into(),
-                        generics: vec![Type {
+                        generics: vec![Type::Ident {
                             name: "Baz".into(),
-                            generics: vec![Type {
+                            generics: vec![Type::Ident {
                                 name: "T".into(),
                                 generics: vec![]
                             }]
@@ -413,15 +419,13 @@ fn parse_enum_items() {
     assert_eq!(
         item,
         Item::Enum {
-            name: Type {
-                name: "Foo".into(),
-                generics: vec![]
-            },
+            name: "Foo".into(),
+            generic_params: vec![],
             variants: vec![
                 Variant::Unit("X".into()),
                 Variant::Tuple(
                     "Y".into(),
-                    vec![Type {
+                    vec![Type::Ident {
                         name: "Bar".into(),
                         generics: vec![]
                     }]
@@ -431,14 +435,14 @@ fn parse_enum_items() {
                     vec![
                         Field {
                             name: "baz".into(),
-                            ty: Type {
+                            ty: Type::Ident {
                                 name: "Baz".into(),
                                 generics: vec![]
                             }
                         },
                         Field {
                             name: "fizz".into(),
-                            ty: Type {
+                            ty: Type::Ident {
                                 name: "Buzz".into(),
                                 generics: vec![]
                             }
@@ -470,7 +474,7 @@ fn parse_function_items() {
                 Binding {
                     mutable: false,
                     name: "b".into(),
-                    type_annotation: Some(Type {
+                    type_annotation: Some(Type::Ident {
                         name: "Int".into(),
                         generics: vec![]
                     })
@@ -490,8 +494,8 @@ fn parse_function_items() {
 fn parse_file() {
     let items = parse_ast(
         r#"
-        fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): Foo -> {
-            let mut x: Float = -7.0 + sin(y);
+        fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int -> {
+            let mut x: (Float, T) = -7.0 + sin(y);
             x = if (bar < 3) {
                 let baz = 3;
                 x + 1;
@@ -501,7 +505,7 @@ fn parse_file() {
 
         struct Foo<T, U> {
             x: Str,
-            bar: Bar<Baz<T>, U>,
+            bar: Bar<Baz<T>, [U]>,
         }
     "#,
     );
@@ -519,17 +523,17 @@ fn parse_file() {
                 Binding {
                     mutable: false,
                     name: "bar".into(),
-                    type_annotation: Some(Type {
+                    type_annotation: Some(Type::Ident {
                         name: "Bar".into(),
                         generics: vec![
-                            Type {
+                            Type::Ident {
                                 name: "Baz".into(),
-                                generics: vec![Type {
+                                generics: vec![Type::Ident {
                                     name: "T".into(),
                                     generics: vec![],
                                 }],
                             },
-                            Type {
+                            Type::Ident {
                                 name: "U".into(),
                                 generics: vec![],
                             }
@@ -537,9 +541,16 @@ fn parse_file() {
                     })
                 }
             ],
-            return_type: Some(Type {
-                name: "Foo".into(),
-                generics: vec![]
+            return_type: Some(Type::Fn {
+                params: vec![Type::Ident {
+                    name: "Int".into(),
+                    generics: vec![]
+                }],
+                result: Type::Ident {
+                    name: "Int".into(),
+                    generics: vec![]
+                }
+                .into()
             }),
             body: Expr::Block {
                 exprs: vec![
@@ -547,10 +558,16 @@ fn parse_file() {
                         binding: Binding {
                             mutable: true,
                             name: "x".into(),
-                            type_annotation: Some(Type {
-                                name: "Float".into(),
-                                generics: vec![]
-                            })
+                            type_annotation: Some(Type::Tuple(vec![
+                                Type::Ident {
+                                    name: "Float".into(),
+                                    generics: vec![]
+                                },
+                                Type::Ident {
+                                    name: "T".into(),
+                                    generics: vec![]
+                                }
+                            ]))
                         },
                         value: Expr::BinaryOp {
                             op: Bop::Add,
@@ -621,43 +638,35 @@ fn parse_file() {
     assert_eq!(
         items[1],
         Item::Struct {
-            name: Type {
-                name: "Foo".into(),
-                generics: vec![
-                    Type {
-                        name: "T".into(),
-                        generics: vec![],
-                    },
-                    Type {
-                        name: "U".into(),
-                        generics: vec![],
-                    }
-                ],
-            },
+            name: "Foo".into(),
+            generic_params: vec!["T".into(), "U".into(),],
             fields: vec![
                 Field {
                     name: "x".into(),
-                    ty: Type {
+                    ty: Type::Ident {
                         name: "Str".into(),
                         generics: vec![],
                     },
                 },
                 Field {
                     name: "bar".into(),
-                    ty: Type {
+                    ty: Type::Ident {
                         name: "Bar".into(),
                         generics: vec![
-                            Type {
+                            Type::Ident {
                                 name: "Baz".into(),
-                                generics: vec![Type {
+                                generics: vec![Type::Ident {
                                     name: "T".into(),
                                     generics: vec![],
                                 }],
                             },
-                            Type {
-                                name: "U".into(),
-                                generics: vec![],
-                            }
+                            Type::Array(
+                                Type::Ident {
+                                    name: "U".into(),
+                                    generics: vec![],
+                                }
+                                .into()
+                            )
                         ],
                     },
                 }

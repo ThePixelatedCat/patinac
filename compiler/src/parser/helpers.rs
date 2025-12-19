@@ -25,15 +25,43 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     pub fn type_(&mut self) -> ParseResult<Type> {
-        let name = self.ident()?;
+        Ok(match self.peek() {
+            Token::Ident(_) => {
+                let Some(Token::Ident(name)) = self.next() else {
+                    unreachable!()
+                };
 
-        let generics = if self.at(&Token::LAngle) {
-            self.delimited_list(Self::type_, &Token::LAngle, &Token::RAngle)?
-        } else {
-            Vec::new()
-        };
+                let generics = if self.at(&Token::LAngle) {
+                    self.delimited_list(Self::type_, &Token::LAngle, &Token::RAngle)?
+                } else {
+                    Vec::new()
+                };
 
-        Ok(Type { name, generics })
+                Type::Ident { name, generics }
+            }
+            Token::LBracket => {
+                self.next();
+                let inner_type = self.type_()?;
+                self.consume(&Token::RBracket)?;
+                Type::Array(Box::new(inner_type))
+            }
+            Token::LParen => {
+                Type::Tuple(self.delimited_list(Self::type_, &Token::LParen, &Token::RParen)?)
+            }
+            Token::Fn => {
+                self.next();
+                let params = self.delimited_list(Self::type_, &Token::LParen, &Token::RParen)?;
+                self.consume(&Token::Colon)?;
+                let result = Box::new(self.type_()?);
+                Type::Fn { params, result }
+            }
+            token => {
+                return Err(ParseError::UnexpectedToken(
+                    token.to_string(),
+                    Some("start of type name".into()),
+                ));
+            }
+        })
     }
 
     pub fn ident(&mut self) -> ParseResult<String> {

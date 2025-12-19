@@ -54,15 +54,18 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             Token::Struct => {
                 self.next();
 
+                let (name, generic_params) = self.type_name()?;
+
                 Item::Struct {
-                    name: self.type_()?,
+                    name,
+                    generic_params,
                     fields: self.fields()?,
                 }
             }
             Token::Enum => {
                 self.next();
 
-                let name = self.type_()?;
+                let (name, generic_params) = self.type_name()?;
 
                 let variants = self.delimited_list(
                     |this| {
@@ -87,7 +90,11 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     &Token::RBrace,
                 )?;
 
-                Item::Enum { name, variants }
+                Item::Enum {
+                    name,
+                    generic_params,
+                    variants,
+                }
             }
             token => {
                 return Err(ParseError::UnexpectedToken(
@@ -96,6 +103,18 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 ));
             }
         })
+    }
+
+    fn type_name(&mut self) -> ParseResult<(String, Vec<String>)> {
+        let name = self.ident()?;
+
+        let generic_params = if self.at(&Token::LAngle) {
+            self.delimited_list(Self::ident, &Token::LAngle, &Token::RAngle)?
+        } else {
+            Vec::new()
+        };
+
+        Ok((name, generic_params))
     }
 
     fn fields(&mut self) -> ParseResult<Vec<Field>> {
