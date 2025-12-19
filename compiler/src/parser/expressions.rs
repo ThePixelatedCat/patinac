@@ -174,6 +174,15 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
                 Expr::Block { exprs, trailing }
             }
+            Token::LBracket => Expr::Literal(
+                Lit::Array(
+                    self.delimited_list(
+                        Self::expression, 
+                        &Token::LBracket, 
+                        &Token::RBracket
+                    )?
+                )
+            ),
             token => {
                 return Err(ParseError::UnexpectedToken(
                     token.to_string(),
@@ -211,17 +220,16 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     });
                 }
                 Token::Eof => break,
-                Token::RParen
+                Token::Else
+                | Token::RParen // Delimiters
                 | Token::RBrace
+                | Token::RBracket 
                 | Token::Comma
                 | Token::Semicolon
-                | Token::Else
                 | Token::Fn
+                | Token::Const
                 | Token::Struct
-                | Token::Enum
-                | Token::Const => {
-                    break;
-                }
+                | Token::Enum => break,
                 token => return Err(ParseError::UnexpectedToken(token.to_string(), None)),
             };
 

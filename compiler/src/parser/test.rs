@@ -30,6 +30,9 @@ fn parse_lit_expressions() {
     let expr = parse_expr(r#"(42,(2,),"end")"#);
     assert_eq!(expr, Lit::Tuple(vec![Lit::Int(42).into(), Lit::Tuple(vec![Lit::Int(2).into()]).into(), Lit::Str("end".into()).into()]).into());
 
+    let expr = parse_expr("[1, 4, 3, 2]");
+    assert_eq!(expr, Lit::Array(vec![Lit::Int(1).into(), Lit::Int(4).into(), Lit::Int(3).into(), Lit::Int(2).into()]).into());
+
     let expr = parse_expr("foo");
     assert_eq!(expr, Expr::Ident("foo".into()));
 }
