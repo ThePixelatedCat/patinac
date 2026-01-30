@@ -275,7 +275,10 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 TokenType::LParen => {
                     let start = lhs.span.start;
 
-                    let Spanned { inner: args, span: Span { end, .. } } = self.delimited_list(
+                    let Spanned {
+                        inner: args,
+                        span: Span { end, .. },
+                    } = self.delimited_list(
                         Self::expression,
                         TokenType::LParen,
                         TokenType::RParen,

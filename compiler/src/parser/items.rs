@@ -70,7 +70,10 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                 let (name, generic_params) = self.type_name()?;
 
-                let Spanned { inner: fields, span} = self.fields()?;
+                let Spanned {
+                    inner: fields,
+                    span,
+                } = self.fields()?;
                 let end = span.end;
 
                 Item::Struct {
@@ -85,19 +88,25 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                 let (name, generic_params) = self.type_name()?;
 
-                let Spanned { inner: variants, span: variants_span} = self.delimited_list(
+                let Spanned {
+                    inner: variants,
+                    span: variants_span,
+                } = self.delimited_list(
                     |this| {
                         let (variant_name, name_span) = this.ident()?;
                         let start = name_span.start;
 
                         Ok(match this.peek() {
                             TokenType::LBrace => {
-                                let Spanned { inner: fields, span: fields_span} = this.fields()?;
+                                let Spanned {
+                                    inner: fields,
+                                    span: fields_span,
+                                } = this.fields()?;
                                 Variant::Struct(variant_name, fields)
                                     .spanned(start..fields_span.end)
                             }
                             TokenType::LParen => {
-                                let Spanned { inner: vals, span} = this.delimited_list(
+                                let Spanned { inner: vals, span } = this.delimited_list(
                                     Self::type_,
                                     TokenType::LParen,
                                     TokenType::RParen,

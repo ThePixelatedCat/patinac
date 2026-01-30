@@ -1,15 +1,14 @@
-use crate::span;
+use crate::{span, typecheck::types::TypeS};
 
-use super::Type;
 use std::{error::Error, fmt::Display};
 
-pub type TypeResult<T = Type> = Result<T, TypeErrorS>;
+pub type TypeResult<T = TypeS> = Result<T, TypeErrorS>;
 
 span! { TypeError as TypeErrorS }
 #[derive(Debug)]
 pub enum TypeError {
     UnboundIdent(String),
-    MismatchedTypes(String, String),
+    MismatchedTypes(TypeS, TypeS),
     WrongArgCount { needed: usize, provided: usize },
     CantInfer,
     Mutation(String),
@@ -24,7 +23,7 @@ impl Display for TypeErrorS {
             }
             TypeError::MismatchedTypes(type_a, type_b) => write!(
                 f,
-                "mismatched types `{type_a}` and `{type_b}` at {}",
+                "mismatched types `{type_a}` and `{type_b}` at {:2}",
                 self.span
             ),
             TypeError::WrongArgCount { needed, provided } => write!(

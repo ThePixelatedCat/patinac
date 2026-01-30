@@ -46,8 +46,10 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 let start = span.start;
 
                 let (generics, end) = if self.at(TokenType::LAngle) {
-                    let Spanned { inner: generics, span: generics_span } =
-                        self.delimited_list(Self::type_, TokenType::LAngle, TokenType::RAngle)?;
+                    let Spanned {
+                        inner: generics,
+                        span: generics_span,
+                    } = self.delimited_list(Self::type_, TokenType::LAngle, TokenType::RAngle)?;
                     (generics, generics_span.end)
                 } else {
                     (Vec::new(), span.end)
@@ -65,7 +67,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 Type::Array(Box::new(inner_type)).spanned(start..end)
             }
             TokenType::LParen => {
-                let Spanned { inner: types, span} =
+                let Spanned { inner: types, span } =
                     self.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
                 Type::Tuple(types).spanned(span)
             }

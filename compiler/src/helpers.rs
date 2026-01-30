@@ -58,7 +58,10 @@ impl<T> Spanned<T> {
 
 impl<T> Spanned<T> {
     pub fn span(inner: T, span: impl Into<Span>) -> Self {
-        Self { inner, span: span.into() }
+        Self {
+            inner,
+            span: span.into(),
+        }
     }
 }
 

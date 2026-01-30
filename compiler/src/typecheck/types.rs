@@ -1,47 +1,42 @@
-use std::{cmp, convert::Infallible, iter};
+use std::{cmp, convert::Infallible, fmt::Display, iter};
 
 use ena::unify::{UnifyKey, UnifyValue};
 
-use crate::parser::ast::Type as AstType;
+use crate::{
+    helpers::Spanned,
+    parser::ast::{Type as AstType, TypeS as AstTypeS},
+    span,
+};
 
+span! { Type as TypeS }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Bool,
+    Char,
+    Array(Box<TypeS>),
+    Tuple(Vec<TypeS>),
+    Func(Vec<TypeS>, Box<TypeS>),
     Var(TypeId),
-    Named(String, Vec<Type>),
-}
-
-impl Type {
-    pub fn id(&self) -> Option<TypeId> {
-        match self {
-            Type::Var(id) => Some(*id),
-            Type::Named(..) => None,
-        }
-    }
+    Named { name: String, generics: Vec<TypeS> },
 }
 
 impl From<AstType> for Type {
     fn from(value: AstType) -> Self {
         match value {
-            AstType::Named { name, generics } => Type::Named(
+            AstType::Named { name, generics } => Type::Named {
                 name,
-                generics
-                    .into_iter()
-                    .map(|type_s| type_s.inner.into())
-                    .collect(),
+                generics: generics.into_iter().map(TypeS::from).collect(),
+            },
+            AstType::Array(ty) => Type::Array(Box::new((*ty).into())),
+            AstType::Tuple(tys) => Type::Tuple(tys.into_iter().map(TypeS::from).collect()),
+            AstType::Fn { params, result } => Type::Func(
+                params.into_iter().map(TypeS::from).collect(),
+                Box::new((*result).into()),
             ),
-            AstType::Array(ty) => Type::Named("$Array".to_string(), vec![ty.inner.into()]),
-            AstType::Tuple(tys) => Type::Named(
-                "$Tuple".to_string(),
-                tys.into_iter().map(|type_s| type_s.inner.into()).collect(),
-            ),
-            AstType::Fn { params, result } => {
-                let type_args: Vec<Type> = params
-                    .into_iter()
-                    .map(|type_s| type_s.inner.into())
-                    .chain(iter::once(result.inner.into()))
-                    .collect();
-                Type::Named("$Function".to_string(), type_args)
-            }
         }
     }
 }
@@ -54,10 +49,10 @@ impl UnifyValue for Type {
             (Type::Var(id_a), Type::Var(id_b)) => {
                 Ok(Type::Var(cmp::min(id_a.index(), id_b.index()).into()))
             }
-            (ty @ Type::Named(..), Type::Var(_)) | (Type::Var(_), ty @ Type::Named(..)) => {
+            (ty @ Type::Named { .. }, Type::Var(_)) | (Type::Var(_), ty @ Type::Named { .. }) => {
                 Ok(ty.clone())
             }
-            (Type::Named(..), Type::Named(..)) => {
+            (_, _) => {
                 panic!("shouldn't be unifying two concrete types")
             }
         }
@@ -65,36 +60,59 @@ impl UnifyValue for Type {
 }
 
 impl Type {
+    pub fn id(&self) -> Option<TypeId> {
+        match self {
+            Type::Var(id) => Some(*id),
+            _ => None,
+        }
+    }
+
     pub fn named(name: &str) -> Self {
-        Self::Named(name.into(), vec![])
+        Self::Named {
+            name: name.into(),
+            generics: vec![],
+        }
     }
 
     pub fn unit() -> Self {
-        Self::tuple(vec![])
-    }
-
-    pub fn bool() -> Self {
-        Self::named("$Bool")
-    }
-
-    pub fn float() -> Self {
-        Self::named("$Float")
-    }
-
-    pub fn char() -> Self {
-        Self::named("$Char")
+        Self::Tuple(vec![])
     }
 
     pub fn str() -> Self {
-        Self::named("$Str")
+        Self::named("Str")
     }
+}
 
-    pub fn array(of: Self) -> Self {
-        Self::Named(String::from("$Array"), vec![of])
+impl Display for TypeS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.inner {
+            Type::Var(_) => write!(f, "type var at {}", self.span),
+            Type::Named {
+                name,
+                generics: args,
+            } => {
+                write!(f, "{name}")?;
+                if !args.is_empty() {
+                    write!(f, "<{}>", itertools::join(args, ", "))?;
+                }
+                Ok(())
+            }
+            Type::Int => "Int".fmt(f),
+            Type::UInt => "UInt".fmt(f),
+            Type::Byte => todo!(),
+            Type::Float => todo!(),
+            Type::Bool => todo!(),
+            Type::Char => todo!(),
+            Type::Array(spanned) => todo!(),
+            Type::Tuple(spanneds) => todo!(),
+            Type::Func(spanneds, spanned) => todo!(),
+        }
     }
+}
 
-    pub fn tuple(of: Vec<Self>) -> Self {
-        Self::Named(String::from("$Tuple"), of)
+impl From<AstTypeS> for TypeS {
+    fn from(ty: AstTypeS) -> Self {
+        Spanned::span(ty.inner.into(), ty.span)
     }
 }
 
