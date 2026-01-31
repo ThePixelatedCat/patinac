@@ -38,28 +38,18 @@ impl TypeChecker {
             .ok_or_else(|| TypeError::UnboundIdent(ident.inner.to_owned()).spanned(ident.span))
     }
 
+    fn fresh_int_var(&mut self) -> Type {
+        let id = self.table.len();
+        let var = Type::IntVar((id as u32).into());
+        self.table.new_key(var.clone());
+        var
+    }
+
     fn fresh_var(&mut self) -> Type {
         let id = self.table.len();
         let var = Type::Var((id as u32).into());
         self.table.new_key(var.clone());
         var
-    }
-
-    fn occurs(&mut self, var: TypeId, ty: &TypeS) -> bool {
-        if let Some(n_ty) = self.normalize(ty) {
-            return self.occurs(var, &n_ty);
-        };
-
-        match &ty.inner {
-            Type::Named { generics: args, .. } => args.iter().any(|ty| self.occurs(var, ty)),
-            Type::Var(_) | Type::IntVar(_) => false,
-            Type::Int | Type::UInt | Type::Byte | Type::Float | Type::Bool | Type::Char => false,
-            Type::Array(inner_ty) => self.occurs(var, inner_ty),
-            Type::Tuple(tys) => tys.iter().any(|ty| self.occurs(var, ty)),
-            Type::Func(param_tys, result_ty) => {
-                self.occurs(var, result_ty) || param_tys.iter().any(|ty| self.occurs(var, ty))
-            }
-        }
     }
 
     fn normalize(&mut self, ty: &TypeS) -> Option<TypeS> {
@@ -104,19 +94,5 @@ impl TypeChecker {
         // }
 
         new
-    }
-
-    pub fn check(&self, exprs: &[ExprS]) -> TypeResult<Vec<TypeS>> {
-        todo!("rewrite");
-
-        let mut env = self.clone();
-
-        let mut types = Vec::with_capacity(exprs.len());
-
-        for expr in exprs {
-            types.push(env.type_of(expr)?);
-        }
-
-        Ok(types)
     }
 }

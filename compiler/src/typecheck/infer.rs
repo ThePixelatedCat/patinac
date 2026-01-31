@@ -12,8 +12,9 @@ impl TypeChecker {
             Expr::Int(v) => Ok(if *v > i64::MAX as u64 {
                 Type::UInt
             } else {
-                Type::GInt
-            }),
+                self.fresh_int_var()
+            }
+            .spanned(expr.span)),
             Expr::Float(_) => Ok(Type::Float.spanned(expr.span)),
             Expr::Str(_) => Ok(Type::string().spanned(expr.span)),
             Expr::Char(_) => Ok(Type::Char.spanned(expr.span)),
@@ -99,86 +100,56 @@ impl TypeChecker {
     }
 
     fn type_of_binary_op(&mut self, op: Bop, lhs: &ExprS, rhs: &ExprS, span: Span) -> TypeResult {
+        let (lhs_ty, rhs_ty) = (self.type_of(lhs)?, self.type_of(rhs)?);
         match op {
-            Bop::Add | Bop::Sub | Bop::Mul | Bop::Div | Bop::Exp => {
-                let (lhs_ty, rhs_ty) = (self.type_of(lhs)?, self.type_of(rhs)?);
+            Bop::Add
+            | Bop::Sub
+            | Bop::Mul
+            | Bop::Div
+            | Bop::Exp
+            | Bop::BOr
+            | Bop::BAnd
+            | Bop::Gt
+            | Bop::Lt
+            | Bop::Geq
+            | Bop::Leq => {
+                let lhs_var = self.fresh_int_var().spanned(lhs.span);
+                let rhs_var = self.fresh_int_var().spanned(rhs.span);
 
-                if !lhs_ty.is_numeric() {
-                    return Err(TypeError::NotNumeric(lhs_ty).spanned(lhs.span));
-                }
+                self.unify(&lhs_ty, &lhs_var);
+                self.unify(&rhs_ty, &rhs_var);
 
-                if !rhs_ty.is_numeric() {
-                    return Err(TypeError::NotNumeric(rhs_ty).spanned(rhs.span));
-                }
-
-                if lhs_ty != rhs_ty {
-                    return Err(TypeError::MismatchedTypes {
-                        found: rhs_ty,
-                        expected: lhs_ty,
-                    }
-                    .spanned(rhs.span));
-                }
+                self.unify(&lhs_ty, &rhs_ty);
 
                 Ok(lhs_ty)
             }
             Bop::And | Bop::Or | Bop::Xor => {
-                self.unify(&self.type_of(lhs)?, &Type::Bool.spanned(lhs.span));
-                self.unify(&self.type_of(rhs)?, &Type::Bool.spanned(rhs.span));
+                self.unify(&lhs_ty, &Type::Bool.spanned(lhs.span));
+                self.unify(&rhs_ty, &Type::Bool.spanned(rhs.span));
                 Ok(Type::Bool.spanned(span))
-            }
-            Bop::BOr | Bop::BAnd => {
-                let (lhs_ty, rhs_ty) = (self.type_of(lhs)?, self.type_of(rhs)?);
-
-                if !lhs_ty.is_integer() {
-                    return Err(TypeError::NotInteger(lhs_ty).spanned(lhs.span));
-                }
-
-                if !rhs_ty.is_integer() {
-                    return Err(TypeError::NotInteger(rhs_ty).spanned(rhs.span));
-                }
-
-                if lhs_ty != rhs_ty {
-                    return Err(TypeError::MismatchedTypes {
-                        found: rhs_ty,
-                        expected: lhs_ty,
-                    }
-                    .spanned(rhs.span));
-                }
-
-                Ok(lhs_ty)
             }
             Bop::Eqq | Bop::Neq => {
-                self.unify(&self.type_of(lhs)?, &self.type_of(rhs)?)?;
+                self.unify(&lhs_ty, &rhs_ty)?;
                 Ok(Type::Bool.spanned(span))
-            }
-            Bop::Gt | Bop::Lt | Bop::Geq | Bop::Leq => {
-                let (lhs_ty, rhs_ty) = (self.type_of(lhs)?, self.type_of(rhs)?);
-
-                if !lhs_ty.is_numeric() {
-                    return Err(TypeError::NotNumeric(lhs_ty).spanned(lhs.span));
-                }
-
-                if !rhs_ty.is_numeric() {
-                    return Err(TypeError::NotNumeric(rhs_ty).spanned(rhs.span));
-                }
-
-                Ok(Type::Bool)
             }
         }
     }
 
     fn type_of_unary_op(&mut self, op: Unop, expr: &ExprS) -> TypeResult {
+        let expr_ty = self.type_of(expr)?;
+
         match op {
             Unop::Not => {
-                self.unify(&self.type_of(expr)?, &Type::Bool.spanned(expr.span))?;
-                Ok(Type::Bool.spanned(expr.span))
+                self.unify(&expr_ty, &Type::Bool.spanned(expr.span))?;
             }
-            Unop::Neg => match self.type_of(expr)? {
-                Type::GInt => Ok(Type::Int),
-                ty @ (Type::Int | Type::Float) => Ok(ty),
-                other => Err(todo!()),
-            },
+            // TODO confirm logic??
+            Unop::Neg => {
+                self.unify(&expr_ty, &Type::Int.spanned(expr.span))
+                    .or_else(|_| self.unify(&expr_ty, &Type::Float.spanned(expr.span)))?;
+            }
         }
+
+        Ok(expr_ty)
     }
 
     fn type_of_indexing(&mut self, arr: &ExprS, index: &ExprS) -> TypeResult {
@@ -247,12 +218,13 @@ impl TypeChecker {
     }
 
     fn type_of_block(&self, exprs: &[ExprS], trailing: bool, span: &Span) -> TypeResult {
-        let types = self.check(exprs)?;
+        todo!()
+        // let types = self.check(exprs)?;
 
-        Ok(if trailing && let Some(last) = types.last() {
-            last.clone()
-        } else {
-            Type::unit().spanned(span)
-        })
+        // Ok(if trailing && let Some(last) = types.last() {
+        //     last.clone()
+        // } else {
+        //     Type::unit().spanned(span)
+        // })
     }
 }

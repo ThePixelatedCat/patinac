@@ -1,6 +1,8 @@
-use std::iter;
+use std::{cmp, convert::Infallible, iter};
 
-use super::{Type, TypeChecker, TypeError, TypeResult, TypeS};
+use ena::unify::{UnifyKey, UnifyValue};
+
+use super::{Type, TypeChecker, TypeError, TypeId, TypeResult, TypeS};
 use crate::helpers::Spanned;
 
 macro_rules! spanned {
@@ -10,6 +12,32 @@ macro_rules! spanned {
             ..
         }
     };
+}
+
+impl UnifyValue for Type {
+    type Error = Infallible;
+
+    fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
+        match (a, b) {
+            (Type::IntVar(id_a), Type::IntVar(id_b)) => {
+                Ok(Type::IntVar(cmp::min(id_a.index(), id_b.index()).into()))
+            }
+            (Type::IntVar(id_a), Type::Var(id_b)) | (Type::Var(id_b), Type::IntVar(id_a)) => {
+                Ok(Type::IntVar(cmp::min(id_a.index(), id_b.index()).into()))
+            }
+            (Type::Var(id_a), Type::Var(id_b)) => {
+                Ok(Type::Var(cmp::min(id_a.index(), id_b.index()).into()))
+            }
+            (Type::IntVar(_), integer @ (Type::Int | Type::UInt | Type::Byte))
+            | (integer @ (Type::Int | Type::UInt | Type::Byte), Type::IntVar(_)) => {
+                Ok(integer.clone())
+            }
+            (ty, Type::Var(_)) | (Type::Var(_), ty) => Ok(ty.clone()),
+            (ty_a, ty_b) => {
+                panic!("shouldn't be unifying two concrete types {ty_a:?} and {ty_b:?}")
+            }
+        }
+    }
 }
 
 impl TypeChecker {
@@ -73,5 +101,22 @@ impl TypeChecker {
 
     fn unify_all(&mut self, tys_a: &[TypeS], tys_b: &[TypeS]) -> TypeResult<()> {
         iter::zip(tys_a, tys_b).try_for_each(|(a, b)| self.unify(a, b))
+    }
+
+    fn occurs(&mut self, var: TypeId, ty: &TypeS) -> bool {
+        if let Some(n_ty) = self.normalize(ty) {
+            return self.occurs(var, &n_ty);
+        };
+
+        match &ty.inner {
+            Type::Named { generics: args, .. } => args.iter().any(|ty| self.occurs(var, ty)),
+            Type::Var(_) | Type::IntVar(_) => false,
+            Type::Int | Type::UInt | Type::Byte | Type::Float | Type::Bool | Type::Char => false,
+            Type::Array(inner_ty) => self.occurs(var, inner_ty),
+            Type::Tuple(tys) => tys.iter().any(|ty| self.occurs(var, ty)),
+            Type::Func(param_tys, result_ty) => {
+                self.occurs(var, result_ty) || param_tys.iter().any(|ty| self.occurs(var, ty))
+            }
+        }
     }
 }

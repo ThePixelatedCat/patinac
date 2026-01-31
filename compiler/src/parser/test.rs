@@ -214,7 +214,7 @@ fn parse_compound_expressions() {
         .spanned(0..21)
     );
 
-    let expr = parse_expr("(|a, b: Int| -> a + b)(1, 2)");
+    let expr = parse_expr("(fn(a, b: Int) -> a + b)(1, 2)");
     assert_eq!(
         expr,
         Expr::FnCall {
@@ -225,7 +225,7 @@ fn parse_compound_expressions() {
                         ident: "a".into(),
                         type_annotation: None
                     }
-                    .spanned(2..3),
+                    .spanned(4..5),
                     Binding::Var {
                         mutable: false,
                         ident: "b".into(),
@@ -234,28 +234,28 @@ fn parse_compound_expressions() {
                                 name: "Int".into(),
                                 generics: vec![]
                             }
-                            .spanned(8..11)
+                            .spanned(10..13)
                         )
                     }
-                    .spanned(5..11)
+                    .spanned(7..13)
                 ],
                 return_type: None,
                 body: Expr::BinaryOp {
                     op: Bop::Add,
-                    lhs: Expr::Ident("a".into()).spanned(16..17).into(),
-                    rhs: Expr::Ident("b".into()).spanned(20..21).into()
+                    lhs: Expr::Ident("a".into()).spanned(18..19).into(),
+                    rhs: Expr::Ident("b".into()).spanned(22..23).into()
                 }
-                .spanned(16..21)
+                .spanned(18..23)
                 .into()
             }
-            .spanned(0..22)
+            .spanned(0..24)
             .into(),
             args: vec![
-                Expr::Int(1).spanned(23..24).into(),
-                Expr::Int(2).spanned(26..27).into()
+                Expr::Int(1).spanned(25..26).into(),
+                Expr::Int(2).spanned(28..29).into()
             ]
         }
-        .spanned(0..28)
+        .spanned(0..30)
     );
 
     let expr = parse_expr("[1, 2, 3][1-1]");

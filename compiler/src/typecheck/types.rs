@@ -27,7 +27,9 @@ pub enum Type {
 
 impl From<AstType> for Type {
     fn from(value: AstType) -> Self {
+        // TODO handle primitives properly
         match value {
+            AstType::Named { name, .. } if name == "Int" => Type::Int,
             AstType::Named { name, generics } => Type::Named {
                 name,
                 generics: generics.into_iter().map(TypeS::from).collect(),
@@ -38,27 +40,6 @@ impl From<AstType> for Type {
                 params.into_iter().map(TypeS::from).collect(),
                 Box::new((*result).into()),
             ),
-        }
-    }
-}
-
-impl UnifyValue for Type {
-    type Error = Infallible;
-
-    fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
-        match (a, b) {
-            (Type::IntVar(id_a), Type::Var(id_b)) | (Type::Var(id_b), Type::IntVar(id_a)) => {
-                Ok(Type::IntVar(cmp::min(id_a.index(), id_b.index()).into()))
-            }
-            (Type::Var(id_a), Type::Var(id_b)) => {
-                Ok(Type::Var(cmp::min(id_a.index(), id_b.index()).into()))
-            }
-            (ty @ Type::Named { .. }, Type::Var(_)) | (Type::Var(_), ty @ Type::Named { .. }) => {
-                Ok(ty.clone())
-            }
-            (_, _) => {
-                panic!("shouldn't be unifying two concrete types")
-            }
         }
     }
 }

@@ -5,7 +5,7 @@ use std::{error::Error, fmt::Display};
 pub type TypeResult<T = TypeS> = Result<T, TypeErrorS>;
 
 span! { TypeError as TypeErrorS }
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TypeError {
     UnboundIdent(String),
     MismatchedTypes(TypeS, TypeS),
