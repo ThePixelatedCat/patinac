@@ -1,4 +1,4 @@
-use std::{cmp, convert::Infallible, fmt::Display, iter};
+use std::{cmp, convert::Infallible, fmt::Display};
 
 use ena::unify::{UnifyKey, UnifyValue};
 
@@ -21,6 +21,7 @@ pub enum Type {
     Tuple(Vec<TypeS>),
     Func(Vec<TypeS>, Box<TypeS>),
     Var(TypeId),
+    IntVar(TypeId),
     Named { name: String, generics: Vec<TypeS> },
 }
 
@@ -46,6 +47,9 @@ impl UnifyValue for Type {
 
     fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
         match (a, b) {
+            (Type::IntVar(id_a), Type::Var(id_b)) | (Type::Var(id_b), Type::IntVar(id_a)) => {
+                Ok(Type::IntVar(cmp::min(id_a.index(), id_b.index()).into()))
+            }
             (Type::Var(id_a), Type::Var(id_b)) => {
                 Ok(Type::Var(cmp::min(id_a.index(), id_b.index()).into()))
             }
@@ -78,8 +82,8 @@ impl Type {
         Self::Tuple(vec![])
     }
 
-    pub fn str() -> Self {
-        Self::named("Str")
+    pub fn string() -> Self {
+        Self::named("String")
     }
 }
 
@@ -87,6 +91,7 @@ impl Display for TypeS {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.inner {
             Type::Var(_) => write!(f, "type var at {}", self.span),
+            Type::IntVar(_) => "{integer}".fmt(f),
             Type::Named {
                 name,
                 generics: args,
@@ -99,13 +104,15 @@ impl Display for TypeS {
             }
             Type::Int => "Int".fmt(f),
             Type::UInt => "UInt".fmt(f),
-            Type::Byte => todo!(),
-            Type::Float => todo!(),
-            Type::Bool => todo!(),
-            Type::Char => todo!(),
-            Type::Array(spanned) => todo!(),
-            Type::Tuple(spanneds) => todo!(),
-            Type::Func(spanneds, spanned) => todo!(),
+            Type::Byte => "Byte".fmt(f),
+            Type::Float => "Float".fmt(f),
+            Type::Bool => "Bool".fmt(f),
+            Type::Char => "Char".fmt(f),
+            Type::Array(ty) => write!(f, "[{ty}]"),
+            Type::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
+            Type::Func(param_tys, result_ty) => {
+                write!(f, "fn({}): {result_ty}", itertools::join(param_tys, ", "))
+            }
         }
     }
 }

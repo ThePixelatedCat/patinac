@@ -3,14 +3,6 @@ use std::{
     ops::{Deref, Range},
 };
 
-pub fn concat(items: &[impl ToString]) -> String {
-    items
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<String>>()
-        .join(", ")
-}
-
 #[macro_export]
 macro_rules! span {
     ($t:ident as $s:ident) => {
