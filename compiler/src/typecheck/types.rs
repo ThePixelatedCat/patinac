@@ -1,14 +1,9 @@
-use std::{cmp, convert::Infallible, fmt::Display};
+use std::fmt::Display;
 
-use ena::unify::{UnifyKey, UnifyValue};
+use ena::unify::UnifyKey;
 
-use crate::{
-    helpers::Spanned,
-    parser::ast::{Type as AstType, TypeS as AstTypeS},
-    span,
-};
+use crate::parser::ast::Type as AstType;
 
-span! { Type as TypeS }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     Int,
@@ -17,12 +12,12 @@ pub enum Type {
     Float,
     Bool,
     Char,
-    Array(Box<TypeS>),
-    Tuple(Vec<TypeS>),
-    Func(Vec<TypeS>, Box<TypeS>),
+    Array(Box<Type>),
+    Tuple(Vec<Type>),
+    Func(Vec<Type>, Box<Type>),
     Var(TypeId),
     IntVar(TypeId),
-    Named { name: String, generics: Vec<TypeS> },
+    Named { name: String, generics: Vec<Type> },
 }
 
 impl From<AstType> for Type {
@@ -32,13 +27,13 @@ impl From<AstType> for Type {
             AstType::Named { name, .. } if name == "Int" => Type::Int,
             AstType::Named { name, generics } => Type::Named {
                 name,
-                generics: generics.into_iter().map(TypeS::from).collect(),
+                generics: generics.into_iter().map(|ty| ty.inner.into()).collect(),
             },
-            AstType::Array(ty) => Type::Array(Box::new((*ty).into())),
-            AstType::Tuple(tys) => Type::Tuple(tys.into_iter().map(TypeS::from).collect()),
+            AstType::Array(ty) => Type::Array(Box::new((*ty).inner.into())),
+            AstType::Tuple(tys) => Type::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect()),
             AstType::Fn { params, result } => Type::Func(
-                params.into_iter().map(TypeS::from).collect(),
-                Box::new((*result).into()),
+                params.into_iter().map(|ty| ty.inner.into()).collect(),
+                Box::new((*result).inner.into()),
             ),
         }
     }
@@ -68,10 +63,10 @@ impl Type {
     }
 }
 
-impl Display for TypeS {
+impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.inner {
-            Type::Var(_) => write!(f, "type var at {}", self.span),
+        match &self {
+            Type::Var(_) => "{var}".fmt(f),
             Type::IntVar(_) => "{integer}".fmt(f),
             Type::Named {
                 name,
@@ -98,11 +93,17 @@ impl Display for TypeS {
     }
 }
 
-impl From<AstTypeS> for TypeS {
-    fn from(ty: AstTypeS) -> Self {
-        Spanned::span(ty.inner.into(), ty.span)
-    }
-}
+// impl Display for TypeS {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         self.inner.fmt(f)
+//     }
+// }
+
+// impl From<AstTypeS> for TypeS {
+//     fn from(ty: AstTypeS) -> Self {
+//         Spanned::span(ty.inner.into(), ty.span)
+//     }
+// }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TypeId(u32);

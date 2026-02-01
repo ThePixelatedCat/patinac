@@ -96,21 +96,28 @@ fn maybe_multiple_char_tokens() {
 
 #[test]
 fn keywords() {
-    let mut lexer = Lexer::new("if struct mut let enum = match else fn");
+    let mut lexer =
+        Lexer::new("if Int struct Byte let mut UInt enum Float = match Bool else Char fn");
     let tokens: Vec<_> = tokenize(&mut lexer);
     assert_tokens!(
         tokens,
         [
             T::If.spanned(0..2),
-            T::Struct.spanned(3..9),
-            T::Mut.spanned(10..13),
-            T::Let.spanned(14..17),
-            T::Enum.spanned(18..22),
-            T::Eq.spanned(23..24),
-            T::Match.spanned(25..30),
-            T::Else.spanned(31..35),
-            T::Fn.spanned(36..38),
-            T::Eof.spanned(38..38),
+            T::Int.spanned(3..6),
+            T::Struct.spanned(7..13),
+            T::Byte.spanned(14..18),
+            T::Let.spanned(19..22),
+            T::Mut.spanned(23..26),
+            T::UInt.spanned(27..31),
+            T::Enum.spanned(32..36),
+            T::Float.spanned(37..42),
+            T::Eq.spanned(43..44),
+            T::Match.spanned(45..50),
+            T::Bool.spanned(51..55),
+            T::Else.spanned(56..60),
+            T::Char.spanned(61..65),
+            T::Fn.spanned(66..68),
+            T::Eof.spanned(68..68),
         ]
     );
 }
@@ -152,7 +159,7 @@ fn literals() {
 fn function() {
     let input = r#"
         // this is a comment!
-        fn test(var: Type, var2_: bool) {
+        fn test(var: Type, var2_: Bool) {
             let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2 ** 4;
             let mut chars = x.chars();
             if let Some(c) = chars.next() {
@@ -177,7 +184,7 @@ fn function() {
             T::Comma.spanned(56..57),
             T::Ident.spanned(58..63),
             T::Colon.spanned(63..64),
-            T::Ident.spanned(65..69),
+            T::Bool.spanned(65..69),
             T::RParen.spanned(69..70),
             T::LBrace.spanned(71..72),
             // `x` assignment

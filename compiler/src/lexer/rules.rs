@@ -39,7 +39,7 @@ static CHAR_REGEX: LazyLock<Regex> =
 static IDENTIFIER_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
 
-pub(super) const RULES: [Rule; 47] = {
+pub(super) const RULES: [Rule; 53] = {
     use TokenType as T;
     [
         |input| match_regex(input, &INT_REGEX).map(|len| (T::IntLit, len)),
@@ -77,6 +77,12 @@ pub(super) const RULES: [Rule; 47] = {
         |input| match_two_chars(input, '|', '|').map(|len| (T::Or, len)),
         |input| match_two_chars(input, '<', '=').map(|len| (T::Leq, len)),
         |input| match_two_chars(input, '>', '=').map(|len| (T::Geq, len)),
+        |input| match_keyword(input, "Int").map(|len| (T::Int, len)),
+        |input| match_keyword(input, "UInt").map(|len| (T::UInt, len)),
+        |input| match_keyword(input, "Byte").map(|len| (T::Byte, len)),
+        |input| match_keyword(input, "Float").map(|len| (T::Float, len)),
+        |input| match_keyword(input, "Bool").map(|len| (T::Bool, len)),
+        |input| match_keyword(input, "Char").map(|len| (T::Char, len)),
         |input| match_keyword(input, "let").map(|len| (T::Let, len)),
         |input| match_keyword(input, "mut").map(|len| (T::Mut, len)),
         |input| match_keyword(input, "const").map(|len| (T::Const, len)),

@@ -1,4 +1,4 @@
-use super::{BindingInfo, Type, TypeChecker, TypeError, TypeResult, TypeS};
+use super::{BindingInfo, Type, TypeChecker, TypeError, TypeResult};
 use crate::helpers::{Span, Spanned};
 use crate::parser::ast::{Ast, Binding, BindingS, Bop, Expr, ExprS, Item, Unop};
 
@@ -13,14 +13,13 @@ impl TypeChecker {
                 Type::UInt
             } else {
                 self.fresh_int_var()
-            }
-            .spanned(expr.span)),
-            Expr::Float(_) => Ok(Type::Float.spanned(expr.span)),
-            Expr::Str(_) => Ok(Type::string().spanned(expr.span)),
-            Expr::Char(_) => Ok(Type::Char.spanned(expr.span)),
-            Expr::Bool(_) => Ok(Type::Bool.spanned(expr.span)),
-            Expr::Array(vals) => self.type_of_array(vals, expr.span),
-            Expr::Tuple(vals) => self.type_of_tuple(vals, expr.span),
+            }),
+            Expr::Float(_) => Ok(Type::Float),
+            Expr::Str(_) => Ok(Type::string()),
+            Expr::Char(_) => Ok(Type::Char),
+            Expr::Bool(_) => Ok(Type::Bool),
+            Expr::Array(vals) => self.type_of_array(vals),
+            Expr::Tuple(vals) => self.type_of_tuple(vals),
             Expr::FnCall { fun, args } => self.type_of_fn_call(fun, args, expr.span),
             Expr::BinaryOp { op, lhs, rhs } => self.type_of_binary_op(*op, lhs, rhs, expr.span),
             Expr::UnaryOp { op, expr } => self.type_of_unary_op(*op, expr),
@@ -29,7 +28,7 @@ impl TypeChecker {
             Expr::If { cond, th, el } => self.type_of_if(cond, th, el.as_deref()),
             Expr::Let { binding, value } => self.type_of_let(binding, value, expr.span),
             Expr::Assign { ident, value } => {
-                self.type_of_assign(ident.as_deref(), value, expr.span)
+                self.type_of_assign(ident.as_deref(), value)
             }
             Expr::Lambda {
                 params,
@@ -42,30 +41,29 @@ impl TypeChecker {
 
     fn type_of_ident(&self, ident: Spanned<&str>) -> TypeResult {
         self.get_binding(ident)
-            .map(|b| b.ty.clone().spanned(ident.span))
+            .map(|b| b.ty.clone())
     }
 
-    fn type_of_array(&mut self, vals: &[ExprS], span: Span) -> TypeResult {
+    fn type_of_array(&mut self, vals: &[ExprS]) -> TypeResult {
         let inner_ty = match vals.first() {
             Some(e) => self.type_of(e)?,
-            None => self.fresh_var().spanned(span),
+            None => self.fresh_var(),
         };
 
         vals[1..].iter().try_for_each(|v| {
             let this_ty = self.type_of(v)?;
-            self.unify(&inner_ty, &this_ty)
+            self.unify(&inner_ty, &this_ty).map_err(|e| e.spanned(v.span))
         })?;
 
-        Ok(Type::Array(Box::new(inner_ty)).spanned(span))
+        Ok(Type::Array(Box::new(inner_ty)))
     }
 
-    fn type_of_tuple(&mut self, vals: &[ExprS], span: Span) -> TypeResult {
+    fn type_of_tuple(&mut self, vals: &[ExprS]) -> TypeResult {
         Ok(Type::Tuple(
             vals.iter()
                 .map(|e| self.type_of(e))
                 .collect::<TypeResult<_>>()?,
-        )
-        .spanned(span))
+        ))
     }
 
     fn type_of_fn_call(&mut self, fun: &ExprS, args: &Vec<ExprS>, span: Span) -> TypeResult {
@@ -113,24 +111,24 @@ impl TypeChecker {
             | Bop::Lt
             | Bop::Geq
             | Bop::Leq => {
-                let lhs_var = self.fresh_int_var().spanned(lhs.span);
-                let rhs_var = self.fresh_int_var().spanned(rhs.span);
+                let lhs_var = self.fresh_int_var();
+                let rhs_var = self.fresh_int_var();
 
-                self.unify(&lhs_ty, &lhs_var);
-                self.unify(&rhs_ty, &rhs_var);
+                self.unify(&lhs_ty, &lhs_var)?;
+                self.unify(&rhs_ty, &rhs_var)?;
 
-                self.unify(&lhs_ty, &rhs_ty);
+                self.unify(&lhs_ty, &rhs_ty)?;
 
                 Ok(lhs_ty)
             }
             Bop::And | Bop::Or | Bop::Xor => {
-                self.unify(&lhs_ty, &Type::Bool.spanned(lhs.span));
-                self.unify(&rhs_ty, &Type::Bool.spanned(rhs.span));
-                Ok(Type::Bool.spanned(span))
+                self.unify(&lhs_ty, &Type::Bool)?;
+                self.unify(&rhs_ty, &Type::Bool)?;
+                Ok(Type::Bool)
             }
             Bop::Eqq | Bop::Neq => {
                 self.unify(&lhs_ty, &rhs_ty)?;
-                Ok(Type::Bool.spanned(span))
+                Ok(Type::Bool)
             }
         }
     }
@@ -140,12 +138,12 @@ impl TypeChecker {
 
         match op {
             Unop::Not => {
-                self.unify(&expr_ty, &Type::Bool.spanned(expr.span))?;
+                self.unify(&expr_ty, &Type::Bool)?;
             }
             // TODO confirm logic??
             Unop::Neg => {
-                self.unify(&expr_ty, &Type::Int.spanned(expr.span))
-                    .or_else(|_| self.unify(&expr_ty, &Type::Float.spanned(expr.span)))?;
+                self.unify(&expr_ty, &Type::Int)
+                    .or_else(|_| self.unify(&expr_ty, &Type::Float))?;
             }
         }
 
@@ -154,11 +152,11 @@ impl TypeChecker {
 
     fn type_of_indexing(&mut self, arr: &ExprS, index: &ExprS) -> TypeResult {
         let index_type = self.type_of(index)?;
-        self.unify(&index_type, &Type::UInt.spanned(index_type.span))?;
+        self.unify(&index_type, &Type::UInt)?;
 
         let arr_type = self.type_of(arr)?;
         let arr_var =
-            Type::Array(Box::new(self.fresh_var().spanned(arr.span))).spanned(arr_type.span);
+            Type::Array(Box::new(self.fresh_var()));
         self.unify(&arr_type, &arr_var)?;
 
         Ok(arr_type)
@@ -166,20 +164,22 @@ impl TypeChecker {
 
     fn type_of_if(&mut self, cond: &ExprS, th: &ExprS, el: Option<&ExprS>) -> TypeResult {
         let cond_type = self.type_of(cond)?;
-        self.unify(&cond_type, &Type::Bool.spanned(cond_type.span));
+        self.unify(&cond_type, &Type::Bool).map_err(|e| e.spanned(cond.span))?;
 
         let th_type = self.type_of(th)?;
 
-        let el_type = match el {
-            Some(el) => self.type_of(el)?,
-            None => Type::unit().spanned(th.span.end..th.span.end + 1),
+        match el {
+            Some(el) => {
+                let el_type = self.type_of(el)?;
+                self.unify(&th_type, &el_type).map_err(|e| e.spanned(el.span))?;
+            },
+            None => self.unify(&Type::unit(), &th_type).map_err(|e| e.spanned(th.span))?,
         };
 
-        self.unify(&th_type, &el_type);
         Ok(th_type)
     }
 
-    fn type_of_let(&mut self, binding: &BindingS, value: &ExprS, span: Span) -> TypeResult {
+    fn type_of_let(&mut self, binding: &BindingS, value: &ExprS) -> TypeResult {
         let Binding::Var {
             mutable,
             ident,
@@ -189,32 +189,32 @@ impl TypeChecker {
         let expr_ty = self.type_of(value)?;
 
         if let Some(annotated_ty) = type_annotation {
-            self.unify(&expr_ty, &annotated_ty.clone().into())?;
+            self.unify(&expr_ty, &annotated_ty.inner.clone().into()).map_err(|e| e.spanned(value.span))?;
         }
 
         self.env.insert(
             ident.to_owned(),
             BindingInfo {
-                ty: expr_ty.inner,
+                ty: expr_ty,
                 mutable: *mutable,
             },
         );
 
-        Ok(Type::unit().spanned(span))
+        Ok(Type::unit())
     }
 
-    fn type_of_assign(&mut self, ident: Spanned<&str>, value: &ExprS, span: Span) -> TypeResult {
+    fn type_of_assign(&mut self, ident: Spanned<&str>, value: &ExprS) -> TypeResult {
         let assigned_ty = self.type_of(value)?;
 
         let info = self.get_binding(ident)?;
 
         if !info.mutable {
-            return Err(TypeError::Mutation(ident.inner.to_owned()).spanned(span));
+            return Err(TypeError::Mutation(ident.inner.to_owned()).spanned(ident.span));
         }
 
-        self.unify(&info.ty.clone().spanned(ident.span), &assigned_ty)?;
+        self.unify(&info.ty.clone(), &assigned_ty).map_err(|e| e.spanned(value.span))?;
 
-        Ok(Type::unit().spanned(span))
+        Ok(Type::unit())
     }
 
     fn type_of_block(&self, exprs: &[ExprS], trailing: bool, span: &Span) -> TypeResult {

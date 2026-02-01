@@ -5,14 +5,14 @@ mod test;
 mod types;
 mod unify;
 
-use std::{collections::HashMap, iter, slice};
+use std::{collections::HashMap};
 
 use crate::{
-    helpers::{Span, Spanned},
+    helpers::Spanned,
     parser::ast::{Ast, Binding, BindingS, Bop, Expr, ExprS, Item, Unop},
     typecheck::{
         error::TypeErrorS,
-        types::{Type, TypeId, TypeS},
+        types::{Type, TypeId},
     },
 };
 
@@ -52,13 +52,11 @@ impl TypeChecker {
         var
     }
 
-    fn normalize(&mut self, ty: &TypeS) -> Option<TypeS> {
-        ty.inner
-            .id()
-            .and_then(|var| match self.table.probe_value(var) {
-                Type::Var(_) => None,
-                bound_ty => Some(bound_ty.clone().spanned(ty.span)),
-            })
+    fn normalize(&mut self, ty: &Type) -> Option<Type> {
+        ty.id().and_then(|var| match self.table.probe_value(var) {
+            Type::Var(_) => None,
+            bound_ty => Some(bound_ty),
+        })
     }
 
     pub fn new(ast: &Ast) -> Self {
