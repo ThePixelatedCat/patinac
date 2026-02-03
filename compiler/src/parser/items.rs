@@ -51,15 +51,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let end = value.span.end;
 
         Ok(Item::Const { name, ty, value }.spanned(start..end))
-    } 
+    }
 
     fn func_item(&mut self) -> ParseResult<ItemS> {
         let start = self.next().unwrap().span.start;
 
         let name = self.ident()?.inner;
 
-        let params =
-            self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
+        let params = self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
 
         let return_type = if self.consume_at(TokenType::Colon) {
             Some(self.type_()?)
@@ -73,7 +72,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let end = body.span.end;
 
-        Ok(Item::Function {
+        Ok(Item::Func {
             name,
             params: params.inner,
             return_ty: return_type,
@@ -120,15 +119,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                             inner: fields,
                             span: fields_span,
                         } = this.fields()?;
-                        Variant::Struct(name.inner, fields)
-                            .spanned(start..fields_span.end)
+                        Variant::Struct(name.inner, fields).spanned(start..fields_span.end)
                     }
                     TokenType::LParen => {
-                        let Spanned { inner: vals, span } = this.delimited_list(
-                            Self::type_,
-                            TokenType::LParen,
-                            TokenType::RParen,
-                        )?;
+                        let Spanned { inner: vals, span } =
+                            this.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
 
                         Variant::Tuple(name.inner, vals).spanned(start..span.end)
                     }

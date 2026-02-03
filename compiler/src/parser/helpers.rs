@@ -109,7 +109,10 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         if self.peek() == TokenType::Ident {
             let span = self.next().unwrap().span;
 
-            Ok(Spanned::span(self.input[Range::from(span)].to_string(), span))
+            Ok(Spanned::span(
+                self.input[Range::from(span)].to_string(),
+                span,
+            ))
         } else {
             let token = self.next().unwrap();
 

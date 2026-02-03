@@ -5,7 +5,7 @@ mod test;
 mod types;
 mod unify;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, iter, rc::Rc};
 
 use ena::unify::{InPlace, UnificationTable, UnifyKey};
 use im::HashMap;
@@ -106,7 +106,7 @@ impl TypeChecker {
                         },
                     );
                 }
-                Item::Function {
+                Item::Func {
                     name,
                     params,
                     return_ty,
@@ -162,12 +162,42 @@ impl TypeChecker {
                     self.unify(binding_ty, &val_ty)
                         .map_err(|e| e.spanned(value.span))?;
                 }
-                Item::Function { name, body, .. } => {
-                    let body_ty = self.clone().type_of(body)?;
-                    let BindingInfo { ty: binding_ty, .. } = self
+                Item::Func {
+                    name, params, body, ..
+                } => {
+                    let mut snapshot = self.clone();
+
+                    let BindingInfo {
+                        ty: Type::Fn(param_tys, return_ty),
+                        ..
+                    } = self
                         .get_binding(name)
-                        .expect("was added to env in initial iteration");
-                    self.unify(binding_ty, &body_ty)
+                        .expect("was added to env in initial iteration")
+                    else {
+                        unreachable!("inserted type is always a function")
+                    };
+
+                    iter::zip(params, param_tys).for_each(
+                        |(
+                            Spanned {
+                                inner: Binding::Var { mutable, ident, .. },
+                                ..
+                            },
+                            ty,
+                        )| {
+                            snapshot.env.insert(
+                                ident.clone(),
+                                BindingInfo {
+                                    ty: ty.clone(),
+                                    mutable: *mutable,
+                                },
+                            );
+                        },
+                    );
+
+                    let body_ty = snapshot.type_of(body)?;
+
+                    snapshot.unify(return_ty, &body_ty)
                         .map_err(|e| e.spanned(body.span))?;
                 }
                 Item::Struct {

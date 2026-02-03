@@ -17,7 +17,6 @@ fn main() -> anyhow::Result<()> {
     let mut parser = Parser::new(&source);
 
     let ast = parser.file()?;
-    println!("{ast:?}");
 
     TypeChecker::new().check(&ast)?;
 

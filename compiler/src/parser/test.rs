@@ -660,7 +660,7 @@ fn enum_items() {
 fn function_items() {
     assert_eq!(
         parse_item(r#"fn sum(mut a, b: Byte) -> a + b"#),
-        Item::Function {
+        Item::Func {
             name: "sum".into(),
             params: vec![
                 Binding::Var {
@@ -752,7 +752,7 @@ fn file() {
 
     assert_eq!(
         items[0],
-        Item::Function {
+        Item::Func {
             name: "wow_we_did_it".into(),
             params: vec![
                 Binding::Var {

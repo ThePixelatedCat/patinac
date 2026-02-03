@@ -10,7 +10,7 @@ pub enum Item {
         ty: TypeS,
         value: ExprS,
     },
-    Function {
+    Func {
         name: String,
         params: Vec<BindingS>,
         return_ty: Option<TypeS>,
