@@ -14,35 +14,40 @@ pub enum Type {
     Char,
     Array(Box<Type>),
     Tuple(Vec<Type>),
-    Func(Vec<Type>, Box<Type>),
+    Fn(Vec<Type>, Box<Type>),
     Var(TypeId),
     IntVar(TypeId),
-    Named { name: String, generics: Vec<Type> },
+    Named { name: String, args: Vec<Type> },
 }
 
 impl From<AstType> for Type {
     fn from(value: AstType) -> Self {
         // TODO handle primitives properly
         match value {
-            AstType::Named { name, .. } if name == "Int" => Type::Int,
-            AstType::Named { name, generics } => Type::Named {
+            AstType::Int => Self::Int,
+            AstType::UInt => Self::UInt,
+            AstType::Byte => Self::Byte,
+            AstType::Float => Self::Float,
+            AstType::Bool => Self::Bool,
+            AstType::Char => Self::Char,
+            AstType::Named { name, args } => Self::Named {
                 name,
-                generics: generics.into_iter().map(|ty| ty.inner.into()).collect(),
+                args: args.into_iter().map(|ty| ty.inner.into()).collect(),
             },
-            AstType::Array(ty) => Type::Array(Box::new((*ty).inner.into())),
-            AstType::Tuple(tys) => Type::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect()),
-            AstType::Fn { params, result } => Type::Func(
-                params.into_iter().map(|ty| ty.inner.into()).collect(),
-                Box::new((*result).inner.into()),
+            AstType::Array(ty) => Self::Array(Box::new(ty.inner.into())),
+            AstType::Tuple(tys) => Self::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect()),
+            AstType::Fn(param_tys, return_ty) => Self::Fn(
+                param_tys.into_iter().map(|ty| ty.inner.into()).collect(),
+                Box::new(return_ty.inner.into()),
             ),
         }
     }
 }
 
 impl Type {
-    pub fn id(&self) -> Option<TypeId> {
+    pub const fn id(&self) -> Option<TypeId> {
         match self {
-            Type::Var(id) => Some(*id),
+            Self::Var(id) | Self::IntVar(id) => Some(*id),
             _ => None,
         }
     }
@@ -50,11 +55,11 @@ impl Type {
     pub fn named(name: &str) -> Self {
         Self::Named {
             name: name.into(),
-            generics: vec![],
+            args: vec![],
         }
     }
 
-    pub fn unit() -> Self {
+    pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
 
@@ -66,62 +71,44 @@ impl Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Type::Var(_) => "{var}".fmt(f),
-            Type::IntVar(_) => "{integer}".fmt(f),
-            Type::Named {
-                name,
-                generics: args,
-            } => {
+            Self::Var(_) => "{var}".fmt(f),
+            Self::IntVar(_) => "{integer}".fmt(f),
+            Self::Named { name, args } => {
                 write!(f, "{name}")?;
                 if !args.is_empty() {
                     write!(f, "<{}>", itertools::join(args, ", "))?;
                 }
                 Ok(())
             }
-            Type::Int => "Int".fmt(f),
-            Type::UInt => "UInt".fmt(f),
-            Type::Byte => "Byte".fmt(f),
-            Type::Float => "Float".fmt(f),
-            Type::Bool => "Bool".fmt(f),
-            Type::Char => "Char".fmt(f),
-            Type::Array(ty) => write!(f, "[{ty}]"),
-            Type::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
-            Type::Func(param_tys, result_ty) => {
+            Self::Int => "Int".fmt(f),
+            Self::UInt => "UInt".fmt(f),
+            Self::Byte => "Byte".fmt(f),
+            Self::Float => "Float".fmt(f),
+            Self::Bool => "Bool".fmt(f),
+            Self::Char => "Char".fmt(f),
+            Self::Array(ty) => write!(f, "[{ty}]"),
+            Self::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
+            Self::Fn(param_tys, result_ty) => {
                 write!(f, "fn({}): {result_ty}", itertools::join(param_tys, ", "))
             }
         }
     }
 }
 
-// impl Display for TypeS {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         self.inner.fmt(f)
-//     }
-// }
-
-// impl From<AstTypeS> for TypeS {
-//     fn from(ty: AstTypeS) -> Self {
-//         Spanned::span(ty.inner.into(), ty.span)
-//     }
-// }
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TypeId(u32);
-
-impl From<u32> for TypeId {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
-}
 
 impl UnifyKey for TypeId {
     type Value = Type;
+
     fn index(&self) -> u32 {
         self.0
     }
-    fn from_index(u: u32) -> TypeId {
-        u.into()
+
+    fn from_index(id: u32) -> Self {
+        Self(id)
     }
+
     fn tag() -> &'static str {
         "TypeId"
     }

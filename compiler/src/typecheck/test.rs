@@ -1,16 +1,12 @@
-use std::collections::HashMap;
-
-use ena::unify::UnificationTable;
-
 use super::{Type, TypeChecker, TypeError};
-use crate::parser::{Parser, ast::ExprS};
+use crate::{
+    parser::{Parser, ast::ExprS},
+    typecheck::error::TypeErrorS,
+};
 
 #[test]
 fn unify() {
-    let mut checker = TypeChecker {
-        env: HashMap::new(),
-        table: UnificationTable::new(),
-    };
+    let checker = TypeChecker::default();
 
     let t = checker.fresh_var();
     let u = checker.fresh_var();
@@ -18,20 +14,23 @@ fn unify() {
     let tuple_a = Type::Tuple(vec![t.clone(), Type::UInt]);
     let tuple_b = Type::Tuple(vec![Type::Int, u.clone()]);
 
-    assert!(checker.unify(&tuple_a, &tuple_b).is_ok());
+    assert_eq!(checker.unify(&tuple_a, &tuple_b), Ok(()));
 
     let option_t = Type::Named {
         name: String::from("Option"),
-        generics: vec![t],
+        args: vec![t],
     };
     let option_u = Type::Named {
         name: String::from("Option"),
-        generics: vec![u],
+        args: vec![u],
     };
 
     assert_eq!(
         checker.unify(&option_t, &option_u),
-        Err(TypeError::MismatchedTypes { expected: Type::Int, found: Type::UInt })
+        Err(TypeError::MismatchedTypes {
+            expected: Type::Int,
+            found: Type::UInt
+        })
     );
 }
 
@@ -39,8 +38,87 @@ fn parse_expr(input: &str) -> ExprS {
     Parser::new(input).expression().unwrap()
 }
 
+fn check_expr(input: &str) -> Result<Type, TypeErrorS> {
+    let mut checker = TypeChecker::default();
+    let ty = checker.type_of(&parse_expr(input))?;
+    Ok(checker.normalise(ty))
+}
+
 #[test]
-fn typecheck_int() {
+fn type_of_if_single_branch() {
+    assert_eq!(check_expr("if (true) {5;}"), Ok(Type::unit()))
+}
+
+#[test]
+fn type_of_if_single_branch_err() {
+    assert_eq!(
+        check_expr("if (true) 5.0"),
+        Err(TypeError::MismatchedTypes {
+            expected: Type::unit(),
+            found: Type::Float
+        }
+        .spanned(10..13))
+    )
+}
+
+#[test]
+fn type_of_if() {
+    assert_eq!(check_expr("if (true) 5 else -3"), Ok(Type::Int))
+}
+
+#[test]
+fn type_of_if_err() {
+    assert_eq!(
+        check_expr(r#"if (true) "true" else false"#),
+        Err(TypeError::MismatchedTypes {
+            expected: Type::string(),
+            found: Type::Bool
+        }
+        .spanned(22..27))
+    )
+}
+
+#[test]
+fn type_of_array_indexing() {
+    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5][0]"), Ok(Type::Int));
+}
+
+#[test]
+fn type_of_let_assign() {
+    let mut checker = TypeChecker::default();
+
+    let ty = checker.type_of(&parse_expr("let mut a = 1")).unwrap();
+    assert_eq!(checker.normalise(ty), Type::unit());
+
+    let ty = checker.type_of(&parse_expr("a = 2")).unwrap();
+    assert_eq!(checker.normalise(ty), Type::unit());
+}
+
+#[test]
+fn type_of_lambda() {
+    let input = "fn(a, b): Int -> a + b";
+
+    let mut checker = TypeChecker::default();
+
+    let ty_unbound = checker.type_of(&parse_expr(input)).unwrap();
+
+    let Type::Fn(param_tys, return_ty) = checker.normalise(ty_unbound) else {
+        panic!()
+    };
+
+    assert_eq!(*return_ty, Type::Int);
+    for ty in param_tys {
+        assert_eq!(ty, Type::Int)
+    }
+}
+
+#[test]
+fn maths() {
+    
+}
+
+#[test]
+fn type_of_int() {
     let inputs = ["let a = 5", "a", "let b: Int = 1", "a + b"];
 
     let mut checker = TypeChecker::default();
@@ -53,23 +131,39 @@ fn typecheck_int() {
     checker.type_of(&parse_expr(inputs[2])).unwrap();
     let ty_bound = checker.type_of(&parse_expr(inputs[3])).unwrap();
 
-    assert_eq!(checker.normalize(&ty_bound).unwrap(), Type::Int);
+    assert_eq!(checker.normalise(ty_bound), Type::Int);
 }
 
 #[test]
-fn typecheck_block() {
-    let input = "
-    {
+fn type_of_block() {
+    let input = "{
         let mut y: Int = 5;
         3 + 1 - 2;
         y = 256;
         if (y < 3) {
             let a = -5;
             a
-        } else 32;
+        } else 32
     }";
     let expr = parse_expr(input);
-    let types = TypeChecker::default().type_of(&expr).unwrap();
+    let mut checker = TypeChecker::default();
+    let ty = checker.type_of(&expr).unwrap();
 
-    assert_eq!(types, Type::unit());
+    assert_eq!(checker.normalise(ty), Type::Int);
+}
+
+#[test]
+fn shadowing() {
+    let input = r#"{
+        let a = 5;
+        let a = "Hello, World";
+        {let a = 2};
+        a
+    }"#;
+
+    let expr = parse_expr(input);
+    let mut checker = TypeChecker::default();
+    let ty = checker.type_of(&expr).unwrap();
+
+    assert_eq!(checker.normalise(ty), Type::string());
 }

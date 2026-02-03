@@ -51,23 +51,23 @@ pub enum Binding {
     Var {
         mutable: bool,
         ident: String,
-        type_annotation: Option<TypeS>,
+        annotated_ty: Option<TypeS>,
     },
 }
 
 span! {Type as TypeS}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Named {
-        name: String,
-        generics: Vec<TypeS>,
-    },
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Bool,
+    Char,
     Array(Box<TypeS>),
     Tuple(Vec<TypeS>),
-    Fn {
-        params: Vec<TypeS>,
-        result: Box<TypeS>,
-    },
+    Fn(Vec<TypeS>, Box<TypeS>),
+    Named { name: String, args: Vec<TypeS> },
 }
 
 span! {Expr as ExprS}
@@ -76,7 +76,7 @@ pub enum Expr {
     Ident(String),
     Int(u64),
     Float(f64),
-    Str(String),
+    String(String),
     Char(char),
     Bool(bool),
     Array(Vec<ExprS>),

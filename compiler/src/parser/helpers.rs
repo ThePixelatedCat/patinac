@@ -32,13 +32,19 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         Ok(Binding::Var {
             mutable,
             ident: name,
-            type_annotation,
+            annotated_ty: type_annotation,
         }
         .spanned(start..end))
     }
 
     pub fn type_(&mut self) -> ParseResult<TypeS> {
         Ok(match self.peek() {
+            TokenType::Int => Type::Int.spanned(self.next().unwrap().span),
+            TokenType::UInt => Type::UInt.spanned(self.next().unwrap().span),
+            TokenType::Byte => Type::Byte.spanned(self.next().unwrap().span),
+            TokenType::Float => Type::Float.spanned(self.next().unwrap().span),
+            TokenType::Bool => Type::Bool.spanned(self.next().unwrap().span),
+            TokenType::Char => Type::Char.spanned(self.next().unwrap().span),
             TokenType::Ident => {
                 let span = self.next().unwrap().span;
                 let name = self.input[Range::from(span)].to_string();
@@ -55,7 +61,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     (Vec::new(), span.end)
                 };
 
-                Type::Named { name, generics }.spanned(start..end)
+                Type::Named {
+                    name,
+                    args: generics,
+                }
+                .spanned(start..end)
             }
             TokenType::LBracket => {
                 let start = self.next().unwrap().span.start;
@@ -82,7 +92,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                 let end = result.span.end;
 
-                Type::Fn { params, result }.spanned(start..end)
+                Type::Fn(params, result).spanned(start..end)
             }
             token => {
                 return Err(ParseError::Unexpected(

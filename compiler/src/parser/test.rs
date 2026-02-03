@@ -27,7 +27,7 @@ fn parse_lit_expressions() {
     assert_eq!(expr, Expr::Float(2.7768).spanned(2..8));
 
     let expr = parse_expr(r#""I am a Str!""#);
-    assert_eq!(expr, Expr::Str("I am a Str!".into()).spanned(0..13));
+    assert_eq!(expr, Expr::String("I am a Str!".into()).spanned(0..13));
 
     let expr = parse_expr(r#"(42,(2,),"end")"#);
     assert_eq!(
@@ -35,7 +35,7 @@ fn parse_lit_expressions() {
         Expr::Tuple(vec![
             Expr::Int(42).spanned(1..3),
             Expr::Tuple(vec![Expr::Int(2).spanned(5..6)]).spanned(4..8),
-            Expr::Str("end".into()).spanned(9..14)
+            Expr::String("end".into()).spanned(9..14)
         ])
         .spanned(0..15)
     );
@@ -223,19 +223,13 @@ fn parse_compound_expressions() {
                     Binding::Var {
                         mutable: false,
                         ident: "a".into(),
-                        type_annotation: None
+                        annotated_ty: None
                     }
                     .spanned(4..5),
                     Binding::Var {
                         mutable: false,
                         ident: "b".into(),
-                        type_annotation: Some(
-                            Type::Named {
-                                name: "Int".into(),
-                                generics: vec![]
-                            }
-                            .spanned(10..13)
-                        )
+                        annotated_ty: Some(Type::Int.spanned(10..13))
                     }
                     .spanned(7..13)
                 ],
@@ -303,7 +297,7 @@ fn parse_var_expresssions() {
             binding: Binding::Var {
                 mutable: false,
                 ident: "x".into(),
-                type_annotation: None
+                annotated_ty: None
             }
             .spanned(4..5),
             value: Expr::BinaryOp {
@@ -329,13 +323,7 @@ fn parse_var_expresssions() {
             binding: Binding::Var {
                 mutable: true,
                 ident: "y".into(),
-                type_annotation: Some(
-                    Type::Named {
-                        name: "Int".into(),
-                        generics: vec![]
-                    }
-                    .spanned(11..14)
-                )
+                annotated_ty: Some(Type::Int.spanned(11..14))
             }
             .spanned(4..14),
             value: Expr::Int(7).spanned(17..18).into()
@@ -391,7 +379,7 @@ fn parse_block_expressions() {
                     binding: Binding::Var {
                         mutable: true,
                         ident: "y".into(),
-                        type_annotation: None
+                        annotated_ty: None
                     }
                     .spanned(19..24),
                     value: Expr::Int(5).spanned(27..28).into()
@@ -431,7 +419,7 @@ fn parse_block_expressions() {
                                 binding: Binding::Var {
                                     mutable: false,
                                     ident: "a".into(),
-                                    type_annotation: None
+                                    annotated_ty: None
                                 }
                                 .spanned(101..102),
                                 value: Expr::Int(5).spanned(105..106).into()
@@ -455,19 +443,19 @@ fn parse_block_expressions() {
 
 #[test]
 fn parse_const_items() {
-    let item = parse_item(r#"const HELLO_WORLD: Str = "Hello, World!""#);
+    let item = parse_item(r#"const HELLO_WORLD: String = "Hello, World!""#);
     assert_eq!(
         item,
         Item::Const {
             name: "HELLO_WORLD".into(),
             ty: Type::Named {
-                name: "Str".into(),
-                generics: vec![]
+                name: "String".into(),
+                args: vec![]
             }
-            .spanned(19..22),
-            value: Expr::Str("Hello, World!".into()).spanned(25..40)
+            .spanned(19..25),
+            value: Expr::String("Hello, World!".into()).spanned(28..43)
         }
-        .spanned(0..40)
+        .spanned(0..43)
     );
 }
 
@@ -476,7 +464,7 @@ fn parse_struct_items() {
     let item = parse_item(
         r#"
         struct Foo<T, U> {
-            x: Str,
+            x: String,
             bar: Bar<Baz<T>>
         }"#,
     );
@@ -489,36 +477,36 @@ fn parse_struct_items() {
                 Field {
                     name: "x".into(),
                     ty: Type::Named {
-                        name: "Str".into(),
-                        generics: vec![]
+                        name: "String".into(),
+                        args: vec![]
                     }
-                    .spanned(43..46)
+                    .spanned(43..49)
                 }
-                .spanned(40..46),
+                .spanned(40..49),
                 Field {
                     name: "bar".into(),
                     ty: Type::Named {
                         name: "Bar".into(),
-                        generics: vec![
+                        args: vec![
                             Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![
+                                args: vec![
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![]
+                                        args: vec![]
                                     }
-                                    .spanned(73..74)
+                                    .spanned(76..77)
                                 ]
                             }
-                            .spanned(69..75)
+                            .spanned(72..78)
                         ]
                     }
-                    .spanned(65..76)
+                    .spanned(68..79)
                 }
-                .spanned(60..76)
+                .spanned(63..79)
             ]
         }
-        .spanned(9..86)
+        .spanned(9..89)
     )
 }
 
@@ -544,7 +532,7 @@ fn parse_enum_items() {
                     vec![
                         Type::Named {
                             name: "Bar".into(),
-                            generics: vec![]
+                            args: vec![]
                         }
                         .spanned(49..52)
                     ]
@@ -557,7 +545,7 @@ fn parse_enum_items() {
                             name: "baz".into(),
                             ty: Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![]
+                                args: vec![]
                             }
                             .spanned(75..78)
                         }
@@ -566,7 +554,7 @@ fn parse_enum_items() {
                             name: "fizz".into(),
                             ty: Type::Named {
                                 name: "Buzz".into(),
-                                generics: vec![]
+                                args: vec![]
                             }
                             .spanned(86..90)
                         }
@@ -591,19 +579,13 @@ fn parse_function_items() {
                 Binding::Var {
                     mutable: true,
                     ident: "a".into(),
-                    type_annotation: None
+                    annotated_ty: None
                 }
                 .spanned(7..12),
                 Binding::Var {
                     mutable: false,
                     ident: "b".into(),
-                    type_annotation: Some(
-                        Type::Named {
-                            name: "Int".into(),
-                            generics: vec![]
-                        }
-                        .spanned(17..20)
-                    )
+                    annotated_ty: Some(Type::Int.spanned(17..20))
                 }
                 .spanned(14..20)
             ],
@@ -633,7 +615,7 @@ fn parse_file() {
         }
 
         struct Foo<T, U> {
-            x: Str,
+            x: String,
             bar: Bar<Baz<T>, [U]>,
         }"#,
     );
@@ -646,22 +628,22 @@ fn parse_file() {
                 Binding::Var {
                     mutable: true,
                     ident: "x".into(),
-                    type_annotation: None
+                    annotated_ty: None
                 }
                 .spanned(26..31),
                 Binding::Var {
                     mutable: false,
                     ident: "bar".into(),
-                    type_annotation: Some(
+                    annotated_ty: Some(
                         Type::Named {
                             name: "Bar".into(),
-                            generics: vec![
+                            args: vec![
                                 Type::Named {
                                     name: "Baz".into(),
-                                    generics: vec![
+                                    args: vec![
                                         Type::Named {
                                             name: "T".into(),
-                                            generics: vec![],
+                                            args: vec![],
                                         }
                                         .spanned(46..47)
                                     ],
@@ -669,7 +651,7 @@ fn parse_file() {
                                 .spanned(42..48),
                                 Type::Named {
                                     name: "U".into(),
-                                    generics: vec![],
+                                    args: vec![],
                                 }
                                 .spanned(50..51)
                             ],
@@ -680,21 +662,10 @@ fn parse_file() {
                 .spanned(33..52)
             ],
             return_type: Some(
-                Type::Fn {
-                    params: vec![
-                        Type::Named {
-                            name: "Int".into(),
-                            generics: vec![]
-                        }
-                        .spanned(58..61)
-                    ],
-                    result: Type::Named {
-                        name: "Int".into(),
-                        generics: vec![]
-                    }
-                    .spanned(64..67)
-                    .into()
-                }
+                Type::Fn(
+                    vec![Type::Int.spanned(58..61)],
+                    Type::Int.spanned(64..67).into()
+                )
                 .spanned(55..67)
             ),
             body: Expr::Block {
@@ -703,16 +674,12 @@ fn parse_file() {
                         binding: Binding::Var {
                             mutable: true,
                             ident: "x".into(),
-                            type_annotation: Some(
+                            annotated_ty: Some(
                                 Type::Tuple(vec![
-                                    Type::Named {
-                                        name: "Float".into(),
-                                        generics: vec![]
-                                    }
-                                    .spanned(97..102),
+                                    Type::Float.spanned(97..102),
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![]
+                                        args: vec![]
                                     }
                                     .spanned(104..105)
                                 ])
@@ -758,7 +725,7 @@ fn parse_file() {
                                         binding: Binding::Var {
                                             mutable: false,
                                             ident: "baz".into(),
-                                            type_annotation: None
+                                            annotated_ty: None
                                         }
                                         .spanned(175..178),
                                         value: Expr::BinaryOp {
@@ -842,44 +809,44 @@ fn parse_file() {
                 Field {
                     name: "x".into(),
                     ty: Type::Named {
-                        name: "Str".into(),
-                        generics: vec![],
+                        name: "String".into(),
+                        args: vec![],
                     }
-                    .spanned(338..341),
+                    .spanned(338..344),
                 }
-                .spanned(335..341),
+                .spanned(335..344),
                 Field {
                     name: "bar".into(),
                     ty: Type::Named {
                         name: "Bar".into(),
-                        generics: vec![
+                        args: vec![
                             Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![
+                                args: vec![
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![],
+                                        args: vec![],
                                     }
-                                    .spanned(368..369)
+                                    .spanned(371..372)
                                 ],
                             }
-                            .spanned(364..370),
+                            .spanned(367..373),
                             Type::Array(
                                 Type::Named {
                                     name: "U".into(),
-                                    generics: vec![],
+                                    args: vec![],
                                 }
-                                .spanned(373..374)
+                                .spanned(376..377)
                                 .into()
                             )
-                            .spanned(372..375)
+                            .spanned(375..378)
                         ],
                     }
-                    .spanned(360..376),
+                    .spanned(363..379),
                 }
-                .spanned(355..376)
+                .spanned(358..379)
             ]
         }
-        .spanned(304..387)
+        .spanned(304..390)
     );
 }

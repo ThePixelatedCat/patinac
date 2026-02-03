@@ -64,7 +64,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     .replace("\\\"", "\"")
                     .replace("\\\\", "\\");
 
-                Expr::Str(val).spanned(token.span)
+                Expr::String(val).spanned(token.span)
             }
             TokenType::CharLit => {
                 let token = self.next().unwrap();

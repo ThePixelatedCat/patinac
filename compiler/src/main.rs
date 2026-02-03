@@ -8,8 +8,6 @@ mod lexer;
 mod parser;
 mod typecheck;
 
-//use parser::Parser;
-
 fn main() -> anyhow::Result<()> {
     let source_path = env::args()
         .nth(1)
@@ -21,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     let ast = parser.file()?;
     println!("{ast:?}");
 
-    //typecheck::TypeChecker::new(&ast).check(&[parser::ast::Expr::Int(42).spanned(0..2)])?;
+    typecheck::TypeChecker::new(&ast).type_of(&parser::ast::Expr::Int(42).spanned(0..2))?;
 
     Ok(())
 }
