@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::{
-    helpers::{Span, Spanned},
+    helpers::Spanned,
     lexer::{Token, TokenType},
 };
 
@@ -15,9 +15,9 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let mutable = self.at(TokenType::Mut);
         let mut_start = mutable.then(|| self.next().unwrap().span.start);
 
-        let (name, name_span) = self.ident()?;
+        let ident = self.ident()?;
 
-        let start = mut_start.unwrap_or(name_span.start);
+        let start = mut_start.unwrap_or(ident.span.start);
 
         let type_annotation = if self.consume_at(TokenType::Colon) {
             Some(self.type_()?)
@@ -27,11 +27,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let end = type_annotation
             .as_ref()
-            .map_or(name_span.end, |ty| ty.span.end);
+            .map_or(ident.span.end, |ty| ty.span.end);
 
         Ok(Binding::Var {
             mutable,
-            ident: name,
+            ident: ident.inner,
             annotated_ty: type_annotation,
         }
         .spanned(start..end))
@@ -94,26 +94,30 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                 Type::Fn(params, result).spanned(start..end)
             }
-            token => {
-                return Err(ParseError::Unexpected(
-                    token,
-                    Some("start of type name".into()),
-                ));
+            _ => {
+                let token = self.next().unwrap();
+
+                return Err(
+                    ParseError::Unexpected(token.inner, Some("start of type name".into()))
+                        .spanned(token.span),
+                );
             }
         })
     }
 
-    pub fn ident(&mut self) -> ParseResult<(String, Span)> {
-        match self.peek() {
-            TokenType::Ident => {
-                let span = self.next().unwrap().span;
+    pub fn ident(&mut self) -> ParseResult<Spanned<String>> {
+        if self.peek() == TokenType::Ident {
+            let span = self.next().unwrap().span;
 
-                Ok((self.input[Range::from(span)].to_string(), span))
-            }
-            other_type => Err(ParseError::Mismatched {
+            Ok(Spanned::span(self.input[Range::from(span)].to_string(), span))
+        } else {
+            let token = self.next().unwrap();
+
+            Err(ParseError::Mismatched {
                 expected: TokenType::Ident,
-                found: other_type,
-            }),
+                found: token.inner,
+            }
+            .spanned(token.span))
         }
     }
 

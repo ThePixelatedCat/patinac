@@ -1,5 +1,5 @@
 $env:LLVM_PROFILE_FILE='cargo-test.profraw'; 
-cargo test --config build.incremental=false --config build.rustflags=['\"-Cinstrument-coverage\"'];
+cargo test --config build.incremental=false --config build.rustflags=['\"-Cinstrument-coverage\"']; 
 
 grcov . --binary-path ./target/debug/deps/ -s . -t html --ignore-not-existing --ignore '../*' --ignore "/*" --ignore "*/main.rs" --ignore "*/test.rs" -o target/coverage/;
 Remove-Item C:\Users\acfro\Documents\Programming\Projects\Languages\patina\cargo-test.profraw;

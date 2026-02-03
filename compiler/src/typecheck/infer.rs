@@ -38,7 +38,9 @@ impl TypeChecker {
     }
 
     fn type_of_ident(&self, ident: Spanned<&str>) -> Result<Type, TypeErrorS> {
-        self.get_binding(ident.inner).map(|b| b.ty.clone()).map_err(|e| e.spanned(ident.span))
+        self.get_binding(ident.inner)
+            .map(|b| b.ty.clone())
+            .map_err(|e| e.spanned(ident.span))
     }
 
     fn type_of_array(&mut self, exprs: &[ExprS]) -> Result<Type, TypeErrorS> {
@@ -224,7 +226,9 @@ impl TypeChecker {
     fn type_of_assign(&mut self, ident: Spanned<&str>, val: &ExprS) -> Result<Type, TypeErrorS> {
         let val_ty = self.type_of(val)?;
 
-        let info = self.get_binding(ident.inner).map_err(|e| e.spanned(ident.span))?;
+        let info = self
+            .get_binding(ident.inner)
+            .map_err(|e| e.spanned(ident.span))?;
 
         if !info.mutable {
             return Err(TypeError::Mutation(ident.inner.to_owned()).spanned(ident.span));

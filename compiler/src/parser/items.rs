@@ -21,131 +21,147 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     }
 
     pub fn item(&mut self) -> ParseResult<ItemS> {
-        Ok(match self.peek() {
-            TokenType::Const => {
-                let start = self.next().unwrap().span.start;
+        match self.peek() {
+            TokenType::Const => self.const_item(),
+            TokenType::Fn => self.func_item(),
+            TokenType::Struct => self.struct_item(),
+            TokenType::Enum => self.enum_item(),
+            _ => {
+                let token = self.next().unwrap();
 
-                let (name, _) = self.ident()?;
-
-                self.consume(TokenType::Colon)?;
-                let ty = self.type_()?;
-
-                self.consume(TokenType::Eq)?;
-                let value = self.expression()?;
-
-                let end = value.span.end;
-
-                Item::Const { name, ty, value }.spanned(start..end)
+                Err(
+                    ParseError::Unexpected(token.inner, Some("start of item".into()))
+                        .spanned(token.span),
+                )
             }
-            TokenType::Fn => {
-                let start = self.next().unwrap().span.start;
+        }
+    }
 
-                let (name, _) = self.ident()?;
+    fn const_item(&mut self) -> ParseResult<ItemS> {
+        let start = self.next().unwrap().span.start;
 
-                let params =
-                    self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
+        let name = self.ident()?.inner;
 
-                let return_type = if self.consume_at(TokenType::Colon) {
-                    Some(self.type_()?)
-                } else {
-                    None
-                };
+        self.consume(TokenType::Colon)?;
+        let ty = self.type_()?;
 
-                self.consume(TokenType::Arrow)?;
+        self.consume(TokenType::Eq)?;
+        let value = self.expression()?;
 
-                let body = self.expression()?;
+        let end = value.span.end;
 
-                let end = body.span.end;
+        Ok(Item::Const { name, ty, value }.spanned(start..end))
+    } 
 
-                Item::Function {
-                    name,
-                    params: params.inner,
-                    return_ty: return_type,
-                    body,
-                }
-                .spanned(start..end)
-            }
-            TokenType::Struct => {
-                let start = self.next().unwrap().span.start;
+    fn func_item(&mut self) -> ParseResult<ItemS> {
+        let start = self.next().unwrap().span.start;
 
-                let (name, generic_params) = self.type_name()?;
+        let name = self.ident()?.inner;
 
-                let Spanned {
-                    inner: fields,
-                    span,
-                } = self.fields()?;
-                let end = span.end;
+        let params =
+            self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
 
-                Item::Struct {
-                    name,
-                    generic_params,
-                    fields,
-                }
-                .spanned(start..end)
-            }
-            TokenType::Enum => {
-                let start = self.next().unwrap().span.start;
+        let return_type = if self.consume_at(TokenType::Colon) {
+            Some(self.type_()?)
+        } else {
+            None
+        };
 
-                let (name, generic_params) = self.type_name()?;
+        self.consume(TokenType::Arrow)?;
 
-                let Spanned {
-                    inner: variants,
-                    span: variants_span,
-                } = self.delimited_list(
-                    |this| {
-                        let (variant_name, name_span) = this.ident()?;
-                        let start = name_span.start;
+        let body = self.expression()?;
 
-                        Ok(match this.peek() {
-                            TokenType::LBrace => {
-                                let Spanned {
-                                    inner: fields,
-                                    span: fields_span,
-                                } = this.fields()?;
-                                Variant::Struct(variant_name, fields)
-                                    .spanned(start..fields_span.end)
-                            }
-                            TokenType::LParen => {
-                                let Spanned { inner: vals, span } = this.delimited_list(
-                                    Self::type_,
-                                    TokenType::LParen,
-                                    TokenType::RParen,
-                                )?;
+        let end = body.span.end;
 
-                                Variant::Tuple(variant_name, vals).spanned(start..span.end)
-                            }
-                            TokenType::Comma => Variant::Unit(variant_name).spanned(name_span),
-                            token => {
-                                return Err(ParseError::Unexpected(
-                                    token,
-                                    Some("after variant name. expected one of `,` `(` `{`".into()),
-                                ));
-                            }
-                        })
-                    },
-                    TokenType::LBrace,
-                    TokenType::RBrace,
-                )?;
+        Ok(Item::Function {
+            name,
+            params: params.inner,
+            return_ty: return_type,
+            body,
+        }
+        .spanned(start..end))
+    }
 
-                Item::Enum {
-                    name,
-                    generic_params,
-                    variants,
-                }
-                .spanned(start..variants_span.end)
-            }
-            token => {
-                return Err(ParseError::Unexpected(token, Some("start of item".into())));
-            }
-        })
+    fn struct_item(&mut self) -> ParseResult<ItemS> {
+        let start = self.next().unwrap().span.start;
+
+        let (name, generic_params) = self.type_name()?;
+
+        let Spanned {
+            inner: fields,
+            span,
+        } = self.fields()?;
+        let end = span.end;
+
+        Ok(Item::Struct {
+            name,
+            generic_params,
+            fields,
+        }
+        .spanned(start..end))
+    }
+
+    fn enum_item(&mut self) -> ParseResult<ItemS> {
+        let start = self.next().unwrap().span.start;
+
+        let (name, generic_params) = self.type_name()?;
+
+        let Spanned {
+            inner: variants,
+            span: variants_span,
+        } = self.delimited_list(
+            |this| {
+                let name = this.ident()?;
+                let start = name.span.start;
+
+                Ok(match this.peek() {
+                    TokenType::LBrace => {
+                        let Spanned {
+                            inner: fields,
+                            span: fields_span,
+                        } = this.fields()?;
+                        Variant::Struct(name.inner, fields)
+                            .spanned(start..fields_span.end)
+                    }
+                    TokenType::LParen => {
+                        let Spanned { inner: vals, span } = this.delimited_list(
+                            Self::type_,
+                            TokenType::LParen,
+                            TokenType::RParen,
+                        )?;
+
+                        Variant::Tuple(name.inner, vals).spanned(start..span.end)
+                    }
+                    TokenType::Comma => Variant::Unit(name.inner).spanned(name.span),
+                    _ => {
+                        let token = this.next().unwrap();
+
+                        return Err(ParseError::Unexpected(
+                            token.inner,
+                            Some("after variant name. expected one of `,` `(` `{`".into()),
+                        )
+                        .spanned(token.span));
+                    }
+                })
+            },
+            TokenType::LBrace,
+            TokenType::RBrace,
+        )?;
+
+        Ok(Item::Enum {
+            name,
+            generic_params,
+            variants,
+        }
+        .spanned(start..variants_span.end))
     }
 
     fn type_name(&mut self) -> ParseResult<(String, Vec<String>)> {
-        let (name, _) = self.ident()?;
+        let name = self.ident()?.inner;
 
         let generic_params = if self.at(TokenType::LAngle) {
             self.delimited_list(
-                |this| this.ident().map(|v| v.0),
+                |this| this.ident().map(|v| v.inner),
                 TokenType::LAngle,
                 TokenType::RAngle,
             )?
@@ -160,26 +176,28 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     fn fields(&mut self) -> ParseResult<Spanned<Vec<FieldS>>> {
         self.delimited_list(
             |this| {
-                let (name, start) = match this.peek() {
-                    TokenType::Ident => {
-                        let span = this.next().unwrap().span;
+                if this.peek() == TokenType::Ident {
+                    let span = this.next().unwrap().span;
 
-                        (this.input[Range::from(span)].to_string(), span.start)
+                    this.consume(TokenType::Colon)?;
+
+                    let ty = this.type_()?;
+                    let end = ty.span.end;
+
+                    Ok(Field {
+                        name: this.input[Range::from(span)].to_string(),
+                        ty,
                     }
-                    other_type => {
-                        return Err(ParseError::Mismatched {
-                            expected: TokenType::Ident,
-                            found: other_type,
-                        });
+                    .spanned(span.start..end))
+                } else {
+                    let token = this.next().unwrap();
+
+                    Err(ParseError::Mismatched {
+                        expected: TokenType::Ident,
+                        found: token.inner,
                     }
-                };
-
-                this.consume(TokenType::Colon)?;
-
-                let ty = this.type_()?;
-                let end = ty.span.end;
-
-                Ok(Field { name, ty }.spanned(start..end))
+                    .spanned(token.span))
+                }
             },
             TokenType::LBrace,
             TokenType::RBrace,

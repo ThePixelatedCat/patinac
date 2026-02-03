@@ -57,14 +57,17 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
     pub(crate) fn consume(&mut self, expected: TokenType) -> ParseResult<Token> {
-        let next = self.next().ok_or(ParseError::Missing)?;
+        let next = self
+            .next()
+            .ok_or_else(|| ParseError::Missing.spanned(0..0))?;
         if next.inner == expected {
             Ok(next)
         } else {
             Err(ParseError::Mismatched {
                 expected,
                 found: next.inner,
-            })
+            }
+            .spanned(next.span))
         }
     }
 }

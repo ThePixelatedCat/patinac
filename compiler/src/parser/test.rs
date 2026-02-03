@@ -507,28 +507,30 @@ fn malformed_expressions() {
         Err(ParseError::Mismatched {
             expected: TokenType::RBracket,
             found: TokenType::Eof
-        })
+        }
+        .spanned(11..11))
     );
     assert_eq!(
         parse_expr_err("*5"),
-        Err(ParseError::Unexpected(
-            TokenType::Times,
-            Some("start of expression".into())
-        ))
+        Err(
+            ParseError::Unexpected(TokenType::Times, Some("start of expression".into()))
+                .spanned(0..1)
+        )
     );
     assert_eq!(
         parse_expr_err("let a = 1 + 3 print(a)"),
-        Err(ParseError::Unexpected(
-            TokenType::Ident,
-            Some("end of expression".into())
-        ))
+        Err(
+            ParseError::Unexpected(TokenType::Ident, Some("end of expression".into()))
+                .spanned(14..19)
+        )
     );
     assert_eq!(
         parse_expr_err("print(5, 2;)"),
         Err(ParseError::Mismatched {
             expected: TokenType::RParen,
             found: TokenType::Semicolon
-        })
+        }
+        .spanned(10..11))
     );
 }
 
@@ -693,23 +695,21 @@ fn malformed_items() {
         Err(ParseError::Mismatched {
             expected: TokenType::Ident,
             found: TokenType::Fn,
-        })
+        }
+        .spanned(6..8))
     );
 
     assert_eq!(
         parse_item_err("const NO_DICTS: {String: Int} = 5"),
-        Err(ParseError::Unexpected(
-            TokenType::LBrace,
-            Some("start of type name".into())
-        ))
+        Err(
+            ParseError::Unexpected(TokenType::LBrace, Some("start of type name".into()))
+                .spanned(16..17)
+        )
     );
 
     assert_eq!(
         parse_item_err("let global = 0"),
-        Err(ParseError::Unexpected(
-            TokenType::Let,
-            Some("start of item".into())
-        ))
+        Err(ParseError::Unexpected(TokenType::Let, Some("start of item".into())).spanned(0..3))
     );
 
     assert_eq!(
@@ -717,7 +717,8 @@ fn malformed_items() {
         Err(ParseError::Mismatched {
             expected: TokenType::Ident,
             found: TokenType::Int,
-        })
+        }
+        .spanned(17..20))
     );
 
     assert_eq!(
@@ -725,7 +726,8 @@ fn malformed_items() {
         Err(ParseError::Unexpected(
             TokenType::Ident,
             Some("after variant name. expected one of `,` `(` `{`".into())
-        ))
+        )
+        .spanned(19..25))
     )
 }
 

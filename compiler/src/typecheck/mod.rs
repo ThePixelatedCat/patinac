@@ -87,7 +87,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn new(ast: &Ast) -> Self {
+    pub fn new() -> Self {
         Self {
             env: HashMap::new(),
             table: Rc::default(),
@@ -130,12 +130,10 @@ impl TypeChecker {
                                         },
                                     )
                                     .collect(),
-                                Box::new(
-                                    return_ty.as_ref().map_or_else(
-                                        || self.fresh_var(),
-                                        |ty| ty.inner.clone().into(),
-                                    ),
-                                ),
+                                Box::new(return_ty.as_ref().map_or_else(
+                                    || self.fresh_var(),
+                                    |ty| ty.inner.clone().into(),
+                                )),
                             ),
                             mutable: false,
                         },
@@ -152,22 +150,36 @@ impl TypeChecker {
                     variants,
                 } => todo!(),
             }
-        };
+        }
 
         for item in ast {
             match &item.inner {
                 Item::Const { name, ty, value } => {
                     let val_ty = self.clone().type_of(value)?;
-                    let BindingInfo { ty: binding_ty, .. } = self.get_binding(name).expect("was added to env in initial iteration");
-                    self.unify(binding_ty, &val_ty).map_err(|e| e.spanned(value.span))?;
-                },
+                    let BindingInfo { ty: binding_ty, .. } = self
+                        .get_binding(name)
+                        .expect("was added to env in initial iteration");
+                    self.unify(binding_ty, &val_ty)
+                        .map_err(|e| e.spanned(value.span))?;
+                }
                 Item::Function { name, body, .. } => {
                     let body_ty = self.clone().type_of(body)?;
-                    let BindingInfo { ty: binding_ty, .. } = self.get_binding(name).expect("was added to env in initial iteration");
-                    self.unify(binding_ty, &body_ty).map_err(|e| e.spanned(body.span))?;
-                },
-                Item::Struct { name, generic_params, fields } => todo!(),
-                Item::Enum { name, generic_params, variants } => todo!(),
+                    let BindingInfo { ty: binding_ty, .. } = self
+                        .get_binding(name)
+                        .expect("was added to env in initial iteration");
+                    self.unify(binding_ty, &body_ty)
+                        .map_err(|e| e.spanned(body.span))?;
+                }
+                Item::Struct {
+                    name,
+                    generic_params,
+                    fields,
+                } => todo!(),
+                Item::Enum {
+                    name,
+                    generic_params,
+                    variants,
+                } => todo!(),
             }
         }
 

@@ -214,11 +214,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                 Expr::Block { exprs, trailing }.spanned(start..end)
             }
-            token => {
+            _ => {
+                let token = self.next().unwrap();
+
                 return Err(ParseError::Unexpected(
-                    token,
+                    token.inner,
                     Some("start of expression".into()),
-                ));
+                )
+                .spanned(token.span));
             }
         };
         loop {
@@ -259,15 +262,12 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                     let start = lhs.span.start;
 
-                    let (field, field_span) = self.ident()?;
-                    let end = field_span.end;
+                    let field = self.ident()?;
+                    let end = field.span.end;
 
                     lhs = Expr::FieldAccess {
                         base: Box::new(lhs),
-                        field: Spanned {
-                            inner: field,
-                            span: field_span,
-                        },
+                        field,
                     }
                     .spanned(start..end);
                     continue;
@@ -302,11 +302,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 | TokenType::Const
                 | TokenType::Struct
                 | TokenType::Enum => break,
-                token => {
+                _ => {
+                    let token = self.next().unwrap();
+
                     return Err(ParseError::Unexpected(
-                        token,
+                        token.inner,
                         Some("end of expression".into()),
-                    ));
+                    )
+                    .spanned(token.span));
                 }
             };
 

@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use std::{env, fs};
 
-use crate::parser::Parser;
+use crate::{parser::Parser, typecheck::TypeChecker};
 
 mod helpers;
 mod lexer;
@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
     let ast = parser.file()?;
     println!("{ast:?}");
 
-    typecheck::TypeChecker::new(&ast).type_of(&parser::ast::Expr::Int(42).spanned(0..2))?;
+    TypeChecker::new().check(&ast)?;
 
     Ok(())
 }

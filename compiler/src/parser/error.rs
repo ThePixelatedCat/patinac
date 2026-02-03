@@ -1,9 +1,10 @@
-use crate::lexer::TokenType;
+use crate::{lexer::TokenType, span};
 use std::{error::Error, fmt::Display};
 
-pub type ParseResult<T> = Result<T, ParseError>;
+pub type ParseResult<T> = Result<T, ParseErrorS>;
 
-#[derive(Debug, PartialEq)]
+span! { ParseError as ParseErrorS }
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     Mismatched {
         expected: TokenType,

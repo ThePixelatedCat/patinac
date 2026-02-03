@@ -1,4 +1,5 @@
 use std::{
+    error::Error,
     fmt::Display,
     ops::{Deref, Range},
 };
@@ -37,9 +38,7 @@ impl<T> Spanned<T> {
             span: self.span,
         }
     }
-}
 
-impl<T> Spanned<T> {
     pub fn span(inner: T, span: impl Into<Span>) -> Self {
         Self {
             inner,
@@ -47,6 +46,14 @@ impl<T> Spanned<T> {
         }
     }
 }
+
+impl<T: Display> Display for Spanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.span, self.inner)
+    }
+}
+
+impl<T: Error> Error for Spanned<T> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {

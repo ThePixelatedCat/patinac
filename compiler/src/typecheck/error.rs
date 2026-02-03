@@ -7,34 +7,24 @@ span! { TypeError as TypeErrorS }
 pub enum TypeError {
     UnboundIdent(String),
     MismatchedTypes { expected: Type, found: Type },
-    CantInfer,
     Mutation(String),
     Infinite,
 }
 
-impl Display for TypeErrorS {
+impl Display for TypeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.inner {
-            TypeError::UnboundIdent(ident) => {
-                write!(f, "{}: identifider `{ident}` is unbound", self.span)
+        match &self {
+            Self::UnboundIdent(ident) => {
+                write!(f, "identifider `{ident}` is unbound")
             }
-            TypeError::MismatchedTypes {
+            Self::MismatchedTypes {
                 expected: type_a,
                 found: type_b,
-            } => write!(
-                f,
-                "{}: found type `{type_b}`, expected type `{type_a}`",
-                self.span
-            ),
-            TypeError::CantInfer => write!(f, "can't infer type of expression at {}", self.span),
-            TypeError::Mutation(name) => write!(
-                f,
-                "{}: attempted mutation of immutable variable {name}",
-                self.span
-            ),
-            TypeError::Infinite => todo!(),
+            } => write!(f, "found type `{type_b}`, expected type `{type_a}`",),
+            Self::Mutation(name) => write!(f, "attempted mutation of immutable variable {name}",),
+            Self::Infinite => "infinite cycle of types".fmt(f),
         }
     }
 }
 
-impl Error for TypeErrorS {}
+impl Error for TypeError {}
