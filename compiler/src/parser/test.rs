@@ -540,14 +540,38 @@ fn const_items() {
         parse_item(r#"const HELLO_WORLD: String = "Hello, World!""#),
         Item::Const {
             name: "HELLO_WORLD".into(),
-            ty: Type::Named {
-                name: "String".into(),
-                args: vec![]
-            }
-            .spanned(19..25),
+            ty: Some(
+                Type::Named {
+                    name: "String".into(),
+                    args: vec![]
+                }
+                .spanned(19..25)
+            ),
             value: Expr::String("Hello, World!".into()).spanned(28..43)
         }
         .spanned(0..43)
+    );
+
+    assert_eq!(
+        parse_item(r#"const ID = fn(x) -> x"#),
+        Item::Const {
+            name: "ID".into(),
+            ty: None,
+            value: Expr::Lambda {
+                params: vec![
+                    Binding::Var {
+                        mutable: false,
+                        ident: "x".into(),
+                        annotated_ty: None
+                    }
+                    .spanned(14..15)
+                ],
+                return_type: None,
+                body: Expr::Ident("x".into()).spanned(20..21).into()
+            }
+            .spanned(11..21)
+        }
+        .spanned(0..21)
     );
 }
 

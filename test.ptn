@@ -1,6 +1,4 @@
-fn sum(a, b) -> a + b
+fn sum(a, b): Int -> sum_annotated(a, b)
 fn sum_annotated(a: Int, b: Int): Int -> a + b
-fn sum_block(a: Int, b: Int): Int -> {
-    a + b
-}
-const sum: fn(Int, Int): Int = fn(a, b) -> a + b
+
+const FLOAT = 0.5

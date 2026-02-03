@@ -180,7 +180,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
 
                 let return_type = if self.consume_at(TokenType::Colon) {
-                    Some(self.type_()?)
+                    Some(self.parse_ty()?)
                 } else {
                     None
                 };

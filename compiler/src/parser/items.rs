@@ -42,8 +42,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let name = self.ident()?.inner;
 
-        self.consume(TokenType::Colon)?;
-        let ty = self.type_()?;
+        let ty = if self.consume_at(TokenType::Colon) {
+            Some(self.parse_ty()?)
+        } else {
+            None
+        };
 
         self.consume(TokenType::Eq)?;
         let value = self.expression()?;
@@ -61,7 +64,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let params = self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
 
         let return_type = if self.consume_at(TokenType::Colon) {
-            Some(self.type_()?)
+            Some(self.parse_ty()?)
         } else {
             None
         };
@@ -122,8 +125,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                         Variant::Struct(name.inner, fields).spanned(start..fields_span.end)
                     }
                     TokenType::LParen => {
-                        let Spanned { inner: vals, span } =
-                            this.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
+                        let Spanned { inner: vals, span } = this.delimited_list(
+                            Self::parse_ty,
+                            TokenType::LParen,
+                            TokenType::RParen,
+                        )?;
 
                         Variant::Tuple(name.inner, vals).spanned(start..span.end)
                     }
@@ -176,7 +182,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                     this.consume(TokenType::Colon)?;
 
-                    let ty = this.type_()?;
+                    let ty = this.parse_ty()?;
                     let end = ty.span.end;
 
                     Ok(Field {

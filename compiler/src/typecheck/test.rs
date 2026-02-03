@@ -180,3 +180,13 @@ fn shadowing() {
 
     assert_eq!(checker.normalise(ty), Type::string());
 }
+
+#[test]
+fn recursion() {
+    let input = "fn fac(n: UInt) -> if (n == 0) 1 else n * fac(n - 1)";
+
+    let ast = Parser::new(input).file().unwrap();
+    let mut checker = TypeChecker::default();
+
+    assert_eq!(checker.check(&ast), Ok(()))
+}

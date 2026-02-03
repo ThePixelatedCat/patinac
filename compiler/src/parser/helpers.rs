@@ -20,7 +20,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let start = mut_start.unwrap_or(ident.span.start);
 
         let type_annotation = if self.consume_at(TokenType::Colon) {
-            Some(self.type_()?)
+            Some(self.parse_ty()?)
         } else {
             None
         };
@@ -37,7 +37,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         .spanned(start..end))
     }
 
-    pub fn type_(&mut self) -> ParseResult<TypeS> {
+    pub fn parse_ty(&mut self) -> ParseResult<TypeS> {
         Ok(match self.peek() {
             TokenType::Int => Type::Int.spanned(self.next().unwrap().span),
             TokenType::UInt => Type::UInt.spanned(self.next().unwrap().span),
@@ -55,7 +55,8 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     let Spanned {
                         inner: generics,
                         span: generics_span,
-                    } = self.delimited_list(Self::type_, TokenType::LAngle, TokenType::RAngle)?;
+                    } =
+                        self.delimited_list(Self::parse_ty, TokenType::LAngle, TokenType::RAngle)?;
                     (generics, generics_span.end)
                 } else {
                     (Vec::new(), span.end)
@@ -70,7 +71,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             TokenType::LBracket => {
                 let start = self.next().unwrap().span.start;
 
-                let inner_type = self.type_()?;
+                let inner_type = self.parse_ty()?;
 
                 let end = self.consume(TokenType::RBracket)?.span.end;
 
@@ -78,17 +79,17 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             }
             TokenType::LParen => {
                 let Spanned { inner: types, span } =
-                    self.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
+                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
                 Type::Tuple(types).spanned(span)
             }
             TokenType::Fn => {
                 let start = self.next().unwrap().span.start;
 
                 let Spanned { inner: params, .. } =
-                    self.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
+                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
 
                 self.consume(TokenType::Colon)?;
-                let result = Box::new(self.type_()?);
+                let result = Box::new(self.parse_ty()?);
 
                 let end = result.span.end;
 

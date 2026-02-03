@@ -12,7 +12,7 @@ use im::HashMap;
 
 use crate::{
     helpers::Spanned,
-    parser::ast::{Ast, Binding, Item},
+    parser::ast::{Ast, Binding, BindingS, ExprS, Item, ItemS, TypeS as AstTypeS},
     typecheck::{
         error::TypeErrorS,
         types::{Type, TypeId},
@@ -87,21 +87,22 @@ impl TypeChecker {
         }
     }
 
-    pub fn new() -> Self {
-        Self {
-            env: HashMap::new(),
-            table: Rc::default(),
-        }
+    fn convert(&self, ast_ty: &Option<AstTypeS>) -> Type {
+        ast_ty.as_ref().map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())
     }
 
-    pub fn check(&mut self, ast: &Ast) -> Result<(), TypeErrorS> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn check(&mut self, ast: &[ItemS]) -> Result<(), TypeErrorS> {
         for item in ast {
             match &item.inner {
                 Item::Const { name, ty, .. } => {
                     self.env.insert(
                         name.clone(),
                         BindingInfo {
-                            ty: ty.inner.clone().into(),
+                            ty: self.convert(ty),
                             mutable: false,
                         },
                     );
@@ -123,17 +124,11 @@ impl TypeChecker {
                                              inner: Binding::Var { annotated_ty, .. },
                                              ..
                                          }| {
-                                            annotated_ty.as_ref().map_or_else(
-                                                || self.fresh_var(),
-                                                |ty| ty.inner.clone().into(),
-                                            )
+                                            self.convert(annotated_ty)
                                         },
                                     )
                                     .collect(),
-                                Box::new(return_ty.as_ref().map_or_else(
-                                    || self.fresh_var(),
-                                    |ty| ty.inner.clone().into(),
-                                )),
+                                Box::new(self.convert(return_ty)),
                             ),
                             mutable: false,
                         },
@@ -154,52 +149,10 @@ impl TypeChecker {
 
         for item in ast {
             match &item.inner {
-                Item::Const { name, ty, value } => {
-                    let val_ty = self.clone().type_of(value)?;
-                    let BindingInfo { ty: binding_ty, .. } = self
-                        .get_binding(name)
-                        .expect("was added to env in initial iteration");
-                    self.unify(binding_ty, &val_ty)
-                        .map_err(|e| e.spanned(value.span))?;
-                }
+                Item::Const { name, value, .. } => self.check_const(name, value)?,
                 Item::Func {
                     name, params, body, ..
-                } => {
-                    let mut snapshot = self.clone();
-
-                    let BindingInfo {
-                        ty: Type::Fn(param_tys, return_ty),
-                        ..
-                    } = self
-                        .get_binding(name)
-                        .expect("was added to env in initial iteration")
-                    else {
-                        unreachable!("inserted type is always a function")
-                    };
-
-                    iter::zip(params, param_tys).for_each(
-                        |(
-                            Spanned {
-                                inner: Binding::Var { mutable, ident, .. },
-                                ..
-                            },
-                            ty,
-                        )| {
-                            snapshot.env.insert(
-                                ident.clone(),
-                                BindingInfo {
-                                    ty: ty.clone(),
-                                    mutable: *mutable,
-                                },
-                            );
-                        },
-                    );
-
-                    let body_ty = snapshot.type_of(body)?;
-
-                    snapshot.unify(return_ty, &body_ty)
-                        .map_err(|e| e.spanned(body.span))?;
-                }
+                } => self.check_func(name, params, body)?,
                 Item::Struct {
                     name,
                     generic_params,
@@ -214,5 +167,59 @@ impl TypeChecker {
         }
 
         Ok(())
+    }
+
+    fn check_const(&mut self, name: &str, value: &ExprS) -> Result<(), TypeErrorS> {
+        let BindingInfo { ty: binding_ty, .. } = self
+            .get_binding(name)
+            .expect("was added to env in initial iteration");
+
+        let val_ty = self.clone().type_of(value)?;
+
+        self.unify(binding_ty, &val_ty)
+            .map_err(|e| e.spanned(value.span))
+    }
+
+    fn check_func(
+        &mut self,
+        name: &str,
+        params: &[BindingS],
+        body: &ExprS,
+    ) -> Result<(), TypeErrorS> {
+        let BindingInfo {
+            ty: Type::Fn(param_tys, return_ty),
+            ..
+        } = self
+            .get_binding(name)
+            .expect("was added to env in initial iteration")
+        else {
+            unreachable!("type of previously-added binding is always a function")
+        };
+
+        let mut snapshot = self.clone();
+
+        iter::zip(params, param_tys).for_each(
+            |(
+                Spanned {
+                    inner: Binding::Var { mutable, ident, .. },
+                    ..
+                },
+                ty,
+            )| {
+                snapshot.env.insert(
+                    ident.clone(),
+                    BindingInfo {
+                        ty: ty.clone(),
+                        mutable: *mutable,
+                    },
+                );
+            },
+        );
+
+        let body_ty = snapshot.type_of(body)?;
+
+        self
+            .unify(return_ty, &body_ty)
+            .map_err(|e| e.spanned(body.span))
     }
 }

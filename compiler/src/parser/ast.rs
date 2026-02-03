@@ -7,7 +7,7 @@ span! {Item as ItemS}
 pub enum Item {
     Const {
         name: String,
-        ty: TypeS,
+        ty: Option<TypeS>,
         value: ExprS,
     },
     Func {
