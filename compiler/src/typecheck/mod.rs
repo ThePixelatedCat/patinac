@@ -12,7 +12,7 @@ use im::HashMap;
 
 use crate::{
     helpers::Spanned,
-    parser::ast::Ast,
+    parser::ast::{Ast, Binding, Item},
     typecheck::{
         error::TypeErrorS,
         types::{Type, TypeId},
@@ -34,10 +34,10 @@ pub struct TypeChecker {
 }
 
 impl TypeChecker {
-    fn get_binding(&self, ident: Spanned<&str>) -> Result<&BindingInfo, TypeErrorS> {
+    fn get_binding(&self, ident: &str) -> Result<&BindingInfo, TypeError> {
         self.env
-            .get(ident.inner)
-            .ok_or_else(|| TypeError::UnboundIdent(ident.inner.to_owned()).spanned(ident.span))
+            .get(ident)
+            .ok_or_else(|| TypeError::UnboundIdent(ident.to_owned()))
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -89,34 +89,88 @@ impl TypeChecker {
 
     pub fn new(ast: &Ast) -> Self {
         Self {
-            env: HashMap::new(/*ast.len() * 2 / 3*/),
+            env: HashMap::new(),
             table: Rc::default(),
         }
+    }
 
-        // for item in ast {
-        //     match &item.inner {
-        //         Item::Const { name, ty, value } => {
-        //             new.env.insert(name.clone(), BindingInfo { ty: Type::from(&ty.inner), mutable: false });
-        //         },
-        //         Item::Function {
-        //             name,
-        //             params,
-        //             return_type,
-        //             body,
-        //         } => {
-        //             new.env.insert(name.clone(), BindingInfo { ty: Type::Fn { params: params.iter().map(|Spanned { inner: Binding::Var { mutable,  }, .. }| b.inner.), result: Box::new(Type::from(&return_type.unwrap().inner)) }, mutable: false });
-        //         },
-        //         Item::Struct {
-        //             name,
-        //             generic_params,
-        //             fields,
-        //         } => todo!(),
-        //         Item::Enum {
-        //             name,
-        //             generic_params,
-        //             variants,
-        //         } => todo!(),
-        //     }
-        // }
+    pub fn check(&mut self, ast: &Ast) -> Result<(), TypeErrorS> {
+        for item in ast {
+            match &item.inner {
+                Item::Const { name, ty, .. } => {
+                    self.env.insert(
+                        name.clone(),
+                        BindingInfo {
+                            ty: ty.inner.clone().into(),
+                            mutable: false,
+                        },
+                    );
+                }
+                Item::Function {
+                    name,
+                    params,
+                    return_ty,
+                    ..
+                } => {
+                    self.env.insert(
+                        name.clone(),
+                        BindingInfo {
+                            ty: Type::Fn(
+                                params
+                                    .iter()
+                                    .map(
+                                        |Spanned {
+                                             inner: Binding::Var { annotated_ty, .. },
+                                             ..
+                                         }| {
+                                            annotated_ty.as_ref().map_or_else(
+                                                || self.fresh_var(),
+                                                |ty| ty.inner.clone().into(),
+                                            )
+                                        },
+                                    )
+                                    .collect(),
+                                Box::new(
+                                    return_ty.as_ref().map_or_else(
+                                        || self.fresh_var(),
+                                        |ty| ty.inner.clone().into(),
+                                    ),
+                                ),
+                            ),
+                            mutable: false,
+                        },
+                    );
+                }
+                Item::Struct {
+                    name,
+                    generic_params,
+                    fields,
+                } => todo!(),
+                Item::Enum {
+                    name,
+                    generic_params,
+                    variants,
+                } => todo!(),
+            }
+        };
+
+        for item in ast {
+            match &item.inner {
+                Item::Const { name, ty, value } => {
+                    let val_ty = self.clone().type_of(value)?;
+                    let BindingInfo { ty: binding_ty, .. } = self.get_binding(name).expect("was added to env in initial iteration");
+                    self.unify(binding_ty, &val_ty).map_err(|e| e.spanned(value.span))?;
+                },
+                Item::Function { name, body, .. } => {
+                    let body_ty = self.clone().type_of(body)?;
+                    let BindingInfo { ty: binding_ty, .. } = self.get_binding(name).expect("was added to env in initial iteration");
+                    self.unify(binding_ty, &body_ty).map_err(|e| e.spanned(body.span))?;
+                },
+                Item::Struct { name, generic_params, fields } => todo!(),
+                Item::Enum { name, generic_params, variants } => todo!(),
+            }
+        }
+
+        Ok(())
     }
 }

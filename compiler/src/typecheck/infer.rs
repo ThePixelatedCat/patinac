@@ -20,7 +20,7 @@ impl TypeChecker {
             Expr::Bool(_) => Ok(Type::Bool),
             Expr::Array(vals) => self.type_of_array(vals),
             Expr::Tuple(vals) => self.type_of_tuple(vals),
-            Expr::FnCall { fun, args } => self.type_of_fn_call(fun, args),
+            Expr::FnCall { fun, args } => self.type_of_fun_call(fun, args),
             Expr::BinaryOp { op, lhs, rhs } => self.type_of_binary_op(*op, lhs, rhs),
             Expr::UnaryOp { op, expr } => self.type_of_unary_op(*op, expr),
             Expr::Index { arr, index } => self.type_of_indexing(arr, index),
@@ -32,13 +32,13 @@ impl TypeChecker {
                 params,
                 return_type,
                 body,
-            } => self.type_of_lambda(params, return_type.as_ref(), body),
+            } => self.type_of_fun(params, return_type.as_ref(), body),
             Expr::Block { exprs, trailing } => self.type_of_block(exprs, *trailing),
         }
     }
 
     fn type_of_ident(&self, ident: Spanned<&str>) -> Result<Type, TypeErrorS> {
-        self.get_binding(ident).map(|b| b.ty.clone())
+        self.get_binding(ident.inner).map(|b| b.ty.clone()).map_err(|e| e.spanned(ident.span))
     }
 
     fn type_of_array(&mut self, exprs: &[ExprS]) -> Result<Type, TypeErrorS> {
@@ -61,7 +61,7 @@ impl TypeChecker {
             .map(Type::Tuple)
     }
 
-    fn type_of_fn_call(&mut self, fun: &ExprS, args: &[ExprS]) -> Result<Type, TypeErrorS> {
+    fn type_of_fun_call(&mut self, fun: &ExprS, args: &[ExprS]) -> Result<Type, TypeErrorS> {
         let fun_ty = self.type_of(fun)?;
 
         let arg_tys = args
@@ -224,7 +224,7 @@ impl TypeChecker {
     fn type_of_assign(&mut self, ident: Spanned<&str>, val: &ExprS) -> Result<Type, TypeErrorS> {
         let val_ty = self.type_of(val)?;
 
-        let info = self.get_binding(ident)?;
+        let info = self.get_binding(ident.inner).map_err(|e| e.spanned(ident.span))?;
 
         if !info.mutable {
             return Err(TypeError::Mutation(ident.inner.to_owned()).spanned(ident.span));
@@ -236,7 +236,7 @@ impl TypeChecker {
         Ok(Type::unit())
     }
 
-    fn type_of_lambda(
+    pub(super) fn type_of_fun(
         &self,
         params: &[BindingS],
         return_ty: Option<&AstTypeS>,

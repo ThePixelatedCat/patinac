@@ -13,7 +13,7 @@ pub enum Item {
     Function {
         name: String,
         params: Vec<BindingS>,
-        return_type: Option<TypeS>,
+        return_ty: Option<TypeS>,
         body: ExprS,
     },
     Struct {

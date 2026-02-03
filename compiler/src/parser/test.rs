@@ -674,7 +674,7 @@ fn function_items() {
                 }
                 .spanned(14..21)
             ],
-            return_type: None,
+            return_ty: None,
             body: Expr::BinaryOp {
                 op: Bop::Add,
                 lhs: Expr::Ident("a".into()).spanned(26..27).into(),
@@ -789,7 +789,7 @@ fn file() {
                 }
                 .spanned(33..52)
             ],
-            return_type: Some(
+            return_ty: Some(
                 Type::Fn(
                     vec![Type::Int.spanned(58..61)],
                     Type::Int.spanned(64..67).into()

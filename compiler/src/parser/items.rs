@@ -60,7 +60,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 Item::Function {
                     name,
                     params: params.inner,
-                    return_type,
+                    return_ty: return_type,
                     body,
                 }
                 .spanned(start..end)
