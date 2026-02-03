@@ -1,5 +1,6 @@
 use super::{Type, TypeChecker, TypeError};
 use crate::{
+    helpers::{Span, Spanned},
     parser::{Parser, ast::ExprS},
     typecheck::error::TypeErrorS,
 };
@@ -63,7 +64,7 @@ fn type_of_if_single_branch_err() {
 
 #[test]
 fn type_of_if() {
-    assert_eq!(check_expr("if (true) 5 else -3"), Ok(Type::Int))
+    assert_eq!(check_expr("if (true) 5.0 else -3.0"), Ok(Type::Float))
 }
 
 #[test]
@@ -114,7 +115,17 @@ fn type_of_lambda() {
 
 #[test]
 fn maths() {
-    
+    assert!(matches!(
+        check_expr("1 + 1.0"),
+        Err(Spanned {
+            inner: TypeError::MismatchedTypes {
+                expected: Type::IntVar(_),
+                found: Type::Float
+            },
+            span: Span { start: 4, end: 7 }
+        })
+    ));
+    assert_eq!(check_expr("1.0 + 1.0"), Ok(Type::Float))
 }
 
 #[test]

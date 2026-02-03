@@ -20,6 +20,12 @@ impl UnifyValue for Type {
             | (int_ty @ (Self::Int | Self::UInt | Self::Byte), Self::IntVar(_)) => {
                 Ok(int_ty.clone())
             }
+            (int_var @ Self::IntVar(_), ty) | (ty, int_var @ Self::IntVar(_)) => {
+                Err(TypeError::MismatchedTypes {
+                    expected: int_var.clone(),
+                    found: ty.clone(),
+                })
+            }
             (Self::Var(id), ty) | (ty, Self::Var(id)) => {
                 if ty.contains(*id) {
                     Err(TypeError::Infinite)
@@ -27,7 +33,9 @@ impl UnifyValue for Type {
                     Ok(ty.clone())
                 }
             }
-            _ => panic!("should never have to unify two bound types"),
+            (ty_a, ty_b) => {
+                panic!("should never have to unify two bound types ({ty_a} and {ty_b})")
+            }
         }
     }
 }
