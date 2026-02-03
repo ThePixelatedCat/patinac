@@ -3,7 +3,7 @@ use std::{error::Error, fmt::Display};
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ParseError {
     Mismatched {
         expected: TokenType,

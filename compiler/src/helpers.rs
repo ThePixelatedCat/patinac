@@ -27,15 +27,6 @@ pub struct Spanned<T> {
     pub span: Span,
 }
 
-impl<'a, T> From<&'a Spanned<T>> for Spanned<&'a T> {
-    fn from(value: &'a Spanned<T>) -> Self {
-        Self {
-            inner: &value.inner,
-            span: value.span,
-        }
-    }
-}
-
 impl<T> Spanned<T> {
     pub fn as_deref(&self) -> Spanned<&T::Target>
     where

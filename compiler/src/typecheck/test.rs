@@ -80,15 +80,19 @@ fn type_of_if_err() {
 }
 
 #[test]
-fn type_of_array_indexing() {
+fn arrays() {
+    let mut checker = TypeChecker::default();
+
+    
+
     assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5][0]"), Ok(Type::Int));
 }
 
 #[test]
-fn type_of_let_assign() {
+fn vars() {
     let mut checker = TypeChecker::default();
 
-    let ty = checker.type_of(&parse_expr("let mut a = 1")).unwrap();
+    let ty = checker.type_of(&parse_expr("let mut a: Byte = 1")).unwrap();
     assert_eq!(checker.normalise(ty), Type::unit());
 
     let ty = checker.type_of(&parse_expr("a = 2")).unwrap();
@@ -96,8 +100,8 @@ fn type_of_let_assign() {
 }
 
 #[test]
-fn type_of_lambda() {
-    let input = "fn(a, b): Int -> a + b";
+fn lambdas() {
+    let input = "fn(a, b): UInt -> a + b";
 
     let mut checker = TypeChecker::default();
 
@@ -107,9 +111,9 @@ fn type_of_lambda() {
         panic!()
     };
 
-    assert_eq!(*return_ty, Type::Int);
+    assert_eq!(*return_ty, Type::UInt);
     for ty in param_tys {
-        assert_eq!(ty, Type::Int)
+        assert_eq!(ty, Type::UInt)
     }
 }
 
@@ -148,7 +152,7 @@ fn type_of_int() {
 #[test]
 fn type_of_block() {
     let input = "{
-        let mut y: Int = 5;
+        let mut y: UInt = 5;
         3 + 1 - 2;
         y = 256;
         if (y < 3) {
@@ -167,7 +171,7 @@ fn type_of_block() {
 fn shadowing() {
     let input = r#"{
         let a = 5;
-        let a = "Hello, World";
+        let a: String = "Hello, World";
         {let a = 2};
         a
     }"#;

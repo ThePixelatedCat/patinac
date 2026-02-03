@@ -22,7 +22,6 @@ pub enum Type {
 
 impl From<AstType> for Type {
     fn from(value: AstType) -> Self {
-        // TODO handle primitives properly
         match value {
             AstType::Int => Self::Int,
             AstType::UInt => Self::UInt,
