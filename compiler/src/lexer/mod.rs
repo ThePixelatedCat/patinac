@@ -33,7 +33,7 @@ impl<'input> Lexer<'input> {
     fn valid_token(&mut self, input: &str) -> Option<Token> {
         if input.starts_with("//") {
             self.pos += input
-                .find(|c| c == '\n')
+                .find('\n')
                 .expect("expected newline to terminate comment");
             self.next()
         } else if input.chars().next().unwrap().is_whitespace() {

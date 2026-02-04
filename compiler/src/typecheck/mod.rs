@@ -87,6 +87,10 @@ impl TypeChecker {
         }
     }
 
+    #[allow(
+        clippy::ref_option,
+        reason = "niche use-cases, avoids using as_ref at callsite"
+    )]
     fn convert(&self, ast_ty: &Option<AstTypeS>) -> Type {
         ast_ty
             .as_ref()
@@ -171,7 +175,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_const(&mut self, name: &str, value: &ExprS) -> Result<(), TypeErrorS> {
+    fn check_const(&self, name: &str, value: &ExprS) -> Result<(), TypeErrorS> {
         let BindingInfo { ty: binding_ty, .. } = self
             .get_binding(name)
             .expect("was added to env in initial iteration");
@@ -182,12 +186,7 @@ impl TypeChecker {
             .map_err(|e| e.spanned(value.span))
     }
 
-    fn check_func(
-        &mut self,
-        name: &str,
-        params: &[BindingS],
-        body: &ExprS,
-    ) -> Result<(), TypeErrorS> {
+    fn check_func(&self, name: &str, params: &[BindingS], body: &ExprS) -> Result<(), TypeErrorS> {
         let BindingInfo {
             ty: Type::Fn(param_tys, return_ty),
             ..
