@@ -7,12 +7,12 @@ use super::ast::{Ast, Binding, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop,
 
 fn parse_expr(input: &str) -> ExprS {
     let mut parser = Parser::new(input);
-    parser.expression().unwrap()
+    parser.expr().unwrap()
 }
 
 fn parse_expr_err(input: &str) -> ParseResult<ExprS> {
     let mut parser = Parser::new(input);
-    parser.expression()
+    parser.expr()
 }
 
 fn parse_item(input: &str) -> ItemS {
@@ -280,6 +280,22 @@ fn compound_expressions() {
     );
 
     assert_eq!(
+        parse_expr("if (a) if (b) x else y"),
+        Expr::If {
+            cond: Expr::Ident("a".into()).spanned(4..5).into(),
+            th: Expr::If {
+                cond: Expr::Ident("b".into()).spanned(11..12).into(),
+                th: Expr::Ident("x".into()).spanned(14..15).into(),
+                el: Some(Expr::Ident("y".into()).spanned(21..22).into())
+            }
+            .spanned(7..22)
+            .into(),
+            el: None
+        }
+        .spanned(0..22)
+    );
+
+    assert_eq!(
         parse_expr("(fn(a, b: Int) -> a + b)(1, 2)"),
         Expr::FnCall {
             fun: Expr::Lambda {
@@ -512,17 +528,11 @@ fn malformed_expressions() {
     );
     assert_eq!(
         parse_expr_err("*5"),
-        Err(
-            ParseError::Unexpected(TokenType::Times, Some("start of expression".into()))
-                .spanned(0..1)
-        )
+        Err(ParseError::Unexpected(TokenType::Times, "start of expression").spanned(0..1))
     );
     assert_eq!(
         parse_expr_err("let a = 1 + 3 print(a)"),
-        Err(
-            ParseError::Unexpected(TokenType::Ident, Some("end of expression".into()))
-                .spanned(14..19)
-        )
+        Err(ParseError::Unexpected(TokenType::Ident, "end of expression").spanned(14..19))
     );
     assert_eq!(
         parse_expr_err("print(5, 2;)"),
@@ -725,15 +735,12 @@ fn malformed_items() {
 
     assert_eq!(
         parse_item_err("const NO_DICTS: {String: Int} = 5"),
-        Err(
-            ParseError::Unexpected(TokenType::LBrace, Some("start of type name".into()))
-                .spanned(16..17)
-        )
+        Err(ParseError::Unexpected(TokenType::LBrace, "start of type name").spanned(16..17))
     );
 
     assert_eq!(
         parse_item_err("let global = 0"),
-        Err(ParseError::Unexpected(TokenType::Let, Some("start of item".into())).spanned(0..3))
+        Err(ParseError::Unexpected(TokenType::Let, "start of item").spanned(0..3))
     );
 
     assert_eq!(
@@ -749,7 +756,7 @@ fn malformed_items() {
         parse_item_err("enum NoComma { Bad Syntax }"),
         Err(ParseError::Unexpected(
             TokenType::Ident,
-            Some("after variant name. expected one of `,` `(` `{`".into())
+            "after variant name. expected one of `,` `(` `{`"
         )
         .spanned(19..25))
     )

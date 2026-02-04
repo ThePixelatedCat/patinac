@@ -88,7 +88,9 @@ impl TypeChecker {
     }
 
     fn convert(&self, ast_ty: &Option<AstTypeS>) -> Type {
-        ast_ty.as_ref().map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())
+        ast_ty
+            .as_ref()
+            .map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())
     }
 
     pub fn new() -> Self {
@@ -218,8 +220,7 @@ impl TypeChecker {
 
         let body_ty = snapshot.type_of(body)?;
 
-        self
-            .unify(return_ty, &body_ty)
+        self.unify(return_ty, &body_ty)
             .map_err(|e| e.spanned(body.span))
     }
 }

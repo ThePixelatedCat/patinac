@@ -99,8 +99,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 let token = self.next().unwrap();
 
                 return Err(
-                    ParseError::Unexpected(token.inner, Some("start of type name".into()))
-                        .spanned(token.span),
+                    ParseError::Unexpected(token.inner, "start of type name").spanned(token.span)
                 );
             }
         })

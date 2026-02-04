@@ -36,13 +36,17 @@ fn unify() {
 }
 
 fn parse_expr(input: &str) -> ExprS {
-    Parser::new(input).expression().unwrap()
+    Parser::new(input).expr().unwrap()
 }
 
 fn check_expr(input: &str) -> Result<Type, TypeErrorS> {
     let mut checker = TypeChecker::default();
     let ty = checker.type_of(&parse_expr(input))?;
     Ok(checker.normalise(ty))
+}
+
+fn check_full(input: &str) -> Result<(), TypeErrorS> {
+    TypeChecker::default().check(&Parser::new(input).file().unwrap())
 }
 
 #[test]
@@ -183,10 +187,15 @@ fn shadowing() {
 
 #[test]
 fn recursion() {
-    let input = "fn fac(n: UInt) -> if (n == 0) 1 else n * fac(n - 1)";
+    let input = "
+        fn fac(n: UInt) -> 
+            if (n == 0) 
+                1 
+            else 
+                n * fac(n - 1)
+        ";
 
-    let ast = Parser::new(input).file().unwrap();
-    let mut checker = TypeChecker::default();
+    assert_eq!(check_full(input), Ok(()));
 
-    assert_eq!(checker.check(&ast), Ok(()))
+    //assert_eq!(check_full("const UHOH = UHOH + 1"), Err(TypeError::Infinite.spanned(13..17)));
 }

@@ -10,7 +10,7 @@ pub enum ParseError {
         expected: TokenType,
         found: TokenType,
     },
-    Unexpected(TokenType, Option<String>),
+    Unexpected(TokenType, &'static str),
     Missing,
 }
 
@@ -20,10 +20,9 @@ impl Display for ParseError {
             Self::Mismatched { expected, found } => {
                 write!(f, "expected token {expected}, found token {found}")
             }
-            Self::Unexpected(token, Some(desc)) => {
+            Self::Unexpected(token, desc) => {
                 write!(f, "unexpected token `{token}` at {desc}")
             }
-            Self::Unexpected(token, None) => write!(f, "unexpected token `{token:?}`"),
             Self::Missing => "expected another token".fmt(f),
         }
     }

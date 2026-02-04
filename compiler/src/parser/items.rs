@@ -29,10 +29,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             _ => {
                 let token = self.next().unwrap();
 
-                Err(
-                    ParseError::Unexpected(token.inner, Some("start of item".into()))
-                        .spanned(token.span),
-                )
+                Err(ParseError::Unexpected(token.inner, "start of item").spanned(token.span))
             }
         }
     }
@@ -49,7 +46,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         };
 
         self.consume(TokenType::Eq)?;
-        let value = self.expression()?;
+        let value = self.expr()?;
 
         let end = value.span.end;
 
@@ -71,7 +68,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         self.consume(TokenType::Arrow)?;
 
-        let body = self.expression()?;
+        let body = self.expr()?;
 
         let end = body.span.end;
 
@@ -139,7 +136,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
                         return Err(ParseError::Unexpected(
                             token.inner,
-                            Some("after variant name. expected one of `,` `(` `{`".into()),
+                            "after variant name. expected one of `,` `(` `{`",
                         )
                         .spanned(token.span));
                     }
