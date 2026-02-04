@@ -1,6 +1,8 @@
 use super::{BindingInfo, Type, TypeChecker, TypeError, TypeErrorS};
-use crate::helpers::Spanned;
-use crate::parser::ast::{Binding, BindingS, Bop, Expr, ExprS, TypeS as AstTypeS, Unop};
+use crate::{
+    helpers::Spanned,
+    parser::ast::{Binding, BindingS, Bop, Expr, ExprS, TypeS as AstTypeS, Unop},
+};
 
 impl TypeChecker {
     pub fn type_of(&mut self, expr: &ExprS) -> Result<Type, TypeErrorS> {

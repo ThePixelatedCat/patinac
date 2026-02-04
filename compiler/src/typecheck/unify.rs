@@ -2,9 +2,7 @@ use std::{cmp, iter};
 
 use ena::unify::UnifyValue;
 
-use crate::typecheck::TypeChecker;
-
-use super::{Type, TypeError, TypeId};
+use super::{Type, TypeChecker, TypeError, TypeId};
 
 impl UnifyValue for Type {
     type Error = TypeError;
