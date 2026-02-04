@@ -1,7 +1,5 @@
 use crate::{helpers::Spanned, span};
 
-pub type Ast = Vec<ItemS>;
-
 span! {Item as ItemS}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {

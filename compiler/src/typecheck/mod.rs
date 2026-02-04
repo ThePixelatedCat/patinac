@@ -12,7 +12,7 @@ use im::HashMap;
 
 use crate::{
     helpers::Spanned,
-    parser::ast::{Ast, Binding, BindingS, ExprS, Item, ItemS, TypeS as AstTypeS},
+    parser::ast::{Binding, BindingS, ExprS, Item, ItemS, TypeS as AstTypeS},
     typecheck::{
         error::TypeErrorS,
         types::{Type, TypeId},

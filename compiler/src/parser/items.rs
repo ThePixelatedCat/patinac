@@ -8,11 +8,11 @@ use crate::{
 
 use super::{
     ParseError, ParseResult, Parser,
-    ast::{Ast, Field, Item, ItemS, Variant},
+    ast::{Field, Item, ItemS, Variant},
 };
 
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
-    pub fn file(&mut self) -> ParseResult<Ast> {
+    pub fn file(&mut self) -> ParseResult<Vec<ItemS>> {
         let mut items = Vec::new();
         while !self.at(TokenType::Eof) {
             items.push(self.item()?);
