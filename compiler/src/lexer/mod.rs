@@ -8,47 +8,33 @@ pub use token::{Token, TokenType};
 pub struct Lexer<'input> {
     input: &'input str,
     pos: usize,
-    eof: bool,
 }
 
 impl Iterator for Lexer<'_> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.input.len() {
-            if self.eof {
-                return None;
-            }
-            self.eof = true;
-            Some(TokenType::Eof.spanned(self.pos..self.pos))
+        Some(if self.pos >= self.input.len() {
+            TokenType::Eof.spanned(self.pos..self.pos)
         } else {
-            Some(self.next_token(&self.input[self.pos..]))
-        }
+            let input = &self.input[self.pos..];
+            self.valid_token(input)
+                .unwrap_or_else(|| self.invalid_token(input))
+        })
     }
 }
 
 impl<'input> Lexer<'input> {
     pub const fn new(input: &'input str) -> Self {
-        Self {
-            input,
-            pos: 0,
-            eof: false,
-        }
-    }
-
-    pub fn next_token(&mut self, input: &str) -> Token {
-        self.valid_token(input)
-            .unwrap_or_else(|| self.invalid_token(input))
+        Self { input, pos: 0 }
     }
 
     /// Returns `None` if the lexer cannot find a token at the start of `input`.
     fn valid_token(&mut self, input: &str) -> Option<Token> {
         if input.starts_with("//") {
             self.pos += input
-                .char_indices()
-                .find(|(_, c)| *c == '\n')
-                .expect("expected newline to terminate comment")
-                .0;
+                .find('\n')
+                .expect("expected newline to terminate comment");
             self.next()
         } else if input.chars().next().unwrap().is_whitespace() {
             self.pos += input
@@ -60,11 +46,7 @@ impl<'input> Lexer<'input> {
                 + 1;
             self.next()
         } else {
-            let (token, len) = rules::RULES
-                .iter()
-                .rev()
-                .filter_map(|rule| rule(input))
-                .max_by_key(|&(_, len)| len)?;
+            let (token, len) = rules::matches(input)?;
 
             let token = token.spanned(self.pos..self.pos + len);
             self.pos += len;

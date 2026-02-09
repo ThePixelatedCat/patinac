@@ -2,330 +2,353 @@ use std::{ops::Range, str::FromStr};
 
 use crate::{
     helpers::{Span, Spanned},
-    lexer::{Token, TokenType},
-    parser::ast::ExprS,
+    lexer::{Token, TokenType as TT},
+    parser::{
+        ParseError, ParseResult, Parser,
+        ast::{Bop, Expr, ExprS, Unop},
+    },
 };
 
-use super::{
-    ParseError, ParseResult, Parser,
-    ast::{Bop, Expr, Unop},
-};
+fn process_escapes(input: &str) -> String {
+    input
+        .replace(r"\'", "\'")
+        .replace(r#"\""#, "\"")
+        .replace(r"\\", "\\")
+        .replace(r"\n", "\n")
+        .replace(r"\r", "\r")
+        .replace(r"\t", "\t")
+        .replace(r"\0", "\0")
+}
 
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
-    pub fn expression(&mut self) -> ParseResult<ExprS> {
-        self.parse_expression(0)
+    pub fn expr(&mut self) -> ParseResult<ExprS> {
+        self.expr_inner(0)
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "still readable and segmented via the match"
-    )]
-    fn parse_expression(&mut self, binding_power: u8) -> ParseResult<ExprS> {
+    fn expr_inner(&mut self, binding_power: u8) -> ParseResult<ExprS> {
         let mut lhs = match self.peek() {
-            TokenType::LParen => {
-                let start = self.next().unwrap().span.start;
-                let expr = self.expression()?;
-
-                let expr = if self.consume_at(TokenType::Comma) {
-                    let mut exprs = vec![expr];
-                    while !self.at(TokenType::RParen) {
-                        exprs.push(self.expression()?);
-
-                        if !self.consume_at(TokenType::Comma) {
-                            break;
-                        }
-                    }
-
-                    Expr::Tuple(exprs)
-                } else {
-                    expr.inner
-                };
-
-                let end = self.consume(TokenType::RParen)?.span.end;
-
-                expr.spanned(start..end)
-            }
-            TokenType::IntLit => {
+            TT::Ident => self.ident_exprs(),
+            TT::IntLit => self.int_lit_expr(),
+            TT::FloatLit => self.float_lit_expr(),
+            TT::CharLit => self.char_lit_expr(),
+            TT::StringLit => self.string_lit_expr(),
+            TT::True => Ok(Expr::Bool(true).spanned(self.consume(TT::True).unwrap().span)),
+            TT::False => Ok(Expr::Bool(false).spanned(self.consume(TT::False).unwrap().span)),
+            TT::LBracket => self.array_lit_expr(),
+            TT::LParen => self.paren_exprs(),
+            TT::If => self.if_expr(),
+            TT::Minus | TT::Bang => self.unop_expr(),
+            TT::Let => self.let_expr(),
+            TT::Fn => self.lambda_expr(),
+            TT::LBrace => self.block_expr(),
+            _ => {
                 let token = self.next().unwrap();
-                let val = u64::from_str(&self.input[Range::from(token.span)]).unwrap();
-                Expr::Int(val).spanned(token.span)
+
+                Err(ParseError::Unexpected(token.inner, "start of expression").spanned(token.span))
             }
-            TokenType::FloatLit => {
-                let token = self.next().unwrap();
-                let val = f64::from_str(&self.input[Range::from(token.span)]).unwrap();
-                Expr::Float(val).spanned(token.span)
-            }
-            TokenType::StringLit => {
-                let token = self.next().unwrap();
-                let span = token.span;
+        }?;
 
-                let val = self.input[span.start + 1..span.end - 1]
-                    .replace("\\n", "\n")
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\");
-
-                Expr::Str(val).spanned(token.span)
-            }
-            TokenType::CharLit => {
-                let token = self.next().unwrap();
-                let span = token.span;
-
-                let val = self.input[span.start + 1..span.end - 1]
-                    .replace("\\n", "\n")
-                    .replace("\\\'", "'")
-                    .replace("\\\\", "\\")
-                    .chars()
-                    .next()
-                    .unwrap();
-
-                Expr::Char(val).spanned(token.span)
-            }
-            TokenType::True => Expr::Bool(true).spanned(self.next().unwrap().span),
-            TokenType::False => Expr::Bool(false).spanned(self.next().unwrap().span),
-            TokenType::LBracket => {
-                let (arr, span) = self.delimited_list(
-                    Self::expression,
-                    TokenType::LBracket,
-                    TokenType::RBracket,
-                )?;
-                Expr::Array(arr).spanned(span)
-            }
-            TokenType::Ident => {
-                let token = self.next().unwrap();
-                let range: Range<_> = token.span.into();
-
-                let ident = self.input[range].to_string();
-
-                if self.consume_at(TokenType::Eq) {
-                    let val = self.expression()?;
-
-                    let end = val.span.end;
-
-                    Expr::Assign {
-                        ident: Spanned {
-                            inner: ident,
-                            span: token.span,
-                        },
-                        value: val.into(),
-                    }
-                    .spanned(token.span.start..end)
-                } else {
-                    Expr::Ident(ident).spanned(token.span)
-                }
-            }
-            TokenType::If => {
-                let start = self.next().unwrap().span.start;
-
-                self.consume(TokenType::LParen)?;
-                let cond = self.expression()?;
-                self.consume(TokenType::RParen)?;
-
-                let th = self.expression()?;
-
-                let el = if self.consume_at(TokenType::Else) {
-                    Some(Box::new(self.expression()?))
-                } else {
-                    None
-                };
-
-                let end = el.as_ref().map_or(th.span.end, |e| e.span.end);
-
-                Expr::If {
-                    cond: Box::new(cond),
-                    th: Box::new(th),
-                    el,
-                }
-                .spanned(start..end)
-            }
-            op @ (TokenType::Minus | TokenType::Bang) => {
-                let op = match op {
-                    TokenType::Minus => Unop::Neg,
-                    TokenType::Bang => Unop::Not,
-                    _ => unreachable!(),
-                };
-
-                let start = self.next().unwrap().span.start;
-
-                let right_binding_power = op.binding_power();
-                let expr = self.parse_expression(right_binding_power)?;
-
-                let end = expr.span.end;
-
-                Expr::UnaryOp {
-                    op,
-                    expr: Box::new(expr),
-                }
-                .spanned(start..end)
-            }
-            TokenType::Let => {
-                let start = self.next().unwrap().span.start;
-
-                let binding = self.binding()?;
-
-                self.consume(TokenType::Eq)?;
-                let value = self.expression()?;
-
-                let end = value.span.end;
-
-                Expr::Let {
-                    binding,
-                    value: Box::new(value),
-                }
-                .spanned(start..end)
-            }
-            TokenType::Pipe => {
-                let (params, Span { start, .. }) =
-                    self.delimited_list(Self::binding, TokenType::Pipe, TokenType::Pipe)?;
-
-                let return_type = if self.consume_at(TokenType::Colon) {
-                    Some(self.type_()?)
-                } else {
-                    None
-                };
-
-                self.consume(TokenType::Arrow)?;
-
-                let body = Box::new(self.expression()?);
-                let end = body.span.end;
-
-                Expr::Lambda {
-                    params,
-                    return_type,
-                    body,
-                }
-                .spanned(start..end)
-            }
-            TokenType::LBrace => {
-                let start = self.next().unwrap().span.start;
-
-                let mut trailing = true;
-                let mut exprs = Vec::new();
-                while !self.at(TokenType::RBrace) {
-                    exprs.push(self.expression()?);
-
-                    if self.consume_at(TokenType::Semicolon) && self.at(TokenType::RBrace) {
-                        trailing = false;
-                        break;
-                    }
-                }
-                let end = self.consume(TokenType::RBrace)?.span.end;
-
-                Expr::Block { exprs, trailing }.spanned(start..end)
-            }
-            token => {
-                return Err(ParseError::Unexpected(
-                    token,
-                    Some("start of expression".into()),
-                ));
-            }
-        };
         loop {
             let op = match self.peek() {
-                TokenType::Plus => Bop::Add,
-                TokenType::Minus => Bop::Sub,
-                TokenType::Times => Bop::Mul,
-                TokenType::FSlash => Bop::Div,
-                TokenType::Xor => Bop::Xor,
-                TokenType::Ampersand => Bop::BAnd,
-                TokenType::Pipe => Bop::BOr,
-                TokenType::Exponent => Bop::Exp,
-                TokenType::Eqq => Bop::Eqq,
-                TokenType::Neq => Bop::Neq,
-                TokenType::And => Bop::And,
-                TokenType::Or => Bop::Or,
-                TokenType::LAngle => Bop::Lt,
-                TokenType::Leq => Bop::Leq,
-                TokenType::RAngle => Bop::Gt,
-                TokenType::Geq => Bop::Geq,
-                TokenType::LBracket => {
-                    self.next();
-
-                    let start = lhs.span.start;
-
-                    let index = Box::new(self.expression()?);
-                    let end = self.consume(TokenType::RBracket)?.span.end;
-
-                    lhs = Expr::Index {
-                        arr: Box::new(lhs),
-                        index,
-                    }
-                    .spanned(start..end);
+                // Attach suffix to current lhs and re-loop
+                TT::LBracket => {
+                    lhs = self.index_suffix(lhs)?;
                     continue;
                 }
-                TokenType::Dot => {
-                    self.next();
-
-                    let start = lhs.span.start;
-
-                    let (field, field_span) = self.ident()?;
-                    let end = field_span.end;
-
-                    lhs = Expr::FieldAccess {
-                        base: Box::new(lhs),
-                        field: Spanned {
-                            inner: field,
-                            span: field_span,
-                        },
-                    }
-                    .spanned(start..end);
+                TT::Dot => {
+                    lhs = self.field_suffix(lhs)?;
                     continue;
                 }
-                TokenType::LParen => {
-                    let start = lhs.span.start;
-
-                    let (args, Span { end, .. }) = self.delimited_list(
-                        Self::expression,
-                        TokenType::LParen,
-                        TokenType::RParen,
-                    )?;
-
-                    lhs = Expr::FnCall {
-                        fun: Box::new(lhs),
-                        args,
-                    }
-                    .spanned(start..end);
+                TT::LParen => {
+                    lhs = self.call_suffix(lhs)?;
                     continue;
                 }
-                TokenType::Eof
-                | TokenType::RParen
-                | TokenType::RBrace
-                | TokenType::RBracket
-                | TokenType::Comma
-                | TokenType::Semicolon
-                | TokenType::Else
-                | TokenType::Fn
-                | TokenType::Const
-                | TokenType::Struct
-                | TokenType::Enum => break,
-                token => {
-                    return Err(ParseError::Unexpected(
-                        token,
-                        Some("end of expression".into()),
-                    ));
+                // Continue current iteration with given binop
+                TT::Plus => Bop::Add,
+                TT::Minus => Bop::Sub,
+                TT::Times => Bop::Mul,
+                TT::FSlash => Bop::Div,
+                TT::Xor => Bop::Xor,
+                TT::Ampersand => Bop::BAnd,
+                TT::Pipe => Bop::BOr,
+                TT::Exponent => Bop::Exp,
+                TT::Eqq => Bop::Eqq,
+                TT::Neq => Bop::Neq,
+                TT::And => Bop::And,
+                TT::Or => Bop::Or,
+                TT::LAngle => Bop::Lt,
+                TT::Leq => Bop::Leq,
+                TT::RAngle => Bop::Gt,
+                TT::Geq => Bop::Geq,
+                // End of expression, terminate loop and return current lhs
+                TT::Eof
+                | TT::RParen // End of parenthesised expr
+                | TT::RBrace // End of block expr
+                | TT::RBracket // End of array index expr
+                | TT::Comma // List delimiter
+                | TT::Semicolon // Stmt seperator
+                | TT::Else // Next part of compound expr
+                | TT::Fn // New item
+                | TT::Const
+                | TT::Struct
+                | TT::Enum => return Ok(lhs),
+                _ => {
+                    let token = self.next().unwrap();
+
+                    return Err(ParseError::Unexpected(token.inner, "end of expression")
+                        .spanned(token.span));
                 }
             };
 
             let (left_binding_power, right_binding_power) = op.binding_power();
 
             if left_binding_power < binding_power {
-                break;
+                return Ok(lhs);
             }
 
-            self.next();
+            self.next(); // Skip over the already-parsed bop token
 
-            let rhs = self.parse_expression(right_binding_power)?;
+            let rhs = self.expr_inner(right_binding_power)?;
 
-            let start = lhs.span.start;
-            let end = rhs.span.end;
+            let span = lhs.span.start..rhs.span.end;
 
             lhs = Expr::BinaryOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             }
-            .spanned(start..end);
+            .spanned(span);
+        }
+    }
+
+    fn ident_exprs(&mut self) -> ParseResult<ExprS> {
+        let ident_token = self.consume(TT::Ident)?;
+
+        let ident = self.input[Range::from(ident_token.span)].to_string();
+
+        if self.consume_at(TT::Eq) {
+            let val = self.expr()?;
+
+            let span = ident_token.span.start..val.span.end;
+
+            Ok(Expr::Assign {
+                ident: Spanned {
+                    inner: ident,
+                    span: ident_token.span,
+                },
+                value: val.into(),
+            }
+            .spanned(span))
+        } else {
+            Ok(Expr::Ident(ident).spanned(ident_token.span))
+        }
+    }
+
+    fn int_lit_expr(&mut self) -> ParseResult<ExprS> {
+        let span = self.consume(TT::IntLit)?.span;
+        let val = u64::from_str(self.str_at(span)).unwrap();
+        Ok(Expr::Int(val).spanned(span))
+    }
+
+    fn float_lit_expr(&mut self) -> ParseResult<ExprS> {
+        let span = self.consume(TT::FloatLit)?.span;
+        let val = f64::from_str(self.str_at(span)).unwrap();
+        Ok(Expr::Float(val).spanned(span))
+    }
+
+    fn char_lit_expr(&mut self) -> ParseResult<ExprS> {
+        let span = self.consume(TT::CharLit)?.span;
+        let val = process_escapes(self.str_at(span.start + 1..span.end - 1))
+            .chars()
+            .next()
+            .unwrap();
+        Ok(Expr::Char(val).spanned(span))
+    }
+
+    fn string_lit_expr(&mut self) -> ParseResult<ExprS> {
+        let span = self.consume(TT::StringLit)?.span;
+        let val = process_escapes(self.str_at(span.start + 1..span.end - 1));
+        Ok(Expr::String(val).spanned(span))
+    }
+
+    fn array_lit_expr(&mut self) -> ParseResult<ExprS> {
+        let Spanned { inner: arr, span } =
+            self.delimited_list(Self::expr, TT::LBracket, TT::RBracket)?;
+        Ok(Expr::Array(arr).spanned(span))
+    }
+
+    fn paren_exprs(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::LParen)?.span.start;
+        let expr = self.expr()?;
+
+        let expr = if self.consume_at(TT::Comma) {
+            let mut exprs = vec![expr];
+            while !self.at(TT::RParen) {
+                exprs.push(self.expr()?);
+
+                if !self.consume_at(TT::Comma) {
+                    break;
+                }
+            }
+
+            Expr::Tuple(exprs)
+        } else {
+            expr.inner
+        };
+
+        let end = self.consume(TT::RParen)?.span.end;
+
+        Ok(expr.spanned(start..end))
+    }
+
+    fn if_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::If)?.span.start;
+
+        self.consume(TT::LParen)?;
+        let cond = self.expr()?;
+        self.consume(TT::RParen)?;
+
+        let th = self.expr()?;
+
+        let el = if self.consume_at(TT::Else) {
+            Some(Box::new(self.expr()?))
+        } else {
+            None
+        };
+
+        let end = el.as_ref().map_or(th.span.end, |e| e.span.end);
+
+        Ok(Expr::If {
+            cond: Box::new(cond),
+            th: Box::new(th),
+            el,
+        }
+        .spanned(start..end))
+    }
+
+    fn unop_expr(&mut self) -> ParseResult<ExprS> {
+        let op_token = self.next().unwrap();
+
+        let op = match op_token.inner {
+            TT::Minus => Unop::Neg,
+            TT::Bang => Unop::Not,
+            _ => unreachable!("should only be called when next token is Minus or Bang"),
+        };
+
+        let right_binding_power = op.binding_power();
+        let expr = self.expr_inner(right_binding_power)?;
+
+        let span = op_token.span.start..expr.span.end;
+
+        Ok(Expr::UnaryOp {
+            op,
+            expr: Box::new(expr),
+        }
+        .spanned(span))
+    }
+
+    fn let_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::Let)?.span.start;
+
+        let binding = self.binding()?;
+
+        self.consume(TT::Eq)?;
+        let value = self.expr()?;
+
+        let span = start..value.span.end;
+
+        Ok(Expr::Let {
+            binding,
+            value: Box::new(value),
+        }
+        .spanned(span))
+    }
+
+    fn lambda_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::Fn)?.span.start;
+
+        let Spanned { inner: params, .. } =
+            self.delimited_list(Self::binding, TT::LParen, TT::RParen)?;
+
+        let return_type = if self.consume_at(TT::Colon) {
+            Some(self.parse_ty()?)
+        } else {
+            None
+        };
+
+        self.consume(TT::Arrow)?;
+
+        let body = Box::new(self.expr()?);
+        let span = start..body.span.end;
+
+        Ok(Expr::Lambda {
+            params,
+            return_type,
+            body,
+        }
+        .spanned(span))
+    }
+
+    fn block_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::LBrace)?.span.start;
+
+        let mut trailing = true;
+
+        let mut exprs = Vec::new();
+        while !self.at(TT::RBrace) {
+            exprs.push(self.expr()?);
+
+            if self.consume_at(TT::Semicolon) && self.at(TT::RBrace) {
+                trailing = false;
+                break;
+            }
         }
 
-        Ok(lhs)
+        let end = self.consume(TT::RBrace)?.span.end;
+
+        Ok(Expr::Block { exprs, trailing }.spanned(start..end))
+    }
+
+    fn index_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
+        self.consume(TT::LBracket)?;
+
+        let index = Box::new(self.expr()?);
+
+        let start = lhs.span.start;
+        let end = self.consume(TT::RBracket)?.span.end;
+
+        Ok(Expr::Index {
+            arr: Box::new(lhs),
+            index,
+        }
+        .spanned(start..end))
+    }
+
+    fn field_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
+        self.consume(TT::Dot)?;
+
+        let field = self.ident()?;
+        let span = lhs.span.start..field.span.end;
+
+        Ok(Expr::FieldAccess {
+            base: Box::new(lhs),
+            field,
+        }
+        .spanned(span))
+    }
+
+    fn call_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
+        let start = lhs.span.start;
+
+        let Spanned {
+            inner: args,
+            span: Span { end, .. },
+        } = self.delimited_list(Self::expr, TT::LParen, TT::RParen)?;
+
+        Ok(Expr::FnCall {
+            fun: Box::new(lhs),
+            args,
+        }
+        .spanned(start..end))
     }
 }

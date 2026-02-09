@@ -1,34 +1,15 @@
+use itertools::{Itertools, assert_equal};
+
 use super::{Lexer, Token, TokenType as T};
 
-macro_rules! count {
-    () => (0usize);
-    ( $x:tt $($xs:tt)* ) => (1usize + count!($($xs)*));
-}
-
-/// walks `$tokens` and compares them to the given kinds.
-macro_rules! assert_tokens {
-    ($tokens:ident, [$($token:expr,)*]) => {
-        {
-            assert_eq!($tokens.len(), count!($($token)*), "mismatched token counts");
-            let mut iter = $tokens.iter();
-            $(
-                let token = iter.next().unwrap();
-                assert_eq!(*token, $token);
-            )*
-        }
-    };
-}
-
-fn tokenize(lexer: &mut Lexer<'_>) -> Vec<Token> {
-    lexer.collect()
+fn lex(input: &str) -> impl Iterator<Item = Token> {
+    Lexer::new(input).take_while_inclusive(|t| t.inner != T::Eof)
 }
 
 #[test]
 fn single_char_tokens() {
-    let mut lexer = Lexer::new("+-(.):");
-    let tokens = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("+-(.):"),
         [
             T::Plus.spanned(0..1),
             T::Minus.spanned(1..2),
@@ -37,31 +18,27 @@ fn single_char_tokens() {
             T::RParen.spanned(4..5),
             T::Colon.spanned(5..6),
             T::Eof.spanned(6..6),
-        ]
+        ],
     );
 }
 
 #[test]
 fn unknown_input() {
-    let mut lexer = Lexer::new("{$$$$$$$+");
-    let tokens = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("{$$$$$$$+"),
         [
             T::LBrace.spanned(0..1),
             T::Error.spanned(1..8),
             T::Plus.spanned(8..9),
             T::Eof.spanned(9..9),
-        ]
+        ],
     );
 }
 
 #[test]
 fn single_char_tokens_with_whitespace() {
-    let mut lexer = Lexer::new("   + -  (.): ");
-    let tokens = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("   + -  (.): "),
         [
             T::Plus.spanned(3..4),
             T::Minus.spanned(5..6),
@@ -70,16 +47,14 @@ fn single_char_tokens_with_whitespace() {
             T::RParen.spanned(10..11),
             T::Colon.spanned(11..12),
             T::Eof.spanned(13..13),
-        ]
+        ],
     );
 }
 
 #[test]
 fn maybe_multiple_char_tokens() {
-    let mut lexer = Lexer::new("&&=<=_!=||**->");
-    let tokens = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("&&=<=_!=||**->"),
         [
             T::And.spanned(0..2),
             T::Eq.spanned(2..3),
@@ -90,51 +65,51 @@ fn maybe_multiple_char_tokens() {
             T::Exponent.spanned(10..12),
             T::Arrow.spanned(12..14),
             T::Eof.spanned(14..14),
-        ]
+        ],
     );
 }
 
 #[test]
 fn keywords() {
-    let mut lexer = Lexer::new("if struct mut let enum = match else fn");
-    let tokens: Vec<_> = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("if Int struct Byte let mut UInt enum Float = match Bool else Char fn"),
         [
             T::If.spanned(0..2),
-            T::Struct.spanned(3..9),
-            T::Mut.spanned(10..13),
-            T::Let.spanned(14..17),
-            T::Enum.spanned(18..22),
-            T::Eq.spanned(23..24),
-            T::Match.spanned(25..30),
-            T::Else.spanned(31..35),
-            T::Fn.spanned(36..38),
-            T::Eof.spanned(38..38),
-        ]
+            T::Int.spanned(3..6),
+            T::Struct.spanned(7..13),
+            T::Byte.spanned(14..18),
+            T::Let.spanned(19..22),
+            T::Mut.spanned(23..26),
+            T::UInt.spanned(27..31),
+            T::Enum.spanned(32..36),
+            T::Float.spanned(37..42),
+            T::Eq.spanned(43..44),
+            T::Match.spanned(45..50),
+            T::Bool.spanned(51..55),
+            T::Else.spanned(56..60),
+            T::Char.spanned(61..65),
+            T::Fn.spanned(66..68),
+            T::Eof.spanned(68..68),
+        ],
     );
 }
 
 #[test]
 fn comment() {
-    let mut lexer = Lexer::new("//hello, world!\nif let");
-    let tokens: Vec<_> = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex("//hello, world!\nif let"),
         [
             T::If.spanned(16..18),
             T::Let.spanned(19..22),
             T::Eof.spanned(22..22),
-        ]
+        ],
     );
 }
 
 #[test]
 fn literals() {
-    let mut lexer = Lexer::new(r#"1 .5 0.211 1. true "test"'\n'"#);
-    let tokens: Vec<_> = tokenize(&mut lexer);
-    assert_tokens!(
-        tokens,
+    assert_equal(
+        lex(r#"1 .5 0.211 1. true "test"'\n''\''"#),
         [
             T::IntLit.spanned(0..1),
             T::FloatLit.spanned(2..4),
@@ -143,8 +118,9 @@ fn literals() {
             T::True.spanned(14..18),
             T::StringLit.spanned(19..25),
             T::CharLit.spanned(25..29),
-            T::Eof.spanned(29..29),
-        ]
+            T::CharLit.spanned(29..33),
+            T::Eof.spanned(33..33),
+        ],
     );
 }
 
@@ -152,7 +128,7 @@ fn literals() {
 fn function() {
     let input = r#"
         // this is a comment!
-        fn test(var: Type, var2_: bool) {
+        fn test(var: Type, var2_: Bool) {
             let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2 ** 4;
             let mut chars = x.chars();
             if let Some(c) = chars.next() {
@@ -162,9 +138,8 @@ fn function() {
             }
         }
     "#;
-    let mut lexer = Lexer::new(&input);
-    let tokens = tokenize(&mut lexer);
-    assert_tokens!(
+    let tokens = lex(&input);
+    assert_equal(
         tokens,
         [
             // function signature
@@ -177,7 +152,7 @@ fn function() {
             T::Comma.spanned(56..57),
             T::Ident.spanned(58..63),
             T::Colon.spanned(63..64),
-            T::Ident.spanned(65..69),
+            T::Bool.spanned(65..69),
             T::RParen.spanned(69..70),
             T::LBrace.spanned(71..72),
             // `x` assignment
@@ -243,6 +218,6 @@ fn function() {
             T::RBrace.spanned(329..330), // end if
             T::RBrace.spanned(339..340), // end fn
             T::Eof.spanned(345..345),
-        ]
+        ],
     );
 }

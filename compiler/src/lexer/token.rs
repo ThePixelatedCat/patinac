@@ -1,16 +1,6 @@
 use crate::span;
 use std::fmt::Display;
 
-impl Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} from {} to {}",
-            self.inner, self.span.start, self.span.end
-        )
-    }
-}
-
 span! {TokenType as Token}
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum TokenType {
@@ -54,6 +44,12 @@ pub enum TokenType {
     Leq,
     Geq,
     // Keywords
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Bool,
+    Char,
     Let,
     Mut,
     Const,
@@ -112,6 +108,12 @@ impl Display for TokenType {
                 Self::Neq => "!=",
                 Self::Leq => "<=",
                 Self::Geq => ">=",
+                Self::Int => "Int",
+                Self::UInt => "UInt",
+                Self::Byte => "Byte",
+                Self::Float => "Float",
+                Self::Bool => "Bool",
+                Self::Char => "Char",
                 Self::Let => "let",
                 Self::Mut => "mut",
                 Self::Const => "const",

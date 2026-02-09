@@ -1,15 +1,16 @@
-use crate::lexer::TokenType;
+use crate::{lexer::TokenType, span};
 use std::{error::Error, fmt::Display};
 
-pub type ParseResult<T> = Result<T, ParseError>;
+pub type ParseResult<T> = Result<T, ParseErrorS>;
 
-#[derive(Debug)]
+span! { ParseError as ParseErrorS }
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     Mismatched {
         expected: TokenType,
         found: TokenType,
     },
-    Unexpected(TokenType, Option<String>),
+    Unexpected(TokenType, &'static str),
     Missing,
 }
 
@@ -19,10 +20,9 @@ impl Display for ParseError {
             Self::Mismatched { expected, found } => {
                 write!(f, "expected token {expected}, found token {found}")
             }
-            Self::Unexpected(token, Some(desc)) => {
+            Self::Unexpected(token, desc) => {
                 write!(f, "unexpected token `{token}` at {desc}")
             }
-            Self::Unexpected(token, None) => write!(f, "unexpected token `{token:?}`"),
             Self::Missing => "expected another token".fmt(f),
         }
     }

@@ -1,19 +1,17 @@
 use crate::{helpers::Spanned, span};
 
-pub type Ast = Vec<ItemS>;
-
 span! {Item as ItemS}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Const {
         name: String,
-        ty: TypeS,
+        ty: Option<TypeS>,
         value: ExprS,
     },
-    Function {
+    Func {
         name: String,
         params: Vec<BindingS>,
-        return_type: Option<TypeS>,
+        return_ty: Option<TypeS>,
         body: ExprS,
     },
     Struct {
@@ -51,23 +49,23 @@ pub enum Binding {
     Var {
         mutable: bool,
         ident: String,
-        type_annotation: Option<TypeS>,
+        annotated_ty: Option<TypeS>,
     },
 }
 
 span! {Type as TypeS}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
-    Named {
-        name: String,
-        generics: Vec<TypeS>,
-    },
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Bool,
+    Char,
     Array(Box<TypeS>),
     Tuple(Vec<TypeS>),
-    Fn {
-        params: Vec<TypeS>,
-        result: Box<TypeS>,
-    },
+    Fn(Vec<TypeS>, Box<TypeS>),
+    Named { name: String, args: Vec<TypeS> },
 }
 
 span! {Expr as ExprS}
@@ -76,7 +74,7 @@ pub enum Expr {
     Ident(String),
     Int(u64),
     Float(f64),
-    Str(String),
+    String(String),
     Char(char),
     Bool(bool),
     Array(Vec<ExprS>),

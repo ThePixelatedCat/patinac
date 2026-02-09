@@ -1,12 +1,8 @@
-use std::{fmt::Display, ops::Range};
-
-pub fn concat(items: &Vec<impl ToString>) -> String {
-    items
-        .iter()
-        .map(|t| t.to_string())
-        .collect::<Vec<String>>()
-        .join(", ")
-}
+use std::{
+    error::Error,
+    fmt::Display,
+    ops::{Deref, Range},
+};
 
 #[macro_export]
 macro_rules! span {
@@ -32,6 +28,33 @@ pub struct Spanned<T> {
     pub span: Span,
 }
 
+impl<T> Spanned<T> {
+    pub fn as_deref(&self) -> Spanned<&T::Target>
+    where
+        T: Deref,
+    {
+        Spanned {
+            inner: &*self.inner,
+            span: self.span,
+        }
+    }
+
+    pub fn span(inner: T, span: impl Into<Span>) -> Self {
+        Self {
+            inner,
+            span: span.into(),
+        }
+    }
+}
+
+impl<T: Display> Display for Spanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.span, self.inner)
+    }
+}
+
+impl<T: Error> Error for Spanned<T> {}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
     pub start: usize,
@@ -50,12 +73,6 @@ impl From<Range<usize>> for Span {
 impl From<Span> for Range<usize> {
     fn from(value: Span) -> Self {
         value.start..value.end
-    }
-}
-
-impl From<&Self> for Span {
-    fn from(value: &Self) -> Self {
-        *value
     }
 }
 

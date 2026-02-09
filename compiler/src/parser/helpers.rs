@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::{
-    helpers::Span,
+    helpers::Spanned,
     lexer::{Token, TokenType},
 };
 
@@ -15,30 +15,36 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let mutable = self.at(TokenType::Mut);
         let mut_start = mutable.then(|| self.next().unwrap().span.start);
 
-        let (name, name_span) = self.ident()?;
+        let ident = self.ident()?;
 
-        let start = mut_start.unwrap_or(name_span.start);
+        let start = mut_start.unwrap_or(ident.span.start);
 
         let type_annotation = if self.consume_at(TokenType::Colon) {
-            Some(self.type_()?)
+            Some(self.parse_ty()?)
         } else {
             None
         };
 
         let end = type_annotation
             .as_ref()
-            .map_or(name_span.end, |ty| ty.span.end);
+            .map_or(ident.span.end, |ty| ty.span.end);
 
         Ok(Binding::Var {
             mutable,
-            ident: name,
-            type_annotation,
+            ident: ident.inner,
+            annotated_ty: type_annotation,
         }
         .spanned(start..end))
     }
 
-    pub fn type_(&mut self) -> ParseResult<TypeS> {
+    pub fn parse_ty(&mut self) -> ParseResult<TypeS> {
         Ok(match self.peek() {
+            TokenType::Int => Type::Int.spanned(self.next().unwrap().span),
+            TokenType::UInt => Type::UInt.spanned(self.next().unwrap().span),
+            TokenType::Byte => Type::Byte.spanned(self.next().unwrap().span),
+            TokenType::Float => Type::Float.spanned(self.next().unwrap().span),
+            TokenType::Bool => Type::Bool.spanned(self.next().unwrap().span),
+            TokenType::Char => Type::Char.spanned(self.next().unwrap().span),
             TokenType::Ident => {
                 let span = self.next().unwrap().span;
                 let name = self.input[Range::from(span)].to_string();
@@ -46,62 +52,75 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 let start = span.start;
 
                 let (generics, end) = if self.at(TokenType::LAngle) {
-                    let (generics, generics_span) =
-                        self.delimited_list(Self::type_, TokenType::LAngle, TokenType::RAngle)?;
+                    let Spanned {
+                        inner: generics,
+                        span: generics_span,
+                    } =
+                        self.delimited_list(Self::parse_ty, TokenType::LAngle, TokenType::RAngle)?;
                     (generics, generics_span.end)
                 } else {
                     (Vec::new(), span.end)
                 };
 
-                Type::Named { name, generics }.spanned(start..end)
+                Type::Named {
+                    name,
+                    args: generics,
+                }
+                .spanned(start..end)
             }
             TokenType::LBracket => {
                 let start = self.next().unwrap().span.start;
 
-                let inner_type = self.type_()?;
+                let inner_type = self.parse_ty()?;
 
                 let end = self.consume(TokenType::RBracket)?.span.end;
 
                 Type::Array(Box::new(inner_type)).spanned(start..end)
             }
             TokenType::LParen => {
-                let (types, span) =
-                    self.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
+                let Spanned { inner: types, span } =
+                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
                 Type::Tuple(types).spanned(span)
             }
             TokenType::Fn => {
                 let start = self.next().unwrap().span.start;
 
-                let (params, _) =
-                    self.delimited_list(Self::type_, TokenType::LParen, TokenType::RParen)?;
+                let Spanned { inner: params, .. } =
+                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
 
                 self.consume(TokenType::Colon)?;
-                let result = Box::new(self.type_()?);
+                let result = Box::new(self.parse_ty()?);
 
                 let end = result.span.end;
 
-                Type::Fn { params, result }.spanned(start..end)
+                Type::Fn(params, result).spanned(start..end)
             }
-            token => {
-                return Err(ParseError::Unexpected(
-                    token,
-                    Some("start of type name".into()),
-                ));
+            _ => {
+                let token = self.next().unwrap();
+
+                return Err(
+                    ParseError::Unexpected(token.inner, "start of type name").spanned(token.span)
+                );
             }
         })
     }
 
-    pub fn ident(&mut self) -> ParseResult<(String, Span)> {
-        match self.peek() {
-            TokenType::Ident => {
-                let span = self.next().unwrap().span;
+    pub fn ident(&mut self) -> ParseResult<Spanned<String>> {
+        if self.peek() == TokenType::Ident {
+            let span = self.next().unwrap().span;
 
-                Ok((self.input[Range::from(span)].to_string(), span))
-            }
-            other_type => Err(ParseError::Mismatched {
+            Ok(Spanned::span(
+                self.input[Range::from(span)].to_string(),
+                span,
+            ))
+        } else {
+            let token = self.next().unwrap();
+
+            Err(ParseError::Mismatched {
                 expected: TokenType::Ident,
-                found: other_type,
-            }),
+                found: token.inner,
+            }
+            .spanned(token.span))
         }
     }
 
@@ -110,7 +129,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         mut f: F,
         start: TokenType,
         end: TokenType,
-    ) -> ParseResult<(Vec<T>, Span)>
+    ) -> ParseResult<Spanned<Vec<T>>>
     where
         F: FnMut(&mut Self) -> ParseResult<T>,
     {
@@ -126,6 +145,6 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         }
         let end = self.consume(end)?.span.end;
 
-        Ok((items, (start..end).into()))
+        Ok(Spanned::span(items, start..end))
     }
 }

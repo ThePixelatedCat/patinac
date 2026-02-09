@@ -6,27 +6,12 @@ use super::TokenType;
 
 type Rule = fn(&str) -> Option<(TokenType, usize)>;
 
-fn match_single_char(input: &str, c: char) -> Option<usize> {
-    input.chars().next().and_then(|ch| (ch == c).then_some(1))
+fn match_phrase(i: &str, p: &str, t: TokenType) -> Option<(TokenType, usize)> {
+    i.starts_with(p).then_some((t, p.len()))
 }
 
-fn match_two_chars(input: &str, first: char, second: char) -> Option<usize> {
-    if input.len() >= 2
-        && let Some(_) = match_single_char(input, first)
-        && let Some(_) = match_single_char(&input[1..], second)
-    {
-        Some(2)
-    } else {
-        None
-    }
-}
-
-fn match_keyword(input: &str, keyword: &str) -> Option<usize> {
-    input.starts_with(keyword).then_some(keyword.len())
-}
-
-fn match_regex(input: &str, r: &Regex) -> Option<usize> {
-    r.find(input).map(|regex_match| regex_match.end())
+fn match_regex(i: &str, r: &Regex, t: TokenType) -> Option<(TokenType, usize)> {
+    r.find(i).map(|regex_match| (t, regex_match.end()))
 }
 
 static INT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+").unwrap());
@@ -36,58 +21,72 @@ static STRING_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^"((\\"|\\\\|\\n)|[^\\"])*""#).unwrap());
 static CHAR_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^'((\\'|\\\\|\\n)|[^\\'])'").unwrap());
-static IDENTIFIER_REGEX: LazyLock<Regex> =
+static IDENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
 
-pub(super) const RULES: [Rule; 47] = {
+const RULES: [Rule; 53] = {
     use TokenType as T;
     [
-        |input| match_regex(input, &INT_REGEX).map(|len| (T::IntLit, len)),
-        |input| match_regex(input, &FLOAT_REGEX).map(|len| (T::FloatLit, len)),
-        |input| match_regex(input, &STRING_REGEX).map(|len| (T::StringLit, len)),
-        |input| match_regex(input, &CHAR_REGEX).map(|len| (T::CharLit, len)),
-        |input| match_single_char(input, '[').map(|len| (T::LBracket, len)),
-        |input| match_single_char(input, ']').map(|len| (T::RBracket, len)),
-        |input| match_single_char(input, '{').map(|len| (T::LBrace, len)),
-        |input| match_single_char(input, '}').map(|len| (T::RBrace, len)),
-        |input| match_single_char(input, '(').map(|len| (T::LParen, len)),
-        |input| match_single_char(input, ')').map(|len| (T::RParen, len)),
-        |input| match_single_char(input, '=').map(|len| (T::Eq, len)),
-        |input| match_single_char(input, '&').map(|len| (T::Ampersand, len)),
-        |input| match_single_char(input, '|').map(|len| (T::Pipe, len)),
-        |input| match_single_char(input, '!').map(|len| (T::Bang, len)),
-        |input| match_single_char(input, '^').map(|len| (T::Xor, len)),
-        |input| match_single_char(input, '<').map(|len| (T::LAngle, len)),
-        |input| match_single_char(input, '>').map(|len| (T::RAngle, len)),
-        |input| match_single_char(input, '+').map(|len| (T::Plus, len)),
-        |input| match_single_char(input, '-').map(|len| (T::Minus, len)),
-        |input| match_single_char(input, '*').map(|len| (T::Times, len)),
-        |input| match_single_char(input, '/').map(|len| (T::FSlash, len)),
-        |input| match_single_char(input, '\\').map(|len| (T::BSlash, len)),
-        |input| match_single_char(input, '.').map(|len| (T::Dot, len)),
-        |input| match_single_char(input, ',').map(|len| (T::Comma, len)),
-        |input| match_single_char(input, ':').map(|len| (T::Colon, len)),
-        |input| match_single_char(input, ';').map(|len| (T::Semicolon, len)),
-        |input| match_single_char(input, '_').map(|len| (T::Underscore, len)),
-        |input| match_two_chars(input, '-', '>').map(|len| (T::Arrow, len)),
-        |input| match_two_chars(input, '=', '=').map(|len| (T::Eqq, len)),
-        |input| match_two_chars(input, '!', '=').map(|len| (T::Neq, len)),
-        |input| match_two_chars(input, '*', '*').map(|len| (T::Exponent, len)),
-        |input| match_two_chars(input, '&', '&').map(|len| (T::And, len)),
-        |input| match_two_chars(input, '|', '|').map(|len| (T::Or, len)),
-        |input| match_two_chars(input, '<', '=').map(|len| (T::Leq, len)),
-        |input| match_two_chars(input, '>', '=').map(|len| (T::Geq, len)),
-        |input| match_keyword(input, "let").map(|len| (T::Let, len)),
-        |input| match_keyword(input, "mut").map(|len| (T::Mut, len)),
-        |input| match_keyword(input, "const").map(|len| (T::Const, len)),
-        |input| match_keyword(input, "fn").map(|len| (T::Fn, len)),
-        |input| match_keyword(input, "struct").map(|len| (T::Struct, len)),
-        |input| match_keyword(input, "enum").map(|len| (T::Enum, len)),
-        |input| match_keyword(input, "if").map(|len| (T::If, len)),
-        |input| match_keyword(input, "else").map(|len| (T::Else, len)),
-        |input| match_keyword(input, "match").map(|len| (T::Match, len)),
-        |input| match_keyword(input, "true").map(|len| (T::True, len)),
-        |input| match_keyword(input, "false").map(|len| (T::False, len)),
-        |input| match_regex(input, &IDENTIFIER_REGEX).map(|len| (T::Ident, len)),
+        |i| match_regex(i, &INT_REGEX, T::IntLit),
+        |i| match_regex(i, &FLOAT_REGEX, T::FloatLit),
+        |i| match_regex(i, &STRING_REGEX, T::StringLit),
+        |i| match_regex(i, &CHAR_REGEX, T::CharLit),
+        |i| match_phrase(i, "[", T::LBracket),
+        |i| match_phrase(i, "]", T::RBracket),
+        |i| match_phrase(i, "{", T::LBrace),
+        |i| match_phrase(i, "}", T::RBrace),
+        |i| match_phrase(i, "(", T::LParen),
+        |i| match_phrase(i, ")", T::RParen),
+        |i| match_phrase(i, "=", T::Eq),
+        |i| match_phrase(i, "&", T::Ampersand),
+        |i| match_phrase(i, "|", T::Pipe),
+        |i| match_phrase(i, "!", T::Bang),
+        |i| match_phrase(i, "^", T::Xor),
+        |i| match_phrase(i, "<", T::LAngle),
+        |i| match_phrase(i, ">", T::RAngle),
+        |i| match_phrase(i, "+", T::Plus),
+        |i| match_phrase(i, "-", T::Minus),
+        |i| match_phrase(i, "*", T::Times),
+        |i| match_phrase(i, "/", T::FSlash),
+        |i| match_phrase(i, "\\", T::BSlash),
+        |i| match_phrase(i, ".", T::Dot),
+        |i| match_phrase(i, ",", T::Comma),
+        |i| match_phrase(i, ":", T::Colon),
+        |i| match_phrase(i, ";", T::Semicolon),
+        |i| match_phrase(i, "_", T::Underscore),
+        |i| match_phrase(i, "->", T::Arrow),
+        |i| match_phrase(i, "==", T::Eqq),
+        |i| match_phrase(i, "!=", T::Neq),
+        |i| match_phrase(i, "**", T::Exponent),
+        |i| match_phrase(i, "&&", T::And),
+        |i| match_phrase(i, "||", T::Or),
+        |i| match_phrase(i, "<=", T::Leq),
+        |i| match_phrase(i, ">=", T::Geq),
+        |i| match_phrase(i, "Int", T::Int),
+        |i| match_phrase(i, "UInt", T::UInt),
+        |i| match_phrase(i, "Byte", T::Byte),
+        |i| match_phrase(i, "Float", T::Float),
+        |i| match_phrase(i, "Bool", T::Bool),
+        |i| match_phrase(i, "Char", T::Char),
+        |i| match_phrase(i, "let", T::Let),
+        |i| match_phrase(i, "mut", T::Mut),
+        |i| match_phrase(i, "const", T::Const),
+        |i| match_phrase(i, "fn", T::Fn),
+        |i| match_phrase(i, "struct", T::Struct),
+        |i| match_phrase(i, "enum", T::Enum),
+        |i| match_phrase(i, "if", T::If),
+        |i| match_phrase(i, "else", T::Else),
+        |i| match_phrase(i, "match", T::Match),
+        |i| match_phrase(i, "true", T::True),
+        |i| match_phrase(i, "false", T::False),
+        |i| match_regex(i, &IDENT_REGEX, T::Ident),
     ]
 };
+
+pub(super) fn matches(input: &str) -> Option<(TokenType, usize)> {
+    RULES
+        .iter()
+        .filter_map(|rule| rule(input))
+        .rev() // reverse so that the first-listed element is returned in case of ambiguity (e.g. "match" as ident vs keyword)
+        .max_by_key(|&(_, len)| len)
+}

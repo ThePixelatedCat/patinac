@@ -1,11 +1,18 @@
 use crate::helpers::Spanned;
+use crate::lexer::TokenType;
+use crate::parser::{ParseError, ParseResult};
 
 use super::Parser;
-use super::ast::{Ast, Binding, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop, Variant};
+use super::ast::{Binding, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop, Variant};
 
 fn parse_expr(input: &str) -> ExprS {
     let mut parser = Parser::new(input);
-    parser.expression().unwrap()
+    parser.expr().unwrap()
+}
+
+fn parse_expr_err(input: &str) -> ParseResult<ExprS> {
+    let mut parser = Parser::new(input);
+    parser.expr()
 }
 
 fn parse_item(input: &str) -> ItemS {
@@ -13,36 +20,41 @@ fn parse_item(input: &str) -> ItemS {
     parser.item().unwrap()
 }
 
-fn parse_ast(input: &str) -> Ast {
+fn parse_item_err(input: &str) -> ParseResult<ItemS> {
+    let mut parser = Parser::new(input);
+    parser.item()
+}
+
+fn parse_ast(input: &str) -> Vec<ItemS> {
     let mut parser = Parser::new(input);
     parser.file().unwrap()
 }
 
 #[test]
-fn parse_lit_expressions() {
-    let expr = parse_expr("42");
-    assert_eq!(expr, Expr::Int(42).spanned(0..2));
+fn lit_expressions() {
+    assert_eq!(parse_expr("42"), Expr::Int(42).spanned(0..2));
 
-    let expr = parse_expr("  2.7768");
-    assert_eq!(expr, Expr::Float(2.7768).spanned(2..8));
+    assert_eq!(parse_expr("  2.7768"), Expr::Float(2.7768).spanned(2..8));
 
-    let expr = parse_expr(r#""I am a Str!""#);
-    assert_eq!(expr, Expr::Str("I am a Str!".into()).spanned(0..13));
-
-    let expr = parse_expr(r#"(42,(2,),"end")"#);
     assert_eq!(
-        expr,
+        parse_expr(r#""I am a Str!""#),
+        Expr::String("I am a Str!".into()).spanned(0..13)
+    );
+
+    assert_eq!(parse_expr(r"'\''"), Expr::Char('\'').spanned(0..4));
+
+    assert_eq!(
+        parse_expr(r#"(42,(2,),"end")"#),
         Expr::Tuple(vec![
             Expr::Int(42).spanned(1..3),
             Expr::Tuple(vec![Expr::Int(2).spanned(5..6)]).spanned(4..8),
-            Expr::Str("end".into()).spanned(9..14)
+            Expr::String("end".into()).spanned(9..14)
         ])
         .spanned(0..15)
     );
 
-    let expr = parse_expr("[1, 4, 3, 2]");
     assert_eq!(
-        expr,
+        parse_expr("[1, 4, 3, 2]"),
         Expr::Array(vec![
             Expr::Int(1).spanned(1..2),
             Expr::Int(4).spanned(4..5),
@@ -52,15 +64,13 @@ fn parse_lit_expressions() {
         .spanned(0..12)
     );
 
-    let expr = parse_expr("foo");
-    assert_eq!(expr, Expr::Ident("foo".into()).spanned(0..3));
+    assert_eq!(parse_expr("foo"), Expr::Ident("foo".into()).spanned(0..3));
 }
 
 #[test]
-fn parse_unop_expressions() {
-    let expr = parse_expr("!  is_visible");
+fn unop_expressions() {
     assert_eq!(
-        expr,
+        parse_expr("!  is_visible"),
         Expr::UnaryOp {
             op: Unop::Not,
             expr: Expr::Ident("is_visible".into()).spanned(3..13).into(),
@@ -68,9 +78,8 @@ fn parse_unop_expressions() {
         .spanned(0..13)
     );
 
-    let expr = parse_expr("-(-13)");
     assert_eq!(
-        expr,
+        parse_expr("-(-13)"),
         Expr::UnaryOp {
             op: Unop::Neg,
             expr: Expr::UnaryOp {
@@ -85,10 +94,9 @@ fn parse_unop_expressions() {
 }
 
 #[test]
-fn parse_binop_expressions() {
-    let expr = parse_expr("4 + 2 * 3");
+fn binop_expressions() {
     assert_eq!(
-        expr,
+        parse_expr("4 + 2 * 3"),
         Expr::BinaryOp {
             op: Bop::Add,
             lhs: Expr::Int(4).spanned(0..1).into(),
@@ -103,9 +111,8 @@ fn parse_binop_expressions() {
         .spanned(0..9)
     );
 
-    let expr = parse_expr("4 * 2 + 3");
     assert_eq!(
-        expr,
+        parse_expr("4 * 2 + 3"),
         Expr::BinaryOp {
             op: Bop::Add,
             lhs: Expr::BinaryOp {
@@ -120,9 +127,8 @@ fn parse_binop_expressions() {
         .spanned(0..9)
     );
 
-    let expr = parse_expr("4 - 2 - 3");
     assert_eq!(
-        expr,
+        parse_expr("4 - 2 - 3"),
         Expr::BinaryOp {
             op: Bop::Sub,
             lhs: Expr::BinaryOp {
@@ -137,9 +143,8 @@ fn parse_binop_expressions() {
         .spanned(0..9)
     );
 
-    let expr = parse_expr("4 ** 2 ** 3");
     assert_eq!(
-        expr,
+        parse_expr("4 ** 2 ** 3"),
         Expr::BinaryOp {
             op: Bop::Exp,
             lhs: Expr::Int(4).spanned(0..1).into(),
@@ -154,9 +159,8 @@ fn parse_binop_expressions() {
         .spanned(0..11)
     );
 
-    let expr = parse_expr("4 ^ 2 ^ 3");
     assert_eq!(
-        expr,
+        parse_expr("4 ^ 2 ^ 3"),
         Expr::BinaryOp {
             op: Bop::Xor,
             lhs: Expr::BinaryOp {
@@ -170,13 +174,76 @@ fn parse_binop_expressions() {
         }
         .spanned(0..9)
     );
+
+    assert_eq!(
+        parse_expr("true || false && true"),
+        Expr::BinaryOp {
+            op: Bop::Or,
+            lhs: Expr::Bool(true).spanned(0..4).into(),
+            rhs: Expr::BinaryOp {
+                op: Bop::And,
+                lhs: Expr::Bool(false).spanned(8..13).into(),
+                rhs: Expr::Bool(true).spanned(17..21).into(),
+            }
+            .spanned(8..21)
+            .into()
+        }
+        .spanned(0..21)
+    );
+
+    assert_eq!(
+        parse_expr("3 & 1 | 5"),
+        Expr::BinaryOp {
+            op: Bop::BOr,
+            lhs: Expr::BinaryOp {
+                op: Bop::BAnd,
+                lhs: Expr::Int(3).spanned(0..1).into(),
+                rhs: Expr::Int(1).spanned(4..5).into(),
+            }
+            .spanned(0..5)
+            .into(),
+            rhs: Expr::Int(5).spanned(8..9).into()
+        }
+        .spanned(0..9)
+    );
+
+    assert_eq!(
+        parse_expr("(3 >= 4) != true"),
+        Expr::BinaryOp {
+            op: Bop::Neq,
+            lhs: Expr::BinaryOp {
+                op: Bop::Geq,
+                lhs: Expr::Int(3).spanned(1..2).into(),
+                rhs: Expr::Int(4).spanned(6..7).into(),
+            }
+            .spanned(0..8)
+            .into(),
+            rhs: Expr::Bool(true).spanned(12..16).into()
+        }
+        .spanned(0..16)
+    );
+
+    assert_eq!(
+        parse_expr("(4 > 3) == true"),
+        Expr::BinaryOp {
+            op: Bop::Eqq,
+            lhs: Expr::BinaryOp {
+                op: Bop::Gt,
+                lhs: Expr::Int(4).spanned(1..2).into(),
+                rhs: Expr::Int(3).spanned(5..6).into(),
+            }
+            .spanned(0..7)
+            .into(),
+            rhs: Expr::Bool(true).spanned(11..15).into()
+        }
+        .spanned(0..15)
+    );
 }
 
 #[test]
-fn parse_compound_expressions() {
-    let expr = parse_expr("bar (  x, 2)");
+fn compound_expressions() {
     assert_eq!(
-        expr,
+        parse_expr("bar (  x, 2)"),
         Expr::FnCall {
             fun: Expr::Ident("bar".into()).spanned(0..3).into(),
             args: vec![
@@ -187,9 +254,8 @@ fn parse_compound_expressions() {
         .spanned(0..12)
     );
 
-    let expr = parse_expr("if (0.5) foo()");
     assert_eq!(
-        expr,
+        parse_expr("if (0.5) foo()"),
         Expr::If {
             cond: Expr::Float(0.5).spanned(4..7).into(),
             th: Expr::FnCall {
@@ -203,9 +269,8 @@ fn parse_compound_expressions() {
         .spanned(0..14)
     );
 
-    let expr = parse_expr("if (0.5) foo else bar");
     assert_eq!(
-        expr,
+        parse_expr("if (0.5) foo else bar"),
         Expr::If {
             cond: Expr::Float(0.5).spanned(4..7).into(),
             th: Expr::Ident("foo".into()).spanned(9..12).into(),
@@ -214,53 +279,61 @@ fn parse_compound_expressions() {
         .spanned(0..21)
     );
 
-    let expr = parse_expr("(|a, b: Int| -> a + b)(1, 2)");
     assert_eq!(
-        expr,
+        parse_expr("if (a) if (b) x else y"),
+        Expr::If {
+            cond: Expr::Ident("a".into()).spanned(4..5).into(),
+            th: Expr::If {
+                cond: Expr::Ident("b".into()).spanned(11..12).into(),
+                th: Expr::Ident("x".into()).spanned(14..15).into(),
+                el: Some(Expr::Ident("y".into()).spanned(21..22).into())
+            }
+            .spanned(7..22)
+            .into(),
+            el: None
+        }
+        .spanned(0..22)
+    );
+
+    assert_eq!(
+        parse_expr("(fn(a, b: Int) -> a + b)(1, 2)"),
         Expr::FnCall {
             fun: Expr::Lambda {
                 params: vec![
                     Binding::Var {
                         mutable: false,
                         ident: "a".into(),
-                        type_annotation: None
+                        annotated_ty: None
                     }
-                    .spanned(2..3),
+                    .spanned(4..5),
                     Binding::Var {
                         mutable: false,
                         ident: "b".into(),
-                        type_annotation: Some(
-                            Type::Named {
-                                name: "Int".into(),
-                                generics: vec![]
-                            }
-                            .spanned(8..11)
-                        )
+                        annotated_ty: Some(Type::Int.spanned(10..13))
                     }
-                    .spanned(5..11)
+                    .spanned(7..13)
                 ],
                 return_type: None,
                 body: Expr::BinaryOp {
                     op: Bop::Add,
-                    lhs: Expr::Ident("a".into()).spanned(16..17).into(),
-                    rhs: Expr::Ident("b".into()).spanned(20..21).into()
+                    lhs: Expr::Ident("a".into()).spanned(18..19).into(),
+                    rhs: Expr::Ident("b".into()).spanned(22..23).into()
                 }
-                .spanned(16..21)
+                .spanned(18..23)
                 .into()
             }
-            .spanned(0..22)
+            .spanned(0..24)
             .into(),
             args: vec![
-                Expr::Int(1).spanned(23..24).into(),
-                Expr::Int(2).spanned(26..27).into()
+                Expr::Int(1).spanned(25..26).into(),
+                Expr::Int(2).spanned(28..29).into()
             ]
         }
-        .spanned(0..28)
+        .spanned(0..30)
     );
 
-    let expr = parse_expr("[1, 2, 3][1-1]");
     assert_eq!(
-        expr,
+        parse_expr("[1, 2, 3][1-1]"),
         Expr::Index {
             arr: Expr::Array(vec![
                 Expr::Int(1).spanned(1..2),
@@ -280,9 +353,8 @@ fn parse_compound_expressions() {
         .spanned(0..14)
     );
 
-    let expr = parse_expr("self._0");
     assert_eq!(
-        expr,
+        parse_expr("self._0"),
         Expr::FieldAccess {
             base: Expr::Ident("self".into()).spanned(0..4).into(),
             field: Spanned {
@@ -295,15 +367,14 @@ fn parse_compound_expressions() {
 }
 
 #[test]
-fn parse_var_expresssions() {
-    let expr = parse_expr("let x = 7 + sin(3.);");
+fn var_expressions() {
     assert_eq!(
-        expr,
+        parse_expr("let x = 7 + sin(3.);"),
         Expr::Let {
             binding: Binding::Var {
                 mutable: false,
                 ident: "x".into(),
-                type_annotation: None
+                annotated_ty: None
             }
             .spanned(4..5),
             value: Expr::BinaryOp {
@@ -322,30 +393,22 @@ fn parse_var_expresssions() {
         .spanned(0..19)
     );
 
-    let expr = parse_expr("let mut y: Int = 7");
     assert_eq!(
-        expr,
+        parse_expr("let mut y: UInt = 7"),
         Expr::Let {
             binding: Binding::Var {
                 mutable: true,
                 ident: "y".into(),
-                type_annotation: Some(
-                    Type::Named {
-                        name: "Int".into(),
-                        generics: vec![]
-                    }
-                    .spanned(11..14)
-                )
+                annotated_ty: Some(Type::UInt.spanned(11..15))
             }
-            .spanned(4..14),
-            value: Expr::Int(7).spanned(17..18).into()
+            .spanned(4..15),
+            value: Expr::Int(7).spanned(18..19).into()
         }
-        .spanned(0..18)
+        .spanned(0..19)
     );
 
-    let expr = parse_expr("y = 3 + 7 * 0.5");
     assert_eq!(
-        expr,
+        parse_expr("y = 3 + 7 * 0.5"),
         Expr::Assign {
             ident: Spanned {
                 inner: "y".into(),
@@ -370,7 +433,7 @@ fn parse_var_expresssions() {
 }
 
 #[test]
-fn parse_block_expressions() {
+fn block_expressions() {
     let expr = parse_expr(
         "
     {
@@ -391,7 +454,7 @@ fn parse_block_expressions() {
                     binding: Binding::Var {
                         mutable: true,
                         ident: "y".into(),
-                        type_annotation: None
+                        annotated_ty: None
                     }
                     .spanned(19..24),
                     value: Expr::Int(5).spanned(27..28).into()
@@ -431,7 +494,7 @@ fn parse_block_expressions() {
                                 binding: Binding::Var {
                                     mutable: false,
                                     ident: "a".into(),
-                                    type_annotation: None
+                                    annotated_ty: None
                                 }
                                 .spanned(101..102),
                                 value: Expr::Int(5).spanned(105..106).into()
@@ -454,29 +517,80 @@ fn parse_block_expressions() {
 }
 
 #[test]
-fn parse_const_items() {
-    let item = parse_item(r#"const HELLO_WORLD: Str = "Hello, World!""#);
+fn malformed_expressions() {
     assert_eq!(
-        item,
-        Item::Const {
-            name: "HELLO_WORLD".into(),
-            ty: Type::Named {
-                name: "Str".into(),
-                generics: vec![]
-            }
-            .spanned(19..22),
-            value: Expr::Str("Hello, World!".into()).spanned(25..40)
+        parse_expr_err("[1, 3, 4, 5"),
+        Err(ParseError::Mismatched {
+            expected: TokenType::RBracket,
+            found: TokenType::Eof
         }
-        .spanned(0..40)
+        .spanned(11..11))
+    );
+    assert_eq!(
+        parse_expr_err("*5"),
+        Err(ParseError::Unexpected(TokenType::Times, "start of expression").spanned(0..1))
+    );
+    assert_eq!(
+        parse_expr_err("let a = 1 + 3 print(a)"),
+        Err(ParseError::Unexpected(TokenType::Ident, "end of expression").spanned(14..19))
+    );
+    assert_eq!(
+        parse_expr_err("print(5, 2;)"),
+        Err(ParseError::Mismatched {
+            expected: TokenType::RParen,
+            found: TokenType::Semicolon
+        }
+        .spanned(10..11))
     );
 }
 
 #[test]
-fn parse_struct_items() {
+fn const_items() {
+    assert_eq!(
+        parse_item(r#"const HELLO_WORLD: String = "Hello, World!""#),
+        Item::Const {
+            name: "HELLO_WORLD".into(),
+            ty: Some(
+                Type::Named {
+                    name: "String".into(),
+                    args: vec![]
+                }
+                .spanned(19..25)
+            ),
+            value: Expr::String("Hello, World!".into()).spanned(28..43)
+        }
+        .spanned(0..43)
+    );
+
+    assert_eq!(
+        parse_item(r#"const ID = fn(x) -> x"#),
+        Item::Const {
+            name: "ID".into(),
+            ty: None,
+            value: Expr::Lambda {
+                params: vec![
+                    Binding::Var {
+                        mutable: false,
+                        ident: "x".into(),
+                        annotated_ty: None
+                    }
+                    .spanned(14..15)
+                ],
+                return_type: None,
+                body: Expr::Ident("x".into()).spanned(20..21).into()
+            }
+            .spanned(11..21)
+        }
+        .spanned(0..21)
+    );
+}
+
+#[test]
+fn struct_items() {
     let item = parse_item(
         r#"
         struct Foo<T, U> {
-            x: Str,
+            x: Char  ,
             bar: Bar<Baz<T>>
         }"#,
     );
@@ -488,42 +602,38 @@ fn parse_struct_items() {
             fields: vec![
                 Field {
                     name: "x".into(),
-                    ty: Type::Named {
-                        name: "Str".into(),
-                        generics: vec![]
-                    }
-                    .spanned(43..46)
+                    ty: Type::Char.spanned(43..47)
                 }
-                .spanned(40..46),
+                .spanned(40..47),
                 Field {
                     name: "bar".into(),
                     ty: Type::Named {
                         name: "Bar".into(),
-                        generics: vec![
+                        args: vec![
                             Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![
+                                args: vec![
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![]
+                                        args: vec![]
                                     }
-                                    .spanned(73..74)
+                                    .spanned(76..77)
                                 ]
                             }
-                            .spanned(69..75)
+                            .spanned(72..78)
                         ]
                     }
-                    .spanned(65..76)
+                    .spanned(68..79)
                 }
-                .spanned(60..76)
+                .spanned(63..79)
             ]
         }
-        .spanned(9..86)
+        .spanned(9..89)
     )
 }
 
 #[test]
-fn parse_enum_items() {
+fn enum_items() {
     let item = parse_item(
         r#"
         enum Foo {
@@ -544,7 +654,7 @@ fn parse_enum_items() {
                     vec![
                         Type::Named {
                             name: "Bar".into(),
-                            generics: vec![]
+                            args: vec![]
                         }
                         .spanned(49..52)
                     ]
@@ -557,7 +667,7 @@ fn parse_enum_items() {
                             name: "baz".into(),
                             ty: Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![]
+                                args: vec![]
                             }
                             .spanned(75..78)
                         }
@@ -566,7 +676,7 @@ fn parse_enum_items() {
                             name: "fizz".into(),
                             ty: Type::Named {
                                 name: "Buzz".into(),
-                                generics: vec![]
+                                args: vec![]
                             }
                             .spanned(86..90)
                         }
@@ -581,50 +691,83 @@ fn parse_enum_items() {
 }
 
 #[test]
-fn parse_function_items() {
-    let item = parse_item(r#"fn sum(mut a, b: Int) -> a + b"#);
+fn function_items() {
     assert_eq!(
-        item,
-        Item::Function {
+        parse_item(r#"fn sum(mut a, b: Byte) -> a + b"#),
+        Item::Func {
             name: "sum".into(),
             params: vec![
                 Binding::Var {
                     mutable: true,
                     ident: "a".into(),
-                    type_annotation: None
+                    annotated_ty: None
                 }
                 .spanned(7..12),
                 Binding::Var {
                     mutable: false,
                     ident: "b".into(),
-                    type_annotation: Some(
-                        Type::Named {
-                            name: "Int".into(),
-                            generics: vec![]
-                        }
-                        .spanned(17..20)
-                    )
+                    annotated_ty: Some(Type::Byte.spanned(17..21))
                 }
-                .spanned(14..20)
+                .spanned(14..21)
             ],
-            return_type: None,
+            return_ty: None,
             body: Expr::BinaryOp {
                 op: Bop::Add,
-                lhs: Expr::Ident("a".into()).spanned(25..26).into(),
-                rhs: Expr::Ident("b".into()).spanned(29..30).into()
+                lhs: Expr::Ident("a".into()).spanned(26..27).into(),
+                rhs: Expr::Ident("b".into()).spanned(30..31).into()
             }
-            .spanned(25..30)
+            .spanned(26..31)
         }
-        .spanned(0..30)
+        .spanned(0..31)
     )
 }
 
 #[test]
-fn parse_file() {
+fn malformed_items() {
+    assert_eq!(
+        parse_item_err("const fn: Int = 5"),
+        Err(ParseError::Mismatched {
+            expected: TokenType::Ident,
+            found: TokenType::Fn,
+        }
+        .spanned(6..8))
+    );
+
+    assert_eq!(
+        parse_item_err("const NO_DICTS: {String: Int} = 5"),
+        Err(ParseError::Unexpected(TokenType::LBrace, "start of type name").spanned(16..17))
+    );
+
+    assert_eq!(
+        parse_item_err("let global = 0"),
+        Err(ParseError::Unexpected(TokenType::Let, "start of item").spanned(0..3))
+    );
+
+    assert_eq!(
+        parse_item_err("struct CSyntax { Int five }"),
+        Err(ParseError::Mismatched {
+            expected: TokenType::Ident,
+            found: TokenType::Int,
+        }
+        .spanned(17..20))
+    );
+
+    assert_eq!(
+        parse_item_err("enum NoComma { Bad Syntax }"),
+        Err(ParseError::Unexpected(
+            TokenType::Ident,
+            "after variant name. expected one of `,` `(` `{`"
+        )
+        .spanned(19..25))
+    )
+}
+
+#[test]
+fn file() {
     let items = parse_ast(
         r#"
         fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int -> {
-            let mut x: (Float, T) = -7.0 + sin(y);
+            let mut x: ( Bool, T) = true + sin(y);
             x = if (bar < 3) {
                 let baz = bar.value + 2 * 4;
                 x + 1;
@@ -633,35 +776,35 @@ fn parse_file() {
         }
 
         struct Foo<T, U> {
-            x: Str,
+            x: String,
             bar: Bar<Baz<T>, [U]>,
         }"#,
     );
 
     assert_eq!(
         items[0],
-        Item::Function {
+        Item::Func {
             name: "wow_we_did_it".into(),
             params: vec![
                 Binding::Var {
                     mutable: true,
                     ident: "x".into(),
-                    type_annotation: None
+                    annotated_ty: None
                 }
                 .spanned(26..31),
                 Binding::Var {
                     mutable: false,
                     ident: "bar".into(),
-                    type_annotation: Some(
+                    annotated_ty: Some(
                         Type::Named {
                             name: "Bar".into(),
-                            generics: vec![
+                            args: vec![
                                 Type::Named {
                                     name: "Baz".into(),
-                                    generics: vec![
+                                    args: vec![
                                         Type::Named {
                                             name: "T".into(),
-                                            generics: vec![],
+                                            args: vec![],
                                         }
                                         .spanned(46..47)
                                     ],
@@ -669,7 +812,7 @@ fn parse_file() {
                                 .spanned(42..48),
                                 Type::Named {
                                     name: "U".into(),
-                                    generics: vec![],
+                                    args: vec![],
                                 }
                                 .spanned(50..51)
                             ],
@@ -679,22 +822,11 @@ fn parse_file() {
                 }
                 .spanned(33..52)
             ],
-            return_type: Some(
-                Type::Fn {
-                    params: vec![
-                        Type::Named {
-                            name: "Int".into(),
-                            generics: vec![]
-                        }
-                        .spanned(58..61)
-                    ],
-                    result: Type::Named {
-                        name: "Int".into(),
-                        generics: vec![]
-                    }
-                    .spanned(64..67)
-                    .into()
-                }
+            return_ty: Some(
+                Type::Fn(
+                    vec![Type::Int.spanned(58..61)],
+                    Type::Int.spanned(64..67).into()
+                )
                 .spanned(55..67)
             ),
             body: Expr::Block {
@@ -703,16 +835,12 @@ fn parse_file() {
                         binding: Binding::Var {
                             mutable: true,
                             ident: "x".into(),
-                            type_annotation: Some(
+                            annotated_ty: Some(
                                 Type::Tuple(vec![
-                                    Type::Named {
-                                        name: "Float".into(),
-                                        generics: vec![]
-                                    }
-                                    .spanned(97..102),
+                                    Type::Bool.spanned(98..102),
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![]
+                                        args: vec![]
                                     }
                                     .spanned(104..105)
                                 ])
@@ -722,12 +850,7 @@ fn parse_file() {
                         .spanned(89..106),
                         value: Expr::BinaryOp {
                             op: Bop::Add,
-                            lhs: Expr::UnaryOp {
-                                op: Unop::Neg,
-                                expr: Expr::Float(7.0).spanned(110..113).into()
-                            }
-                            .spanned(109..113)
-                            .into(),
+                            lhs: Expr::Bool(true).spanned(109..113).into(),
                             rhs: Expr::FnCall {
                                 fun: Expr::Ident("sin".into()).spanned(116..119).into(),
                                 args: vec![Expr::Ident("y".into()).spanned(120..121)]
@@ -758,7 +881,7 @@ fn parse_file() {
                                         binding: Binding::Var {
                                             mutable: false,
                                             ident: "baz".into(),
-                                            type_annotation: None
+                                            annotated_ty: None
                                         }
                                         .spanned(175..178),
                                         value: Expr::BinaryOp {
@@ -842,44 +965,44 @@ fn parse_file() {
                 Field {
                     name: "x".into(),
                     ty: Type::Named {
-                        name: "Str".into(),
-                        generics: vec![],
+                        name: "String".into(),
+                        args: vec![],
                     }
-                    .spanned(338..341),
+                    .spanned(338..344),
                 }
-                .spanned(335..341),
+                .spanned(335..344),
                 Field {
                     name: "bar".into(),
                     ty: Type::Named {
                         name: "Bar".into(),
-                        generics: vec![
+                        args: vec![
                             Type::Named {
                                 name: "Baz".into(),
-                                generics: vec![
+                                args: vec![
                                     Type::Named {
                                         name: "T".into(),
-                                        generics: vec![],
+                                        args: vec![],
                                     }
-                                    .spanned(368..369)
+                                    .spanned(371..372)
                                 ],
                             }
-                            .spanned(364..370),
+                            .spanned(367..373),
                             Type::Array(
                                 Type::Named {
                                     name: "U".into(),
-                                    generics: vec![],
+                                    args: vec![],
                                 }
-                                .spanned(373..374)
+                                .spanned(376..377)
                                 .into()
                             )
-                            .spanned(372..375)
+                            .spanned(375..378)
                         ],
                     }
-                    .spanned(360..376),
+                    .spanned(363..379),
                 }
-                .spanned(355..376)
+                .spanned(358..379)
             ]
         }
-        .spanned(304..387)
+        .spanned(304..390)
     );
 }
