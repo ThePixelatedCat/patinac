@@ -24,7 +24,7 @@ static CHAR_REGEX: LazyLock<Regex> =
 static IDENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
 
-const RULES: [Rule; 53] = {
+const RULES: [Rule; 59] = {
     use TokenType as T;
     [
         |i| match_regex(i, &INT_REGEX, T::IntLit),
@@ -33,8 +33,8 @@ const RULES: [Rule; 53] = {
         |i| match_regex(i, &CHAR_REGEX, T::CharLit),
         |i| match_phrase(i, "[", T::LBracket),
         |i| match_phrase(i, "]", T::RBracket),
-        |i| match_phrase(i, "{", T::LBrace),
-        |i| match_phrase(i, "}", T::RBrace),
+        |i| match_phrase(i, "{", T::Indent),
+        |i| match_phrase(i, "}", T::Dedent),
         |i| match_phrase(i, "(", T::LParen),
         |i| match_phrase(i, ")", T::RParen),
         |i| match_phrase(i, "=", T::Eq),
@@ -75,8 +75,14 @@ const RULES: [Rule; 53] = {
         |i| match_phrase(i, "struct", T::Struct),
         |i| match_phrase(i, "enum", T::Enum),
         |i| match_phrase(i, "if", T::If),
+        |i| match_phrase(i, "then", T::Then),
         |i| match_phrase(i, "else", T::Else),
+        |i| match_phrase(i, "for", T::For),
+        |i| match_phrase(i, "in", T::In),
+        |i| match_phrase(i, "while", T::While),
+        |i| match_phrase(i, "do", T::Do),
         |i| match_phrase(i, "match", T::Match),
+        |i| match_phrase(i, "with", T::With),
         |i| match_phrase(i, "true", T::True),
         |i| match_phrase(i, "false", T::False),
         |i| match_regex(i, &IDENT_REGEX, T::Ident),

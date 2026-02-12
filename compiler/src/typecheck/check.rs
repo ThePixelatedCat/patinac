@@ -2,7 +2,7 @@ use std::iter;
 
 use crate::{
     helpers::Spanned,
-    parser::ast::{Binding, BindingS, ExprS, Item, ItemS},
+    parser::ast::{Pattern, PatternS, ExprS, Item, ItemS},
 };
 
 use super::{BindingInfo, Type, TypeChecker, TypeErrorS};
@@ -34,7 +34,7 @@ impl TypeChecker {
                                     .iter()
                                     .map(
                                         |Spanned {
-                                             inner: Binding::Var { annotated_ty, .. },
+                                             inner: Pattern::Var { annotated_ty, .. },
                                              ..
                                          }| {
                                             self.convert(annotated_ty)
@@ -93,7 +93,7 @@ impl TypeChecker {
             .map_err(|e| e.spanned(value.span))
     }
 
-    fn check_func(&self, name: &str, params: &[BindingS], body: &ExprS) -> Result<(), TypeErrorS> {
+    fn check_func(&self, name: &str, params: &[PatternS], body: &ExprS) -> Result<(), TypeErrorS> {
         let BindingInfo {
             ty: Type::Fn(param_tys, return_ty),
             ..
@@ -109,7 +109,7 @@ impl TypeChecker {
         iter::zip(params, param_tys).for_each(
             |(
                 Spanned {
-                    inner: Binding::Var { mutable, ident, .. },
+                    inner: Pattern::Var { mutable, ident, .. },
                     ..
                 },
                 ty,

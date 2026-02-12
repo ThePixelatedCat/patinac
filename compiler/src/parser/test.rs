@@ -3,7 +3,7 @@ use crate::lexer::TokenType;
 use crate::parser::{ParseError, ParseResult};
 
 use super::Parser;
-use super::ast::{Binding, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop, Variant};
+use super::ast::{Pattern, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop, Variant};
 
 fn parse_expr(input: &str) -> ExprS {
     let mut parser = Parser::new(input);
@@ -300,13 +300,13 @@ fn compound_expressions() {
         Expr::FnCall {
             fun: Expr::Lambda {
                 params: vec![
-                    Binding::Var {
+                    Pattern::Var {
                         mutable: false,
                         ident: "a".into(),
                         annotated_ty: None
                     }
                     .spanned(4..5),
-                    Binding::Var {
+                    Pattern::Var {
                         mutable: false,
                         ident: "b".into(),
                         annotated_ty: Some(Type::Int.spanned(10..13))
@@ -371,7 +371,7 @@ fn var_expressions() {
     assert_eq!(
         parse_expr("let x = 7 + sin(3.);"),
         Expr::Let {
-            binding: Binding::Var {
+            binding: Pattern::Var {
                 mutable: false,
                 ident: "x".into(),
                 annotated_ty: None
@@ -396,7 +396,7 @@ fn var_expressions() {
     assert_eq!(
         parse_expr("let mut y: UInt = 7"),
         Expr::Let {
-            binding: Binding::Var {
+            binding: Pattern::Var {
                 mutable: true,
                 ident: "y".into(),
                 annotated_ty: Some(Type::UInt.spanned(11..15))
@@ -451,7 +451,7 @@ fn block_expressions() {
         Expr::Block {
             exprs: vec![
                 Expr::Let {
-                    binding: Binding::Var {
+                    binding: Pattern::Var {
                         mutable: true,
                         ident: "y".into(),
                         annotated_ty: None
@@ -491,7 +491,7 @@ fn block_expressions() {
                     th: Expr::Block {
                         exprs: vec![
                             Expr::Let {
-                                binding: Binding::Var {
+                                binding: Pattern::Var {
                                     mutable: false,
                                     ident: "a".into(),
                                     annotated_ty: None
@@ -569,7 +569,7 @@ fn const_items() {
             ty: None,
             value: Expr::Lambda {
                 params: vec![
-                    Binding::Var {
+                    Pattern::Var {
                         mutable: false,
                         ident: "x".into(),
                         annotated_ty: None
@@ -697,13 +697,13 @@ fn function_items() {
         Item::Func {
             name: "sum".into(),
             params: vec![
-                Binding::Var {
+                Pattern::Var {
                     mutable: true,
                     ident: "a".into(),
                     annotated_ty: None
                 }
                 .spanned(7..12),
-                Binding::Var {
+                Pattern::Var {
                     mutable: false,
                     ident: "b".into(),
                     annotated_ty: Some(Type::Byte.spanned(17..21))
@@ -735,7 +735,7 @@ fn malformed_items() {
 
     assert_eq!(
         parse_item_err("const NO_DICTS: {String: Int} = 5"),
-        Err(ParseError::Unexpected(TokenType::LBrace, "start of type name").spanned(16..17))
+        Err(ParseError::Unexpected(TokenType::Indent, "start of type name").spanned(16..17))
     );
 
     assert_eq!(
@@ -786,13 +786,13 @@ fn file() {
         Item::Func {
             name: "wow_we_did_it".into(),
             params: vec![
-                Binding::Var {
+                Pattern::Var {
                     mutable: true,
                     ident: "x".into(),
                     annotated_ty: None
                 }
                 .spanned(26..31),
-                Binding::Var {
+                Pattern::Var {
                     mutable: false,
                     ident: "bar".into(),
                     annotated_ty: Some(
@@ -832,7 +832,7 @@ fn file() {
             body: Expr::Block {
                 exprs: vec![
                     Expr::Let {
-                        binding: Binding::Var {
+                        binding: Pattern::Var {
                             mutable: true,
                             ident: "x".into(),
                             annotated_ty: Some(
@@ -878,7 +878,7 @@ fn file() {
                             th: Expr::Block {
                                 exprs: vec![
                                     Expr::Let {
-                                        binding: Binding::Var {
+                                        binding: Pattern::Var {
                                             mutable: false,
                                             ident: "baz".into(),
                                             annotated_ty: None

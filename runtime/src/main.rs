@@ -1,9 +1,10 @@
 use anyhow::anyhow;
 use std::{env, fs, ops::Index, sync::mpsc::{self, Receiver}, thread};
 
-use crate::decode::Instr;
+use crate::instructions::Instr;
 
 mod decode;
+mod instructions;
 
 #[derive(Default)]
 struct Env {

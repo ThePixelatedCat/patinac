@@ -1,7 +1,7 @@
 use super::{BindingInfo, Type, TypeChecker, TypeError, TypeErrorS};
 use crate::{
     helpers::Spanned,
-    parser::ast::{Binding, BindingS, Bop, Expr, ExprS, TypeS as AstTypeS, Unop},
+    parser::ast::{Pattern, PatternS, Bop, Expr, ExprS, TypeS as AstTypeS, Unop},
 };
 
 impl TypeChecker {
@@ -28,6 +28,9 @@ impl TypeChecker {
             Expr::Index { arr, index } => self.type_of_indexing(arr, index),
             Expr::FieldAccess { base, field } => todo!(),
             Expr::If { cond, th, el } => self.type_of_if(cond, th, el.as_deref()),
+            Expr::For { pattern, iter, body } => todo!(),
+            Expr::While { cond, body } => todo!(),
+            Expr::Match { scrutinee, arms } => todo!(),
             Expr::Let { binding, value } => self.type_of_let(binding, value),
             Expr::Assign { ident, value } => self.type_of_assign(ident.as_deref(), value),
             Expr::Lambda {
@@ -199,8 +202,8 @@ impl TypeChecker {
         Ok(th_ty)
     }
 
-    fn type_of_let(&mut self, binding: &BindingS, val: &ExprS) -> Result<Type, TypeErrorS> {
-        let Binding::Var {
+    fn type_of_let(&mut self, binding: &PatternS, val: &ExprS) -> Result<Type, TypeErrorS> {
+        let Pattern::Var {
             mutable,
             ident,
             annotated_ty,
@@ -244,7 +247,7 @@ impl TypeChecker {
 
     pub(super) fn type_of_fun(
         &self,
-        params: &[BindingS],
+        params: &[PatternS],
         return_ty: Option<&AstTypeS>,
         body: &ExprS,
     ) -> Result<Type, TypeErrorS> {
@@ -252,7 +255,7 @@ impl TypeChecker {
 
         let mut param_tys = Vec::new();
         for param in params {
-            let Binding::Var {
+            let Pattern::Var {
                 mutable,
                 ident,
                 annotated_ty,

@@ -85,8 +85,6 @@ fn type_of_if_err() {
 
 #[test]
 fn arrays() {
-    let mut checker = TypeChecker::default();
-
     assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5][0]"), Ok(Type::Int));
 }
 

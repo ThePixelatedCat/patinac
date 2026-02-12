@@ -1,20 +1,12 @@
 use std::{os::raw, sync::mpsc::Sender};
-
-pub enum Instr {
-    Arith(ArithInstr)
-}
-
-pub enum ArithInstr {
-    Add
-}
+use crate::instructions::Instr;
 
 pub fn decode(instructions: Vec<u32>, tx: Sender<Instr>) {
     for raw_instr in instructions {
-        let cat_code = (raw_instr & 0b1111) as u8;
-        //let op_code = (raw_instr & 0b1110000) as u8;
+        let op_code = (raw_instr & 0b111111) as u8;
 
-        let instr = match cat_code {
-            0b_1000 => Instr::Arith(decode_arith(raw_instr)),
+        let instr = match op_code {
+            0b_001001 => decode_add(raw_instr),
             _ => unreachable!()
         };
 
@@ -22,8 +14,12 @@ pub fn decode(instructions: Vec<u32>, tx: Sender<Instr>) {
     }
 }
 
-fn decode_arith(raw_instr: u32) -> ArithInstr {
-    let op_code = (raw_instr & 0b1110000) as u8 >> 3;
+fn decode_add(raw_instr: u32) -> Instr {
+    let instr_bytes = raw_instr.to_be_bytes();
 
-    todo!()
+    let rhs = instr_bytes[0] & 0b_11111;
+    let lhs = instr_bytes[1] & 0b_11111;
+    let dst = instr_bytes[2] & 0b_11111;
+
+    Instr::Add { dst, lhs, rhs }
 }

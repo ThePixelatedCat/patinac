@@ -7,11 +7,11 @@ use crate::{
 
 use super::{
     ParseError, ParseResult, Parser,
-    ast::{Binding, BindingS, Type, TypeS},
+    ast::{Pattern, PatternS, Type, TypeS},
 };
 
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
-    pub fn binding(&mut self) -> ParseResult<BindingS> {
+    pub fn pattern(&mut self) -> ParseResult<PatternS> {
         let mutable = self.at(TokenType::Mut);
         let mut_start = mutable.then(|| self.next().unwrap().span.start);
 
@@ -29,7 +29,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             .as_ref()
             .map_or(ident.span.end, |ty| ty.span.end);
 
-        Ok(Binding::Var {
+        Ok(Pattern::Var {
             mutable,
             ident: ident.inner,
             annotated_ty: type_annotation,

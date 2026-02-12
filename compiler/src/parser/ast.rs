@@ -10,7 +10,7 @@ pub enum Item {
     },
     Func {
         name: String,
-        params: Vec<BindingS>,
+        params: Vec<PatternS>,
         return_ty: Option<TypeS>,
         body: ExprS,
     },
@@ -43,9 +43,9 @@ pub struct Field {
     pub ty: TypeS,
 }
 
-span! {Binding as BindingS}
+span! {Pattern as PatternS}
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Binding {
+pub enum Pattern {
     Var {
         mutable: bool,
         ident: String,
@@ -105,8 +105,21 @@ pub enum Expr {
         th: Box<ExprS>,
         el: Option<Box<ExprS>>,
     },
+    For {
+        pattern: PatternS,
+        iter: Box<ExprS>,
+        body: Box<ExprS>
+    },
+    While {
+        cond: Box<ExprS>,
+        body: Box<ExprS>
+    },
+    Match {
+        scrutinee: Box<ExprS>,
+        arms: Vec<MatchArmS>
+    },
     Let {
-        binding: BindingS,
+        binding: PatternS,
         value: Box<ExprS>,
     },
     Assign {
@@ -114,7 +127,7 @@ pub enum Expr {
         value: Box<ExprS>,
     },
     Lambda {
-        params: Vec<BindingS>,
+        params: Vec<PatternS>,
         return_type: Option<TypeS>,
         body: Box<ExprS>,
     },
@@ -122,6 +135,14 @@ pub enum Expr {
         exprs: Vec<ExprS>,
         trailing: bool,
     },
+}
+
+span! {MatchArm as MatchArmS}
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchArm {
+    pub pattern: PatternS,
+    pub guard: Option<Box<ExprS>>,
+    pub body: Box<ExprS>
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

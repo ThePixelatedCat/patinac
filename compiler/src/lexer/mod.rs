@@ -8,6 +8,7 @@ pub use token::{Token, TokenType};
 pub struct Lexer<'input> {
     input: &'input str,
     pos: usize,
+    indent: usize
 }
 
 impl Iterator for Lexer<'_> {
@@ -26,7 +27,7 @@ impl Iterator for Lexer<'_> {
 
 impl<'input> Lexer<'input> {
     pub const fn new(input: &'input str) -> Self {
-        Self { input, pos: 0 }
+        Self { input, pos: 0, indent: 0 }
     }
 
     /// Returns `None` if the lexer cannot find a token at the start of `input`.
@@ -36,10 +37,20 @@ impl<'input> Lexer<'input> {
                 .find('\n')
                 .expect("expected newline to terminate comment");
             self.next()
+        } else if input.starts_with("\n") {
+            let newlines = input
+                .char_indices()
+                .take_while(|(_, c)| *c == '\n' || *c == '\r')
+                .last()
+                .unwrap()
+                .0
+                + 1;
+            self.pos += newlines;
+            self.indentation(&input[newlines..])
         } else if input.chars().next().unwrap().is_whitespace() {
             self.pos += input
                 .char_indices()
-                .take_while(|(_, c)| c.is_whitespace())
+                .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r') )
                 .last()
                 .unwrap()
                 .0
@@ -52,6 +63,30 @@ impl<'input> Lexer<'input> {
             self.pos += len;
 
             Some(token)
+        }
+    }
+
+    fn indentation(&mut self, input: &str) -> Option<Token> {
+        let start = self.pos;
+        let old_indent = self.indent;
+
+        self.indent = input
+            .char_indices()
+            .take_while(|(_, c)| *c == '\t' || *c == ' ')
+            .last()
+            .map_or(0, |(i, _)| i + 1);
+        println!("{}", self.indent);
+        self.pos += self.indent;
+
+        if input[self.indent..].starts_with("\n") {
+            self.pos += 1;
+            self.indentation(&input[self.indent + 1..])
+        } else if self.indent > old_indent {
+            Some(TokenType::Indent.spanned(start..self.pos))
+        } else if self.indent < old_indent {
+            Some(TokenType::Dedent.spanned(start..self.pos))
+        } else {
+            self.next()
         }
     }
 

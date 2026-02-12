@@ -58,7 +58,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let name = self.ident()?.inner;
 
-        let params = self.delimited_list(Self::binding, TokenType::LParen, TokenType::RParen)?;
+        let params = self.delimited_list(Self::pattern, TokenType::LParen, TokenType::RParen)?;
 
         let return_type = if self.consume_at(TokenType::Colon) {
             Some(self.parse_ty()?)
@@ -114,7 +114,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 let start = name.span.start;
 
                 Ok(match this.peek() {
-                    TokenType::LBrace => {
+                    TokenType::Indent => {
                         let Spanned {
                             inner: fields,
                             span: fields_span,
@@ -142,8 +142,8 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     }
                 })
             },
-            TokenType::LBrace,
-            TokenType::RBrace,
+            TokenType::Indent,
+            TokenType::Dedent,
         )?;
 
         Ok(Item::Enum {
@@ -197,8 +197,8 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     .spanned(token.span))
                 }
             },
-            TokenType::LBrace,
-            TokenType::RBrace,
+            TokenType::Indent,
+            TokenType::Dedent,
         )
     }
 }

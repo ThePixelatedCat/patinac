@@ -5,7 +5,7 @@ use crate::{
     lexer::{Token, TokenType as TT},
     parser::{
         ParseError, ParseResult, Parser,
-        ast::{Bop, Expr, ExprS, Unop},
+        ast::{Bop, Expr, ExprS, MatchArm, MatchArmS, Unop},
     },
 };
 
@@ -37,10 +37,13 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             TT::LBracket => self.array_lit_expr(),
             TT::LParen => self.paren_exprs(),
             TT::If => self.if_expr(),
+            TT::For => self.for_expr(),
+            TT::While => self.while_expr(),
+            TT::Match => self.match_expr(),
             TT::Minus | TT::Bang => self.unop_expr(),
             TT::Let => self.let_expr(),
             TT::Fn => self.lambda_expr(),
-            TT::LBrace => self.block_expr(),
+            TT::Indent => self.block_expr(),
             _ => {
                 let token = self.next().unwrap();
 
@@ -83,20 +86,24 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 // End of expression, terminate loop and return current lhs
                 TT::Eof
                 | TT::RParen // End of parenthesised expr
-                | TT::RBrace // End of block expr
+                | TT::Dedent // End of block expr
                 | TT::RBracket // End of array index expr
                 | TT::Comma // List delimiter
                 | TT::Semicolon // Stmt seperator
-                | TT::Else // Next part of compound expr
+                | TT::Then // Next part of compound expr
+                | TT::Else
+                | TT::Do
+                | TT::With
                 | TT::Fn // New item
                 | TT::Const
                 | TT::Struct
                 | TT::Enum => return Ok(lhs),
                 _ => {
-                    let token = self.next().unwrap();
+                    // let token = self.next().unwrap();
 
-                    return Err(ParseError::Unexpected(token.inner, "end of expression")
-                        .spanned(token.span));
+                    // return Err(ParseError::Unexpected(token.inner, "end of expression")
+                    //     .spanned(token.span));
+                    return Ok(lhs)
                 }
             };
 
@@ -204,9 +211,9 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     fn if_expr(&mut self) -> ParseResult<ExprS> {
         let start = self.consume(TT::If)?.span.start;
 
-        self.consume(TT::LParen)?;
         let cond = self.expr()?;
-        self.consume(TT::RParen)?;
+
+        self.consume(TT::Then)?;
 
         let th = self.expr()?;
 
@@ -224,6 +231,94 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             el,
         }
         .spanned(start..end))
+    }
+
+    fn for_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::For)?.span.start;
+
+        let pattern = self.pattern()?;
+
+        self.consume(TT::In)?;
+
+        let iter = self.expr()?;
+
+        self.consume(TT::Do)?;
+        
+        let body = self.expr()?;
+
+        let span = start..body.span.end;
+
+        Ok(Expr::For { 
+            pattern, 
+            iter: Box::new(iter), 
+            body: Box::new(body) 
+        }
+        .spanned(span))
+    }
+
+    fn while_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::While)?.span.start;
+
+        let cond = self.expr()?;
+
+        self.consume(TT::Do)?;
+        
+        let body = self.expr()?;
+
+        let span = start..body.span.end;
+
+        Ok(Expr::While { 
+            cond: Box::new(cond), 
+            body: Box::new(body) 
+        }
+        .spanned(span))
+    }
+
+    fn match_expr(&mut self) -> ParseResult<ExprS> {
+        let start = self.consume(TT::Match)?.span.start;
+
+        let scrutinee = self.expr()?;
+
+        let with_end = self.consume(TT::With)?.span.end;
+
+        let mut arms = Vec::new();
+        while self.at(TT::Pipe) {
+            arms.push(self.match_arm()?);
+        }
+        let end = arms.last().map_or(with_end, |arm| arm.span.end);
+
+        let span = start..end;
+
+        Ok(Expr::Match { 
+            scrutinee: Box::new(scrutinee), 
+            arms
+        }
+        .spanned(span))
+    }
+
+    fn match_arm(&mut self) -> ParseResult<MatchArmS> {
+        let start = self.consume(TT::Pipe)?.span.start;
+
+        let pattern = self.pattern()?;
+
+        let guard = if self.consume_at(TT::If) {
+            Some(Box::new(self.expr()?))
+        } else {
+            None
+        };
+
+        self.consume(TT::Arrow)?;
+
+        let body = self.expr()?;
+
+        let span = start..body.span.end;
+
+        Ok(MatchArm {
+            pattern,
+            guard,
+            body: Box::new(body)
+        }
+        .spanned(span))
     }
 
     fn unop_expr(&mut self) -> ParseResult<ExprS> {
@@ -250,7 +345,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     fn let_expr(&mut self) -> ParseResult<ExprS> {
         let start = self.consume(TT::Let)?.span.start;
 
-        let binding = self.binding()?;
+        let binding = self.pattern()?;
 
         self.consume(TT::Eq)?;
         let value = self.expr()?;
@@ -268,7 +363,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let start = self.consume(TT::Fn)?.span.start;
 
         let Spanned { inner: params, .. } =
-            self.delimited_list(Self::binding, TT::LParen, TT::RParen)?;
+            self.delimited_list(Self::pattern, TT::LParen, TT::RParen)?;
 
         let return_type = if self.consume_at(TT::Colon) {
             Some(self.parse_ty()?)
@@ -290,21 +385,21 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     }
 
     fn block_expr(&mut self) -> ParseResult<ExprS> {
-        let start = self.consume(TT::LBrace)?.span.start;
+        let start = self.consume(TT::Indent)?.span.start;
 
         let mut trailing = true;
 
         let mut exprs = Vec::new();
-        while !self.at(TT::RBrace) {
+        while !self.at(TT::Dedent) {
             exprs.push(self.expr()?);
 
-            if self.consume_at(TT::Semicolon) && self.at(TT::RBrace) {
+            if self.consume_at(TT::Semicolon) && self.at(TT::Dedent) {
                 trailing = false;
                 break;
             }
         }
 
-        let end = self.consume(TT::RBrace)?.span.end;
+        let end = self.consume(TT::Dedent)?.span.end;
 
         Ok(Expr::Block { exprs, trailing }.spanned(start..end))
     }
