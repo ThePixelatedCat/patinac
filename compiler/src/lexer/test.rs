@@ -1,15 +1,11 @@
-use itertools::{Itertools, assert_equal};
+use itertools::assert_equal;
 
-use super::{Lexer, Token, TokenType as T};
-
-fn lex(input: &str) -> impl Iterator<Item = Token> {
-    Lexer::new(input).take_while_inclusive(|t| t.inner != T::Eof)
-}
+use super::{Lexer, TokenType as T};
 
 #[test]
 fn single_char_tokens() {
     assert_equal(
-        lex("+-(.):"),
+        Lexer::lex("+-(.):"),
         [
             T::Plus.spanned(0..1),
             T::Minus.spanned(1..2),
@@ -25,7 +21,7 @@ fn single_char_tokens() {
 #[test]
 fn unknown_input() {
     assert_equal(
-        lex("$$$$$$$+"),
+        Lexer::lex("$$$$$$$+"),
         [
             T::Error.spanned(0..7),
             T::Plus.spanned(7..8),
@@ -37,7 +33,7 @@ fn unknown_input() {
 #[test]
 fn single_char_tokens_with_whitespace() {
     assert_equal(
-        lex("   + -  (.): "),
+        Lexer::lex("   + -  (.): "),
         [
             T::Plus.spanned(3..4),
             T::Minus.spanned(5..6),
@@ -53,7 +49,7 @@ fn single_char_tokens_with_whitespace() {
 #[test]
 fn maybe_multiple_char_tokens() {
     assert_equal(
-        lex("&&=<=_!=||**->"),
+        Lexer::lex("&&=<=_!=||**->"),
         [
             T::And.spanned(0..2),
             T::Eq.spanned(2..3),
@@ -71,7 +67,7 @@ fn maybe_multiple_char_tokens() {
 #[test]
 fn keywords() {
     assert_equal(
-        lex("if Int struct Byte let mut UInt enum Float = match Bool else Char fn"),
+        Lexer::lex("if Int struct Byte let mut UInt enum Float = match Bool else Char fn"),
         [
             T::If.spanned(0..2),
             T::Int.spanned(3..6),
@@ -96,7 +92,7 @@ fn keywords() {
 #[test]
 fn comment() {
     assert_equal(
-        lex("//hello, world!\nif let"),
+        Lexer::lex("//hello, world!\nif let"),
         [
             T::If.spanned(16..18),
             T::Let.spanned(19..22),
@@ -108,7 +104,7 @@ fn comment() {
 #[test]
 fn literals() {
     assert_equal(
-        lex(r#"1 .5 0.211 1. true "test"'\n''\''"#),
+        Lexer::lex(r#"1 .5 0.211 1. true "test"'\n''\''"#),
         [
             T::IntLit.spanned(0..1),
             T::FloatLit.spanned(2..4),
@@ -125,8 +121,7 @@ fn literals() {
 
 #[test]
 fn function() {
-    let input = 
-r#"
+    let input = r#"
 // this is a comment!
 fn test(var: Type, var2_: Bool) ->
  
@@ -138,7 +133,7 @@ fn test(var: Type, var2_: Bool) ->
         x = x + ","
 "#;
 
-    let tokens = lex(&input);
+    let tokens = Lexer::lex(&input);
     assert_equal(
         tokens,
         [
@@ -214,7 +209,7 @@ fn test(var: Type, var2_: Bool) ->
             T::Ident.spanned(248..249),
             T::Plus.spanned(250..251),
             T::StringLit.spanned(252..255),
-            // T::Dedent.spanned(256..260), // end if
+            T::Dedent.spanned(256..256), // end if
             T::Dedent.spanned(256..256), // end fn
             T::Eof.spanned(256..256),
         ],

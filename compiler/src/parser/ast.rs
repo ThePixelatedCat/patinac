@@ -108,15 +108,15 @@ pub enum Expr {
     For {
         pattern: PatternS,
         iter: Box<ExprS>,
-        body: Box<ExprS>
+        body: Box<ExprS>,
     },
     While {
         cond: Box<ExprS>,
-        body: Box<ExprS>
+        body: Box<ExprS>,
     },
     Match {
         scrutinee: Box<ExprS>,
-        arms: Vec<MatchArmS>
+        arms: Vec<MatchArmS>,
     },
     Let {
         binding: PatternS,
@@ -142,7 +142,7 @@ span! {MatchArm as MatchArmS}
 pub struct MatchArm {
     pub pattern: PatternS,
     pub guard: Option<Box<ExprS>>,
-    pub body: Box<ExprS>
+    pub body: Box<ExprS>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

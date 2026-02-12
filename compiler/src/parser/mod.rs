@@ -7,7 +7,7 @@ mod items;
 mod test;
 
 use crate::lexer::{Lexer, Token, TokenType};
-use std::{iter::Peekable, ops::Range};
+use std::{iter::{Peekable}, ops::Range, vec::IntoIter};
 
 pub use error::{ParseError, ParseResult};
 
@@ -19,11 +19,11 @@ where
     tokens: Peekable<I>,
 }
 
-impl<'input> Parser<'input, Lexer<'input>> {
+impl<'input> Parser<'input, IntoIter<Token>> {
     pub fn new(input: &'input str) -> Self {
         Parser {
             input,
-            tokens: Lexer::new(input).peekable(),
+            tokens: Lexer::lex(input).into_iter().peekable(),
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::{BindingInfo, Type, TypeChecker, TypeError, TypeErrorS};
 use crate::{
     helpers::Spanned,
-    parser::ast::{Pattern, PatternS, Bop, Expr, ExprS, TypeS as AstTypeS, Unop},
+    parser::ast::{Bop, Expr, ExprS, Pattern, PatternS, TypeS as AstTypeS, Unop},
 };
 
 impl TypeChecker {
@@ -28,7 +28,11 @@ impl TypeChecker {
             Expr::Index { arr, index } => self.type_of_indexing(arr, index),
             Expr::FieldAccess { base, field } => todo!(),
             Expr::If { cond, th, el } => self.type_of_if(cond, th, el.as_deref()),
-            Expr::For { pattern, iter, body } => todo!(),
+            Expr::For {
+                pattern,
+                iter,
+                body,
+            } => todo!(),
             Expr::While { cond, body } => todo!(),
             Expr::Match { scrutinee, arms } => todo!(),
             Expr::Let { binding, value } => self.type_of_let(binding, value),

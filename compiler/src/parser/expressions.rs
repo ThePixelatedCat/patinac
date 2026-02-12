@@ -243,15 +243,15 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let iter = self.expr()?;
 
         self.consume(TT::Do)?;
-        
+
         let body = self.expr()?;
 
         let span = start..body.span.end;
 
-        Ok(Expr::For { 
-            pattern, 
-            iter: Box::new(iter), 
-            body: Box::new(body) 
+        Ok(Expr::For {
+            pattern,
+            iter: Box::new(iter),
+            body: Box::new(body),
         }
         .spanned(span))
     }
@@ -262,14 +262,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let cond = self.expr()?;
 
         self.consume(TT::Do)?;
-        
+
         let body = self.expr()?;
 
         let span = start..body.span.end;
 
-        Ok(Expr::While { 
-            cond: Box::new(cond), 
-            body: Box::new(body) 
+        Ok(Expr::While {
+            cond: Box::new(cond),
+            body: Box::new(body),
         }
         .spanned(span))
     }
@@ -289,9 +289,9 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let span = start..end;
 
-        Ok(Expr::Match { 
-            scrutinee: Box::new(scrutinee), 
-            arms
+        Ok(Expr::Match {
+            scrutinee: Box::new(scrutinee),
+            arms,
         }
         .spanned(span))
     }
@@ -316,7 +316,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         Ok(MatchArm {
             pattern,
             guard,
-            body: Box::new(body)
+            body: Box::new(body),
         }
         .spanned(span))
     }

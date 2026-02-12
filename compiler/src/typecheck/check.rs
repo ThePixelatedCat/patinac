@@ -2,7 +2,7 @@ use std::iter;
 
 use crate::{
     helpers::Spanned,
-    parser::ast::{Pattern, PatternS, ExprS, Item, ItemS},
+    parser::ast::{ExprS, Item, ItemS, Pattern, PatternS},
 };
 
 use super::{BindingInfo, Type, TypeChecker, TypeErrorS};

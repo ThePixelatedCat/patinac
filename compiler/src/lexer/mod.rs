@@ -7,36 +7,44 @@ pub use token::{Token, TokenType};
 
 pub struct Lexer<'input> {
     input: &'input str,
+    output: Vec<Token>,
     pos: usize,
-    indent: usize
-}
-
-impl Iterator for Lexer<'_> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(if self.pos >= self.input.len() {
-            TokenType::Eof.spanned(self.pos..self.pos)
-        } else {
-            let input = &self.input[self.pos..];
-            self.valid_token(input)
-                .unwrap_or_else(|| self.invalid_token(input))
-        })
-    }
+    indent_levels: Vec<usize>,
+    err: Option<usize>
 }
 
 impl<'input> Lexer<'input> {
-    pub const fn new(input: &'input str) -> Self {
-        Self { input, pos: 0, indent: 0 }
+    pub fn lex(input: &'input str) -> Vec<Token> {
+        let mut lexer = Self::new(input);
+        lexer.all_tokens();
+        lexer.output
     }
 
-    /// Returns `None` if the lexer cannot find a token at the start of `input`.
-    fn valid_token(&mut self, input: &str) -> Option<Token> {
+    pub fn new(input: &'input str) -> Self {
+        Self { 
+            input, 
+            output: Vec::with_capacity(input.len() / 4), 
+            pos: 0, 
+            indent_levels: vec![0],
+            err: None
+        }
+    }
+
+    pub fn all_tokens(&mut self) {
+        while self.pos < self.input.len() {
+            self.next_token(&self.input[self.pos..])
+        }
+
+        if self.output.last().is_none_or(|t| t.inner == TokenType::Eof) {
+            self.output.push(TokenType::Eof.spanned(self.pos..self.pos));
+        }
+    }
+
+    fn next_token(&mut self, input: &str) {
         if input.starts_with("//") {
             self.pos += input
                 .find('\n')
                 .expect("expected newline to terminate comment");
-            self.next()
         } else if input.starts_with("\n") {
             let newlines = input
                 .char_indices()
@@ -46,60 +54,58 @@ impl<'input> Lexer<'input> {
                 .0
                 + 1;
             self.pos += newlines;
-            self.indentation(&input[newlines..])
+            self.indentation(&input[newlines..]);
         } else if input.chars().next().unwrap().is_whitespace() {
             self.pos += input
                 .char_indices()
                 .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r') )
                 .last()
                 .unwrap()
-                .0
+                .0 
                 + 1;
-            self.next()
         } else {
-            let (token, len) = rules::matches(input)?;
+            match rules::matches(input) {
+                Some((token, len)) => {
+                    if let Some(start) = self.err {
+                        self.output.push(TokenType::Error.spanned(start..self.pos));
+                    }
 
-            let token = token.spanned(self.pos..self.pos + len);
-            self.pos += len;
-
-            Some(token)
+                    self.output.push(token.spanned(self.pos..self.pos + len));
+                    
+                    self.pos += len;
+                }
+                None => { 
+                    if self.err.is_none() {
+                        self.err = Some(self.pos);
+                    }
+                    self.pos += 1;
+                }
+            }
         }
     }
 
-    fn indentation(&mut self, input: &str) -> Option<Token> {
+    fn indentation(&mut self, input: &str) {
         let start = self.pos;
-        let old_indent = self.indent;
 
-        self.indent = input
+        let new_level = input
             .char_indices()
             .take_while(|(_, c)| *c == '\t' || *c == ' ')
             .last()
             .map_or(0, |(i, _)| i + 1);
-        println!("{}", self.indent);
-        self.pos += self.indent;
+        self.pos += new_level;
 
-        if input[self.indent..].starts_with("\n") {
+        let last_level = self.indent_levels.last().copied().unwrap();
+        if input[new_level..].starts_with("\n") {
             self.pos += 1;
-            self.indentation(&input[self.indent + 1..])
-        } else if self.indent > old_indent {
-            Some(TokenType::Indent.spanned(start..self.pos))
-        } else if self.indent < old_indent {
-            Some(TokenType::Dedent.spanned(start..self.pos))
-        } else {
-            self.next()
+            self.indentation(&input[new_level + 1..])
+        } else if new_level > last_level {
+            self.indent_levels.push(new_level);
+            self.output.push(TokenType::Indent.spanned(start..self.pos));
+        } else if new_level < last_level {
+            while new_level < self.indent_levels.last().copied().unwrap() {
+                self.indent_levels.pop();
+                self.output.push(TokenType::Dedent.spanned(start..self.pos));
+            }
         }
-    }
-
-    /// Always "succeeds", because it creates an error `TokenType`.
-    fn invalid_token(&mut self, input: &str) -> Token {
-        let start = self.pos;
-        let len = input
-            .char_indices()
-            .map(|(pos, _)| pos)
-            .find(|pos| self.valid_token(&input[*pos..]).is_some())
-            .unwrap_or(input.len());
-
-        self.pos = start + len;
-        TokenType::Error.spanned(start..self.pos)
     }
 }

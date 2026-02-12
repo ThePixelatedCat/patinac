@@ -1,5 +1,5 @@
-use std::{os::raw, sync::mpsc::Sender};
 use crate::instructions::Instr;
+use std::{os::raw, sync::mpsc::Sender};
 
 pub fn decode(instructions: Vec<u32>, tx: Sender<Instr>) {
     for raw_instr in instructions {
@@ -7,7 +7,7 @@ pub fn decode(instructions: Vec<u32>, tx: Sender<Instr>) {
 
         let instr = match op_code {
             0b_001001 => decode_add(raw_instr),
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         let _ = tx.send(instr);

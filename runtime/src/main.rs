@@ -1,5 +1,10 @@
 use anyhow::anyhow;
-use std::{env, fs, ops::Index, sync::mpsc::{self, Receiver}, thread};
+use std::{
+    env, fs,
+    ops::Index,
+    sync::mpsc::{self, Receiver},
+    thread,
+};
 
 use crate::instructions::Instr;
 
@@ -16,12 +21,15 @@ struct Env {
 
 struct InstrBuf {
     rx: Receiver<Instr>,
-    inner: Vec<Instr>
+    inner: Vec<Instr>,
 }
 
 impl InstrBuf {
     pub fn new(rx: Receiver<Instr>, cap: usize) -> Self {
-        Self { rx, inner: Vec::with_capacity(cap) }
+        Self {
+            rx,
+            inner: Vec::with_capacity(cap),
+        }
     }
 
     pub fn get(&mut self, idx: u32) -> Option<&Instr> {

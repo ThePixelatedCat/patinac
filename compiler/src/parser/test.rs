@@ -3,7 +3,7 @@ use crate::lexer::TokenType;
 use crate::parser::{ParseError, ParseResult};
 
 use super::Parser;
-use super::ast::{Pattern, Bop, Expr, ExprS, Field, Item, ItemS, Type, Unop, Variant};
+use super::ast::{Bop, Expr, ExprS, Field, Item, ItemS, Pattern, Type, Unop, Variant};
 
 fn parse_expr(input: &str) -> ExprS {
     let mut parser = Parser::new(input);
