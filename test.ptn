@@ -1,11 +1,8 @@
-fn print(v) -> ()
+struct NewInt
+    val: Int
 
-fn sum(a, b): Int -> {
-    print(if c < 5 then a else b)
-
-    a + b
-
-    match a with 
-    | 5 ->
-    |  
-}
+fn fib(n) ->
+    if n == 0 || n == 1 then
+        n
+    else 
+        fib(n - 1) + fib(n - 2)

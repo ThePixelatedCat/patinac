@@ -1,9 +1,10 @@
-use crate::span;
+use crate::helpers::{Spannable, Spnd};
 use std::fmt::Display;
 
-span! {TokenType as Token}
+pub type Token = Spnd<TT>;
+impl Spannable for TT {}
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum TokenType {
+pub enum TT {
     // Literals
     IntLit,
     FloatLit,
@@ -54,7 +55,7 @@ pub enum TokenType {
     Mut,
     Const,
     Fn,
-    Struct,
+    Record,
     Enum,
     If,
     Then,
@@ -73,7 +74,7 @@ pub enum TokenType {
     Eof,
 }
 
-impl Display for TokenType {
+impl Display for TT {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -124,7 +125,7 @@ impl Display for TokenType {
                 Self::Mut => "mut",
                 Self::Const => "const",
                 Self::Fn => "fn",
-                Self::Struct => "struct",
+                Self::Record => "struct",
                 Self::Enum => "enum",
                 Self::If => "if",
                 Self::Then => "then",

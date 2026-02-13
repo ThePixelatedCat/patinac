@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use crate::{
-    helpers::Spanned,
-    lexer::{Token, TokenType},
+    helpers::{Spannable, Spnd},
+    lexer::{TT, Token},
 };
 
 use super::{
@@ -12,14 +12,14 @@ use super::{
 
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
     pub fn pattern(&mut self) -> ParseResult<PatternS> {
-        let mutable = self.at(TokenType::Mut);
+        let mutable = self.at(TT::Mut);
         let mut_start = mutable.then(|| self.next().unwrap().span.start);
 
         let ident = self.ident()?;
 
         let start = mut_start.unwrap_or(ident.span.start);
 
-        let type_annotation = if self.consume_at(TokenType::Colon) {
+        let type_annotation = if self.consume_at(TT::Colon) {
             Some(self.parse_ty()?)
         } else {
             None
@@ -34,29 +34,29 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             ident: ident.inner,
             annotated_ty: type_annotation,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 
     pub fn parse_ty(&mut self) -> ParseResult<TypeS> {
         Ok(match self.peek() {
-            TokenType::Int => Type::Int.spanned(self.next().unwrap().span),
-            TokenType::UInt => Type::UInt.spanned(self.next().unwrap().span),
-            TokenType::Byte => Type::Byte.spanned(self.next().unwrap().span),
-            TokenType::Float => Type::Float.spanned(self.next().unwrap().span),
-            TokenType::Bool => Type::Bool.spanned(self.next().unwrap().span),
-            TokenType::Char => Type::Char.spanned(self.next().unwrap().span),
-            TokenType::Ident => {
+            TT::Int => Type::Int.span(self.next().unwrap().span),
+            TT::UInt => Type::UInt.span(self.next().unwrap().span),
+            TT::Byte => Type::Byte.span(self.next().unwrap().span),
+            TT::Float => Type::Float.span(self.next().unwrap().span),
+            TT::Bool => Type::Bool.span(self.next().unwrap().span),
+            TT::Char => Type::Char.span(self.next().unwrap().span),
+            TT::Ident => {
                 let span = self.next().unwrap().span;
                 let name = self.input[Range::from(span)].to_string();
 
                 let start = span.start;
 
-                let (generics, end) = if self.at(TokenType::LAngle) {
-                    let Spanned {
+                let (generics, end) = if self.at(TT::LAngle) {
+                    let Spnd {
                         inner: generics,
                         span: generics_span,
                     } =
-                        self.delimited_list(Self::parse_ty, TokenType::LAngle, TokenType::RAngle)?;
+                        self.delimited_list(Self::parse_ty, TT::LAngle, TT::RAngle)?;
                     (generics, generics_span.end)
                 } else {
                     (Vec::new(), span.end)
@@ -66,50 +66,50 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     name,
                     args: generics,
                 }
-                .spanned(start..end)
+                .span(start..end)
             }
-            TokenType::LBracket => {
+            TT::LBracket => {
                 let start = self.next().unwrap().span.start;
 
                 let inner_type = self.parse_ty()?;
 
-                let end = self.consume(TokenType::RBracket)?.span.end;
+                let end = self.consume(TT::RBracket)?.span.end;
 
-                Type::Array(Box::new(inner_type)).spanned(start..end)
+                Type::Array(Box::new(inner_type)).span(start..end)
             }
-            TokenType::LParen => {
-                let Spanned { inner: types, span } =
-                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
-                Type::Tuple(types).spanned(span)
+            TT::LParen => {
+                let Spnd { inner: types, span } =
+                    self.delimited_list(Self::parse_ty, TT::LParen, TT::RParen)?;
+                Type::Tuple(types).span(span)
             }
-            TokenType::Fn => {
+            TT::Fn => {
                 let start = self.next().unwrap().span.start;
 
-                let Spanned { inner: params, .. } =
-                    self.delimited_list(Self::parse_ty, TokenType::LParen, TokenType::RParen)?;
+                let Spnd { inner: params, .. } =
+                    self.delimited_list(Self::parse_ty, TT::LParen, TT::RParen)?;
 
-                self.consume(TokenType::Colon)?;
+                self.consume(TT::Colon)?;
                 let result = Box::new(self.parse_ty()?);
 
                 let end = result.span.end;
 
-                Type::Fn(params, result).spanned(start..end)
+                Type::Fn(params, result).span(start..end)
             }
             _ => {
                 let token = self.next().unwrap();
 
                 return Err(
-                    ParseError::Unexpected(token.inner, "start of type name").spanned(token.span)
+                    ParseError::Unexpected(token.inner, "start of type name").span(token.span)
                 );
             }
         })
     }
 
-    pub fn ident(&mut self) -> ParseResult<Spanned<String>> {
-        if self.peek() == TokenType::Ident {
+    pub fn ident(&mut self) -> ParseResult<Spnd<String>> {
+        if self.peek() == TT::Ident {
             let span = self.next().unwrap().span;
 
-            Ok(Spanned::span(
+            Ok(Spnd::span(
                 self.input[Range::from(span)].to_string(),
                 span,
             ))
@@ -117,19 +117,19 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             let token = self.next().unwrap();
 
             Err(ParseError::Mismatched {
-                expected: TokenType::Ident,
+                expected: TT::Ident,
                 found: token.inner,
             }
-            .spanned(token.span))
+            .span(token.span))
         }
     }
 
     pub fn delimited_list<T, F>(
         &mut self,
         mut f: F,
-        start: TokenType,
-        end: TokenType,
-    ) -> ParseResult<Spanned<Vec<T>>>
+        start: TT,
+        end: TT,
+    ) -> ParseResult<Spnd<Vec<T>>>
     where
         F: FnMut(&mut Self) -> ParseResult<T>,
     {
@@ -139,12 +139,12 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         while !self.at(end) {
             items.push(f(self)?);
 
-            if !self.consume_at(TokenType::Comma) {
+            if !self.consume_at(TT::Comma) {
                 break;
             }
         }
         let end = self.consume(end)?.span.end;
 
-        Ok(Spanned::span(items, start..end))
+        Ok(Spnd::span(items, start..end))
     }
 }

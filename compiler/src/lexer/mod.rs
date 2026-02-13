@@ -3,7 +3,9 @@ mod rules;
 mod test;
 mod token;
 
-pub use token::{Token, TokenType};
+pub use token::{Token, TT};
+
+use crate::helpers::Spannable;
 
 pub struct Lexer<'input> {
     input: &'input str,
@@ -32,11 +34,11 @@ impl<'input> Lexer<'input> {
 
     pub fn all_tokens(&mut self) {
         while self.pos < self.input.len() {
-            self.next_token(&self.input[self.pos..])
+            self.next_token(&self.input[self.pos..]);
         }
 
-        if self.output.last().is_none_or(|t| t.inner == TokenType::Eof) {
-            self.output.push(TokenType::Eof.spanned(self.pos..self.pos));
+        if self.output.last().is_none_or(|t| t.inner != TT::Eof) {
+            self.output.push(TT::Eof.span(self.pos..self.pos));
         }
     }
 
@@ -45,7 +47,7 @@ impl<'input> Lexer<'input> {
             self.pos += input
                 .find('\n')
                 .expect("expected newline to terminate comment");
-        } else if input.starts_with("\n") {
+        } else if input.starts_with(['\n', '\r']) {
             let newlines = input
                 .char_indices()
                 .take_while(|(_, c)| *c == '\n' || *c == '\r')
@@ -55,7 +57,7 @@ impl<'input> Lexer<'input> {
                 + 1;
             self.pos += newlines;
             self.indentation(&input[newlines..]);
-        } else if input.chars().next().unwrap().is_whitespace() {
+        } else if input.starts_with(|c: char| c.is_whitespace() && !(c == '\n' || c == '\r')) {
             self.pos += input
                 .char_indices()
                 .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r') )
@@ -67,10 +69,10 @@ impl<'input> Lexer<'input> {
             match rules::matches(input) {
                 Some((token, len)) => {
                     if let Some(start) = self.err {
-                        self.output.push(TokenType::Error.spanned(start..self.pos));
+                        self.output.push(TT::Error.span(start..self.pos));
                     }
 
-                    self.output.push(token.spanned(self.pos..self.pos + len));
+                    self.output.push(token.span(self.pos..self.pos + len));
                     
                     self.pos += len;
                 }
@@ -95,16 +97,16 @@ impl<'input> Lexer<'input> {
         self.pos += new_level;
 
         let last_level = self.indent_levels.last().copied().unwrap();
-        if input[new_level..].starts_with("\n") {
+        if input[new_level..].starts_with('\n') {
             self.pos += 1;
-            self.indentation(&input[new_level + 1..])
+            self.indentation(&input[new_level + 1..]);
         } else if new_level > last_level {
             self.indent_levels.push(new_level);
-            self.output.push(TokenType::Indent.spanned(start..self.pos));
+            self.output.push(TT::Indent.span(start..self.pos));
         } else if new_level < last_level {
             while new_level < self.indent_levels.last().copied().unwrap() {
                 self.indent_levels.pop();
-                self.output.push(TokenType::Dedent.spanned(start..self.pos));
+                self.output.push(TT::Dedent.span(start..self.pos));
             }
         }
     }

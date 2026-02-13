@@ -1,6 +1,6 @@
 use super::{Type, TypeChecker, TypeError};
 use crate::{
-    helpers::{Span, Spanned},
+    helpers::{Span, Spannable, Spnd},
     parser::{Parser, ast::ExprS},
     typecheck::error::TypeErrorS,
 };
@@ -62,7 +62,7 @@ fn type_of_if_single_branch_err() {
             expected: Type::unit(),
             found: Type::Float
         }
-        .spanned(10..13))
+        .span(10..13))
     )
 }
 
@@ -79,7 +79,7 @@ fn type_of_if_err() {
             expected: Type::string(),
             found: Type::Bool
         }
-        .spanned(22..27))
+        .span(22..27))
     )
 }
 
@@ -121,7 +121,7 @@ fn lambdas() {
 fn maths() {
     assert!(matches!(
         check_expr("1 + 1.0"),
-        Err(Spanned {
+        Err(Spnd {
             inner: TypeError::MismatchedTypes {
                 expected: Type::IntVar(_),
                 found: Type::Float

@@ -1,16 +1,17 @@
-use crate::{lexer::TokenType, span};
+use crate::{helpers::{Spannable, Spnd}, lexer::TT};
 use std::{error::Error, fmt::Display};
 
 pub type ParseResult<T> = Result<T, ParseErrorS>;
 
-span! { ParseError as ParseErrorS }
+pub type ParseErrorS = Spnd<ParseError>;
+impl Spannable for ParseError {}
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     Mismatched {
-        expected: TokenType,
-        found: TokenType,
+        expected: TT,
+        found: TT,
     },
-    Unexpected(TokenType, &'static str),
+    Unexpected(TT, &'static str),
     Missing,
 }
 

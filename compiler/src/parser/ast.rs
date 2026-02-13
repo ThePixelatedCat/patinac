@@ -1,6 +1,7 @@
-use crate::{helpers::Spanned, span};
+use crate::helpers::{Spannable, Spnd};
 
-span! {Item as ItemS}
+pub type ItemS = Spnd<Item>;
+impl Spannable for Item {}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Const {
@@ -26,7 +27,8 @@ pub enum Item {
     },
 }
 
-span! {Variant as VariantS}
+pub type VariantS = Spnd<Variant>;
+impl Spannable for Variant {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Variant {
     Unit(String),
@@ -34,16 +36,16 @@ pub enum Variant {
     Struct(String, Vec<FieldS>),
 }
 
-// pub type FieldS = Spanned<Field>;
-// impl Spannable for Field {}
-span! {Field as FieldS}
+pub type FieldS = Spnd<Field>;
+impl Spannable for Field {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub name: String,
     pub ty: TypeS,
 }
 
-span! {Pattern as PatternS}
+pub type PatternS = Spnd<Pattern>;
+impl Spannable for Pattern {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pattern {
     Var {
@@ -53,7 +55,8 @@ pub enum Pattern {
     },
 }
 
-span! {Type as TypeS}
+pub type TypeS = Spnd<Type>;
+impl Spannable for Type {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Int,
@@ -68,7 +71,8 @@ pub enum Type {
     Named { name: String, args: Vec<TypeS> },
 }
 
-span! {Expr as ExprS}
+pub type ExprS = Spnd<Expr>;
+impl Spannable for Expr {}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Ident(String),
@@ -98,7 +102,7 @@ pub enum Expr {
     },
     FieldAccess {
         base: Box<ExprS>,
-        field: Spanned<String>,
+        field: Spnd<String>,
     },
     If {
         cond: Box<ExprS>,
@@ -123,7 +127,7 @@ pub enum Expr {
         value: Box<ExprS>,
     },
     Assign {
-        ident: Spanned<String>,
+        ident: Spnd<String>,
         value: Box<ExprS>,
     },
     Lambda {
@@ -137,7 +141,8 @@ pub enum Expr {
     },
 }
 
-span! {MatchArm as MatchArmS}
+pub type MatchArmS = Spnd<MatchArm>;
+impl Spannable for MatchArm {}
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub pattern: PatternS,

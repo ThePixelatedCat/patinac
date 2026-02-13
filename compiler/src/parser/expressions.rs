@@ -1,8 +1,8 @@
 use std::{ops::Range, str::FromStr};
 
 use crate::{
-    helpers::{Span, Spanned},
-    lexer::{Token, TokenType as TT},
+    helpers::{Span, Spannable, Spnd},
+    lexer::{TT as TT, Token},
     parser::{
         ParseError, ParseResult, Parser,
         ast::{Bop, Expr, ExprS, MatchArm, MatchArmS, Unop},
@@ -32,8 +32,8 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             TT::FloatLit => self.float_lit_expr(),
             TT::CharLit => self.char_lit_expr(),
             TT::StringLit => self.string_lit_expr(),
-            TT::True => Ok(Expr::Bool(true).spanned(self.consume(TT::True).unwrap().span)),
-            TT::False => Ok(Expr::Bool(false).spanned(self.consume(TT::False).unwrap().span)),
+            TT::True => Ok(Expr::Bool(true).span(self.consume(TT::True).unwrap().span)),
+            TT::False => Ok(Expr::Bool(false).span(self.consume(TT::False).unwrap().span)),
             TT::LBracket => self.array_lit_expr(),
             TT::LParen => self.paren_exprs(),
             TT::If => self.if_expr(),
@@ -47,7 +47,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             _ => {
                 let token = self.next().unwrap();
 
-                Err(ParseError::Unexpected(token.inner, "start of expression").spanned(token.span))
+                Err(ParseError::Unexpected(token.inner, "start of expression").span(token.span))
             }
         }?;
 
@@ -96,7 +96,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 | TT::With
                 | TT::Fn // New item
                 | TT::Const
-                | TT::Struct
+                | TT::Record
                 | TT::Enum => return Ok(lhs),
                 _ => {
                     // let token = self.next().unwrap();
@@ -124,7 +124,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             }
-            .spanned(span);
+            .span(span);
         }
     }
 
@@ -139,28 +139,28 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             let span = ident_token.span.start..val.span.end;
 
             Ok(Expr::Assign {
-                ident: Spanned {
+                ident: Spnd {
                     inner: ident,
                     span: ident_token.span,
                 },
                 value: val.into(),
             }
-            .spanned(span))
+            .span(span))
         } else {
-            Ok(Expr::Ident(ident).spanned(ident_token.span))
+            Ok(Expr::Ident(ident).span(ident_token.span))
         }
     }
 
     fn int_lit_expr(&mut self) -> ParseResult<ExprS> {
         let span = self.consume(TT::IntLit)?.span;
         let val = u64::from_str(self.str_at(span)).unwrap();
-        Ok(Expr::Int(val).spanned(span))
+        Ok(Expr::Int(val).span(span))
     }
 
     fn float_lit_expr(&mut self) -> ParseResult<ExprS> {
         let span = self.consume(TT::FloatLit)?.span;
         let val = f64::from_str(self.str_at(span)).unwrap();
-        Ok(Expr::Float(val).spanned(span))
+        Ok(Expr::Float(val).span(span))
     }
 
     fn char_lit_expr(&mut self) -> ParseResult<ExprS> {
@@ -169,19 +169,19 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             .chars()
             .next()
             .unwrap();
-        Ok(Expr::Char(val).spanned(span))
+        Ok(Expr::Char(val).span(span))
     }
 
     fn string_lit_expr(&mut self) -> ParseResult<ExprS> {
         let span = self.consume(TT::StringLit)?.span;
         let val = process_escapes(self.str_at(span.start + 1..span.end - 1));
-        Ok(Expr::String(val).spanned(span))
+        Ok(Expr::String(val).span(span))
     }
 
     fn array_lit_expr(&mut self) -> ParseResult<ExprS> {
-        let Spanned { inner: arr, span } =
+        let Spnd { inner: arr, span } =
             self.delimited_list(Self::expr, TT::LBracket, TT::RBracket)?;
-        Ok(Expr::Array(arr).spanned(span))
+        Ok(Expr::Array(arr).span(span))
     }
 
     fn paren_exprs(&mut self) -> ParseResult<ExprS> {
@@ -205,7 +205,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let end = self.consume(TT::RParen)?.span.end;
 
-        Ok(expr.spanned(start..end))
+        Ok(expr.span(start..end))
     }
 
     fn if_expr(&mut self) -> ParseResult<ExprS> {
@@ -230,7 +230,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             th: Box::new(th),
             el,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 
     fn for_expr(&mut self) -> ParseResult<ExprS> {
@@ -253,7 +253,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             iter: Box::new(iter),
             body: Box::new(body),
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn while_expr(&mut self) -> ParseResult<ExprS> {
@@ -271,7 +271,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             cond: Box::new(cond),
             body: Box::new(body),
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn match_expr(&mut self) -> ParseResult<ExprS> {
@@ -293,7 +293,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             scrutinee: Box::new(scrutinee),
             arms,
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn match_arm(&mut self) -> ParseResult<MatchArmS> {
@@ -318,7 +318,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             guard,
             body: Box::new(body),
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn unop_expr(&mut self) -> ParseResult<ExprS> {
@@ -339,7 +339,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             op,
             expr: Box::new(expr),
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn let_expr(&mut self) -> ParseResult<ExprS> {
@@ -356,13 +356,13 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             binding,
             value: Box::new(value),
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn lambda_expr(&mut self) -> ParseResult<ExprS> {
         let start = self.consume(TT::Fn)?.span.start;
 
-        let Spanned { inner: params, .. } =
+        let Spnd { inner: params, .. } =
             self.delimited_list(Self::pattern, TT::LParen, TT::RParen)?;
 
         let return_type = if self.consume_at(TT::Colon) {
@@ -381,7 +381,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             return_type,
             body,
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn block_expr(&mut self) -> ParseResult<ExprS> {
@@ -401,7 +401,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let end = self.consume(TT::Dedent)?.span.end;
 
-        Ok(Expr::Block { exprs, trailing }.spanned(start..end))
+        Ok(Expr::Block { exprs, trailing }.span(start..end))
     }
 
     fn index_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
@@ -416,7 +416,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             arr: Box::new(lhs),
             index,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 
     fn field_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
@@ -429,13 +429,13 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             base: Box::new(lhs),
             field,
         }
-        .spanned(span))
+        .span(span))
     }
 
     fn call_suffix(&mut self, lhs: ExprS) -> ParseResult<ExprS> {
         let start = lhs.span.start;
 
-        let Spanned {
+        let Spnd {
             inner: args,
             span: Span { end, .. },
         } = self.delimited_list(Self::expr, TT::LParen, TT::RParen)?;
@@ -444,6 +444,6 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             fun: Box::new(lhs),
             args,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 }

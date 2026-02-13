@@ -1,9 +1,9 @@
 use std::ops::Range;
 
 use crate::{
-    helpers::Spanned,
-    lexer::{Token, TokenType},
-    parser::ast::FieldS,
+    helpers::{Spannable, Spnd},
+    lexer::{TT, Token},
+    parser::ast::{FieldS, VariantS},
 };
 
 use super::{
@@ -14,7 +14,7 @@ use super::{
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
     pub fn file(&mut self) -> ParseResult<Vec<ItemS>> {
         let mut items = Vec::new();
-        while !self.at(TokenType::Eof) {
+        while !self.at(TT::Eof) {
             items.push(self.item()?);
         }
         Ok(items)
@@ -22,14 +22,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
     pub fn item(&mut self) -> ParseResult<ItemS> {
         match self.peek() {
-            TokenType::Const => self.const_item(),
-            TokenType::Fn => self.func_item(),
-            TokenType::Struct => self.struct_item(),
-            TokenType::Enum => self.enum_item(),
+            TT::Const => self.const_item(),
+            TT::Fn => self.func_item(),
+            TT::Record => self.struct_item(),
+            TT::Enum => self.enum_item(),
             _ => {
                 let token = self.next().unwrap();
 
-                Err(ParseError::Unexpected(token.inner, "start of item").spanned(token.span))
+                Err(ParseError::Unexpected(token.inner, "start of item").span(token.span))
             }
         }
     }
@@ -39,18 +39,18 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let name = self.ident()?.inner;
 
-        let ty = if self.consume_at(TokenType::Colon) {
+        let ty = if self.consume_at(TT::Colon) {
             Some(self.parse_ty()?)
         } else {
             None
         };
 
-        self.consume(TokenType::Eq)?;
+        self.consume(TT::Eq)?;
         let value = self.expr()?;
 
         let end = value.span.end;
 
-        Ok(Item::Const { name, ty, value }.spanned(start..end))
+        Ok(Item::Const { name, ty, value }.span(start..end))
     }
 
     fn func_item(&mut self) -> ParseResult<ItemS> {
@@ -58,15 +58,15 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let name = self.ident()?.inner;
 
-        let params = self.delimited_list(Self::pattern, TokenType::LParen, TokenType::RParen)?;
+        let params = self.delimited_list(Self::pattern, TT::LParen, TT::RParen)?;
 
-        let return_type = if self.consume_at(TokenType::Colon) {
+        let return_type = if self.consume_at(TT::Colon) {
             Some(self.parse_ty()?)
         } else {
             None
         };
 
-        self.consume(TokenType::Arrow)?;
+        self.consume(TT::Arrow)?;
 
         let body = self.expr()?;
 
@@ -78,7 +78,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             return_ty: return_type,
             body,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 
     fn struct_item(&mut self) -> ParseResult<ItemS> {
@@ -86,7 +86,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let (name, generic_params) = self.type_name()?;
 
-        let Spanned {
+        let Spnd {
             inner: fields,
             span,
         } = self.fields()?;
@@ -97,7 +97,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             generic_params,
             fields,
         }
-        .spanned(start..end))
+        .span(start..end))
     }
 
     fn enum_item(&mut self) -> ParseResult<ItemS> {
@@ -105,63 +105,63 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let (name, generic_params) = self.type_name()?;
 
-        let Spanned {
-            inner: variants,
-            span: variants_span,
-        } = self.delimited_list(
-            |this| {
-                let name = this.ident()?;
-                let start = name.span.start;
-
-                Ok(match this.peek() {
-                    TokenType::Indent => {
-                        let Spanned {
-                            inner: fields,
-                            span: fields_span,
-                        } = this.fields()?;
-                        Variant::Struct(name.inner, fields).spanned(start..fields_span.end)
-                    }
-                    TokenType::LParen => {
-                        let Spanned { inner: vals, span } = this.delimited_list(
-                            Self::parse_ty,
-                            TokenType::LParen,
-                            TokenType::RParen,
-                        )?;
-
-                        Variant::Tuple(name.inner, vals).spanned(start..span.end)
-                    }
-                    TokenType::Comma => Variant::Unit(name.inner).spanned(name.span),
-                    _ => {
-                        let token = this.next().unwrap();
-
-                        return Err(ParseError::Unexpected(
-                            token.inner,
-                            "after variant name. expected one of `,` `(` `{`",
-                        )
-                        .spanned(token.span));
-                    }
-                })
-            },
-            TokenType::Indent,
-            TokenType::Dedent,
-        )?;
+        let variants = Vec::new();
+        while self.at(TT::Pipe) {
+            variants.push(self.enum_variant()?);
+        }
+        let end = variants.last().map_or(with_end, |var| var.span.end);
 
         Ok(Item::Enum {
             name,
             generic_params,
             variants,
         }
-        .spanned(start..variants_span.end))
+        .span(start..end))
+    }
+
+    fn enum_variant(&mut self) -> ParseResult<VariantS> {
+        let start = self.consume(TT::Pipe)?.span.start;
+
+        let name = self.ident()?;
+
+        Ok(match self.peek() {
+            TT::Indent => {
+                let Spnd {
+                    inner: fields,
+                    span: fields_span,
+                } = self.fields()?;
+                Variant::Struct(name.inner, fields).span(start..fields_span.end)
+            }
+            TT::LParen => {
+                let Spnd { inner: vals, span } = self.delimited_list(
+                    Self::parse_ty,
+                    TT::LParen,
+                    TT::RParen,
+                )?;
+
+                Variant::Tuple(name.inner, vals).span(start..span.end)
+            }
+            TT::Pipe => Variant::Unit(name.inner).span(name.span),
+            _ => {
+                let token = self.next().unwrap();
+
+                return Err(ParseError::Unexpected(
+                    token.inner,
+                    "after variant name. expected one of `,` `(` `{`",
+                )
+                .span(token.span));
+            }
+        })
     }
 
     fn type_name(&mut self) -> ParseResult<(String, Vec<String>)> {
         let name = self.ident()?.inner;
 
-        let generic_params = if self.at(TokenType::LAngle) {
+        let generic_params = if self.at(TT::LAngle) {
             self.delimited_list(
                 |this| this.ident().map(|v| v.inner),
-                TokenType::LAngle,
-                TokenType::RAngle,
+                TT::LAngle,
+                TT::RAngle,
             )?
             .inner
         } else {
@@ -171,13 +171,13 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         Ok((name, generic_params))
     }
 
-    fn fields(&mut self) -> ParseResult<Spanned<Vec<FieldS>>> {
+    fn fields(&mut self) -> ParseResult<Spnd<Vec<FieldS>>> {
         self.delimited_list(
             |this| {
-                if this.peek() == TokenType::Ident {
+                if this.peek() == TT::Ident {
                     let span = this.next().unwrap().span;
 
-                    this.consume(TokenType::Colon)?;
+                    this.consume(TT::Colon)?;
 
                     let ty = this.parse_ty()?;
                     let end = ty.span.end;
@@ -186,19 +186,19 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                         name: this.input[Range::from(span)].to_string(),
                         ty,
                     }
-                    .spanned(span.start..end))
+                    .span(span.start..end))
                 } else {
                     let token = this.next().unwrap();
 
                     Err(ParseError::Mismatched {
-                        expected: TokenType::Ident,
+                        expected: TT::Ident,
                         found: token.inner,
                     }
-                    .spanned(token.span))
+                    .span(token.span))
                 }
             },
-            TokenType::Indent,
-            TokenType::Dedent,
+            TT::Indent,
+            TT::Dedent,
         )
     }
 }

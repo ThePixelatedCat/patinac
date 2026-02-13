@@ -1,8 +1,9 @@
-use crate::{span, typecheck::types::Type};
+use crate::{helpers::{Spannable, Spnd}, typecheck::types::Type};
 
 use std::{error::Error, fmt::Display};
 
-span! { TypeError as TypeErrorS }
+pub type TypeErrorS = Spnd<TypeError>;
+impl Spannable for TypeError {}
 #[derive(Debug, PartialEq)]
 pub enum TypeError {
     UnboundIdent(String),

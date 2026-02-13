@@ -4,36 +4,37 @@ use std::{
     ops::{Deref, Range},
 };
 
-#[macro_export]
-macro_rules! span {
-    ($t:ident as $s:ident) => {
-        pub type $s = $crate::helpers::Spanned<$t>;
-        impl $t {
-            pub fn spanned(
-                self,
-                span: impl Into<$crate::helpers::Span>,
-            ) -> $crate::helpers::Spanned<Self> {
-                $crate::helpers::Spanned {
-                    inner: self,
-                    span: span.into(),
-                }
-            }
-        }
-    };
+impl<T, E> SpanErr<T, E> for Result<T, E> {
+    fn span_err(self, span: Span) -> Result<T, Spnd<E>> {
+        self.map_err(|e| Spnd::span(e, span))
+    }
+}
+
+pub trait SpanErr<T, E> {
+    fn span_err(self, span: Span) -> Result<T, Spnd<E>>;
+}
+
+pub trait Spannable 
+where
+    Self: Sized
+{
+    fn span(self, span: impl Into<Span>) -> Spnd<Self> {
+        Spnd::span(self, span)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Spanned<T> {
+pub struct Spnd<T> {
     pub inner: T,
     pub span: Span,
 }
 
-impl<T> Spanned<T> {
-    pub fn as_deref(&self) -> Spanned<&T::Target>
+impl<T> Spnd<T> {
+    pub fn as_deref(&self) -> Spnd<&T::Target>
     where
         T: Deref,
     {
-        Spanned {
+        Spnd {
             inner: &*self.inner,
             span: self.span,
         }
@@ -47,13 +48,13 @@ impl<T> Spanned<T> {
     }
 }
 
-impl<T: Display> Display for Spanned<T> {
+impl<T: Display> Display for Spnd<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.span, self.inner)
     }
 }
 
-impl<T: Error> Error for Spanned<T> {}
+impl<T: Error> Error for Spnd<T> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {

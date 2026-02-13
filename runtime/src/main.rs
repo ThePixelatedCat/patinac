@@ -35,7 +35,7 @@ impl InstrBuf {
     pub fn get(&mut self, idx: u32) -> Option<&Instr> {
         let idx = idx as usize;
 
-        while let None = self.inner.get(idx) {
+        while self.inner.get(idx).is_none() {
             self.inner.push(self.rx.recv().ok()?)
         }
 

@@ -2,15 +2,15 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::TokenType;
+use super::TT;
 
-type Rule = fn(&str) -> Option<(TokenType, usize)>;
+type Rule = fn(&str) -> Option<(TT, usize)>;
 
-fn match_phrase(i: &str, p: &str, t: TokenType) -> Option<(TokenType, usize)> {
+fn match_phrase(i: &str, p: &str, t: TT) -> Option<(TT, usize)> {
     i.starts_with(p).then_some((t, p.len()))
 }
 
-fn match_regex(i: &str, r: &Regex, t: TokenType) -> Option<(TokenType, usize)> {
+fn match_regex(i: &str, r: &Regex, t: TT) -> Option<(TT, usize)> {
     r.find(i).map(|regex_match| (t, regex_match.end()))
 }
 
@@ -24,8 +24,8 @@ static CHAR_REGEX: LazyLock<Regex> =
 static IDENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
 
-const RULES: [Rule; 59] = {
-    use TokenType as T;
+const RULES: [Rule; 57] = {
+    use TT as T;
     [
         |i| match_regex(i, &INT_REGEX, T::IntLit),
         |i| match_regex(i, &FLOAT_REGEX, T::FloatLit),
@@ -33,8 +33,6 @@ const RULES: [Rule; 59] = {
         |i| match_regex(i, &CHAR_REGEX, T::CharLit),
         |i| match_phrase(i, "[", T::LBracket),
         |i| match_phrase(i, "]", T::RBracket),
-        |i| match_phrase(i, "{", T::Indent),
-        |i| match_phrase(i, "}", T::Dedent),
         |i| match_phrase(i, "(", T::LParen),
         |i| match_phrase(i, ")", T::RParen),
         |i| match_phrase(i, "=", T::Eq),
@@ -72,7 +70,7 @@ const RULES: [Rule; 59] = {
         |i| match_phrase(i, "mut", T::Mut),
         |i| match_phrase(i, "const", T::Const),
         |i| match_phrase(i, "fn", T::Fn),
-        |i| match_phrase(i, "struct", T::Struct),
+        |i| match_phrase(i, "record", T::Record),
         |i| match_phrase(i, "enum", T::Enum),
         |i| match_phrase(i, "if", T::If),
         |i| match_phrase(i, "then", T::Then),
@@ -89,7 +87,7 @@ const RULES: [Rule; 59] = {
     ]
 };
 
-pub(super) fn matches(input: &str) -> Option<(TokenType, usize)> {
+pub(super) fn matches(input: &str) -> Option<(TT, usize)> {
     RULES
         .iter()
         .filter_map(|rule| rule(input))
