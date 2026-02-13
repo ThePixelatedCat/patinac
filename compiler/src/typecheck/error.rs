@@ -1,4 +1,7 @@
-use crate::{helpers::{Spannable, Spnd}, typecheck::types::Type};
+use crate::{
+    helpers::{Spannable, Spnd},
+    typecheck::types::Type,
+};
 
 use std::{error::Error, fmt::Display};
 

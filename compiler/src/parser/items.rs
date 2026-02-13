@@ -1,7 +1,5 @@
-use std::ops::Range;
-
 use crate::{
-    helpers::{Spannable, Spnd},
+    helpers::Spannable,
     lexer::{TT, Token},
     parser::ast::{FieldS, TypeDef},
 };
@@ -92,14 +90,11 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             variants.push(self.enum_variant()?);
         }
 
-        Ok(Item::Enum {
-            def,
-            variants
-        })
+        Ok(Item::Enum { def, variants })
     }
 
     fn enum_variant(&mut self) -> ParseResult<Variant> {
-        let start = self.consume(TT::Pipe)?.span.start;
+        self.consume(TT::Pipe)?;
 
         let name = self.ident()?;
 
@@ -109,11 +104,9 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                 Variant::Struct(name.inner, fields)
             }
             TT::LParen => {
-                let Spnd { inner: vals, span } = self.delimited_list(
-                    Self::parse_ty,
-                    TT::LParen,
-                    TT::RParen,
-                )?;
+                let vals = self
+                    .delimited_list(Self::parse_ty, TT::LParen, TT::RParen)?
+                    .inner;
 
                 Variant::Tuple(name.inner, vals)
             }
@@ -121,11 +114,9 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             _ => {
                 let token = self.next().unwrap();
 
-                return Err(ParseError::Unexpected(
-                    token.inner,
-                    "after variant name",
-                )
-                .span(token.span));
+                return Err(
+                    ParseError::Unexpected(token.inner, "after variant name").span(token.span)
+                );
             }
         })
     }
@@ -134,19 +125,15 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         let name = self.ident()?.inner;
 
         let generic_params = if self.at(TT::LAngle) {
-            self.delimited_list(
-                Self::ident,
-                TT::LAngle,
-                TT::RAngle,
-            )?
-            .inner
+            self.delimited_list(Self::ident, TT::LAngle, TT::RAngle)?
+                .inner
         } else {
             Vec::new()
         };
 
-        Ok(TypeDef { 
-            name, 
-            generic_params 
+        Ok(TypeDef {
+            name,
+            generic_params,
         })
     }
 
@@ -154,7 +141,8 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         self.delimited_list(
             |this| {
                 if this.peek() == TT::Ident {
-                    let span = this.next().unwrap().span;
+                    let name = this.ident()?;
+                    let start = name.span.start;
 
                     this.consume(TT::Colon)?;
 
@@ -162,10 +150,10 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     let end = ty.span.end;
 
                     Ok(Field {
-                        name: this.input[Range::from(span)].to_string(),
+                        name: name.inner,
                         ty,
                     }
-                    .span(span.start..end))
+                    .span(start..end))
                 } else {
                     let token = this.next().unwrap();
 

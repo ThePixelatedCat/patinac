@@ -58,8 +58,7 @@ impl TypeChecker {
         for expr in exprs {
             let this_ty = self.type_of(expr)?;
 
-            self.unify(&inner_ty, &this_ty)
-                .span_err(expr.span)?;
+            self.unify(&inner_ty, &this_ty).span_err(expr.span)?;
         }
 
         Ok(Type::Array(Box::new(inner_ty)))
@@ -82,8 +81,7 @@ impl TypeChecker {
         let return_ty = self.fresh_var();
         let fun_var = Type::Fn(arg_tys, Box::new(return_ty.clone()));
 
-        self.unify(&fun_var, &fun_ty)
-            .span_err(fun.span)?;
+        self.unify(&fun_var, &fun_ty).span_err(fun.span)?;
 
         Ok(return_ty)
     }
@@ -96,8 +94,7 @@ impl TypeChecker {
                 self.unify_either(&lhs_ty, &self.fresh_int_var(), &Type::Float)
                     .span_err(lhs.span)?;
 
-                self.unify(&lhs_ty, &rhs_ty)
-                    .span_err(rhs.span)?;
+                self.unify(&lhs_ty, &rhs_ty).span_err(rhs.span)?;
 
                 Ok(lhs_ty)
             }
@@ -113,26 +110,21 @@ impl TypeChecker {
             Bop::BOr | Bop::BAnd => {
                 let int_var = self.fresh_int_var();
 
-                self.unify(&int_var, &lhs_ty)
-                    .span_err(lhs.span)?;
+                self.unify(&int_var, &lhs_ty).span_err(lhs.span)?;
 
-                self.unify(&int_var, &rhs_ty)
-                    .span_err(rhs.span)?;
+                self.unify(&int_var, &rhs_ty).span_err(rhs.span)?;
 
                 Ok(int_var)
             }
             Bop::And | Bop::Or | Bop::Xor => {
-                self.unify(&Type::Bool, &lhs_ty)
-                    .span_err(lhs.span)?;
+                self.unify(&Type::Bool, &lhs_ty).span_err(lhs.span)?;
 
-                self.unify(&Type::Bool, &rhs_ty)
-                    .span_err(rhs.span)?;
+                self.unify(&Type::Bool, &rhs_ty).span_err(rhs.span)?;
 
                 Ok(Type::Bool)
             }
             Bop::Eqq | Bop::Neq => {
-                self.unify(&lhs_ty, &rhs_ty)
-                    .span_err(rhs.span)?;
+                self.unify(&lhs_ty, &rhs_ty).span_err(rhs.span)?;
 
                 Ok(Type::Bool)
             }
@@ -140,8 +132,7 @@ impl TypeChecker {
                 self.unify_either(&lhs_ty, &self.fresh_int_var(), &Type::Float)
                     .span_err(lhs.span)?;
 
-                self.unify(&lhs_ty, &rhs_ty)
-                    .span_err(rhs.span)?;
+                self.unify(&lhs_ty, &rhs_ty).span_err(rhs.span)?;
 
                 Ok(Type::Bool)
             }
@@ -153,8 +144,7 @@ impl TypeChecker {
 
         match op {
             Unop::Not => {
-                self.unify(&Type::Bool, &expr_ty)
-                    .span_err(expr.span)?;
+                self.unify(&Type::Bool, &expr_ty).span_err(expr.span)?;
 
                 Ok(expr_ty)
             }
@@ -169,13 +159,11 @@ impl TypeChecker {
 
     fn type_of_indexing(&mut self, arr: &ExprS, index: &ExprS) -> Result<Type, TypeErrorS> {
         let index_ty = self.type_of(index)?;
-        self.unify(&Type::UInt, &index_ty)
-            .span_err(index.span)?;
+        self.unify(&Type::UInt, &index_ty).span_err(index.span)?;
 
         let arr_ty = Type::Array(Box::new(self.fresh_var()));
         let expr_ty = self.type_of(arr)?;
-        self.unify(&arr_ty, &expr_ty)
-            .span_err(arr.span)?;
+        self.unify(&arr_ty, &expr_ty).span_err(arr.span)?;
 
         match self.normalise(arr_ty) {
             Type::Array(inner_ty) => Ok(*inner_ty),
@@ -190,8 +178,7 @@ impl TypeChecker {
         el: Option<&ExprS>,
     ) -> Result<Type, TypeErrorS> {
         let cond_ty = self.type_of(cond)?;
-        self.unify(&Type::Bool, &cond_ty)
-            .span_err(cond.span)?;
+        self.unify(&Type::Bool, &cond_ty).span_err(cond.span)?;
 
         let th_ty = self.type_of(th)?;
 
@@ -199,8 +186,7 @@ impl TypeChecker {
             let el_ty = self.type_of(el)?;
             self.unify(&th_ty, &el_ty).span_err(el.span)?;
         } else {
-            self.unify(&Type::unit(), &th_ty)
-                .span_err(th.span)?;
+            self.unify(&Type::unit(), &th_ty).span_err(th.span)?;
         }
 
         Ok(th_ty)
@@ -217,8 +203,7 @@ impl TypeChecker {
 
         if let Some(ty) = annotated_ty {
             let annot_ty = ty.inner.clone().into();
-            self.unify(&annot_ty, &val_ty)
-                .span_err(val.span)?;
+            self.unify(&annot_ty, &val_ty).span_err(val.span)?;
         }
 
         self.env.insert(
@@ -235,16 +220,13 @@ impl TypeChecker {
     fn type_of_assign(&mut self, ident: Spnd<&str>, val: &ExprS) -> Result<Type, TypeErrorS> {
         let val_ty = self.type_of(val)?;
 
-        let info = self
-            .get_binding(ident.inner)
-            .span_err(ident.span)?;
+        let info = self.get_binding(ident.inner).span_err(ident.span)?;
 
         if !info.mutable {
             return Err(TypeError::Mutation(ident.inner.to_owned()).span(ident.span));
         }
 
-        self.unify(&info.ty, &val_ty)
-            .span_err(val.span)?;
+        self.unify(&info.ty, &val_ty).span_err(val.span)?;
 
         Ok(Type::unit())
     }
@@ -283,9 +265,7 @@ impl TypeChecker {
 
         if let Some(ty) = return_ty {
             let return_ty = ty.inner.clone().into();
-            snapshot
-                .unify(&return_ty, &body_ty)
-                .span_err(body.span)?;
+            snapshot.unify(&return_ty, &body_ty).span_err(body.span)?;
         }
 
         Ok(Type::Fn(param_tys, Box::new(body_ty)))

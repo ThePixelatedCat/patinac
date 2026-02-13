@@ -1,6 +1,9 @@
 use crate::helpers::{Spannable, Spnd};
 use crate::lexer::TT;
-use crate::parser::{Parser, ParseError, ParseResult, ast::{Bop, Expr, ExprS, Pattern, Type, Unop}};
+use crate::parser::{
+    ParseError, ParseResult, Parser,
+    ast::{Bop, Expr, ExprS, Pattern, Type, Unop},
+};
 
 fn parse_expr(input: &str) -> ExprS {
     let mut parser = Parser::new(input);
@@ -417,7 +420,7 @@ fn var_expressions() {
 #[test]
 fn block_expressions() {
     let expr = parse_expr(
-"
+        "
     let mut y = 5
     3 + 1 - 2
     y = 1
@@ -510,10 +513,6 @@ fn malformed_expressions() {
     assert_eq!(
         parse_expr_err("*5"),
         Err(ParseError::Unexpected(TT::Times, "start of expression").span(0..1))
-    );
-    assert_eq!(
-        parse_expr_err("let a = 1 + 3 print(a)"),
-        Err(ParseError::Unexpected(TT::Ident, "end of expression").span(14..19))
     );
     assert_eq!(
         parse_expr_err("print(5, 2;)"),

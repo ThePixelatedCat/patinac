@@ -46,8 +46,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             TT::Bool => Type::Bool.span(self.next().unwrap().span),
             TT::Char => Type::Char.span(self.next().unwrap().span),
             TT::Ident => {
-                let span = self.next().unwrap().span;
-                let name = self.input[Range::from(span)].to_string();
+                let Spnd { inner: name, span } = self.ident()?;
 
                 let start = span.start;
 
@@ -55,8 +54,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     let Spnd {
                         inner: generics,
                         span: generics_span,
-                    } =
-                        self.delimited_list(Self::parse_ty, TT::LAngle, TT::RAngle)?;
+                    } = self.delimited_list(Self::parse_ty, TT::LAngle, TT::RAngle)?;
                     (generics, generics_span.end)
                 } else {
                     (Vec::new(), span.end)
@@ -114,21 +112,16 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
     }
 
     pub fn ident(&mut self) -> ParseResult<Spnd<String>> {
-        if self.peek() == TT::Ident {
-            let span = self.next().unwrap().span;
+        let next = self.next().unwrap();
+        let span = next.span;
 
-            Ok(Spnd::span(
-                self.input[Range::from(span)].to_string(),
-                span,
-            ))
-        } else {
-            let token = self.next().unwrap();
-
-            Err(ParseError::Mismatched {
+        match next.inner {
+            TT::Ident => Ok(self.input[Range::from(span)].to_string().span(span)),
+            other => Err(ParseError::Mismatched {
                 expected: TT::Ident,
-                found: token.inner,
+                found: other,
             }
-            .span(token.span))
+            .span(span)),
         }
     }
 

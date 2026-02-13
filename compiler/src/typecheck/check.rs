@@ -47,14 +47,8 @@ impl TypeChecker {
                         },
                     );
                 }
-                Item::Record {
-                    def,
-                    fields,
-                } => todo!(),
-                Item::Enum {
-                    def,
-                    variants,
-                } => todo!(),
+                Item::Record { def, fields } => todo!(),
+                Item::Enum { def, variants } => todo!(),
             }
         }
 
@@ -64,14 +58,8 @@ impl TypeChecker {
                 Item::Func {
                     name, params, body, ..
                 } => self.check_func(name, params, body)?,
-                Item::Record {
-                    def,
-                    fields,
-                } => todo!(),
-                Item::Enum {
-                    def,
-                    variants,
-                } => todo!(),
+                Item::Record { def, fields } => todo!(),
+                Item::Enum { def, variants } => todo!(),
             }
         }
 
@@ -85,8 +73,7 @@ impl TypeChecker {
 
         let val_ty = self.clone().type_of(value)?;
 
-        self.unify(binding_ty, &val_ty)
-            .span_err(value.span)
+        self.unify(binding_ty, &val_ty).span_err(value.span)
     }
 
     fn check_func(&self, name: &str, params: &[PatternS], body: &ExprS) -> Result<(), TypeErrorS> {
@@ -122,7 +109,6 @@ impl TypeChecker {
 
         let body_ty = snapshot.type_of(body)?;
 
-        self.unify(return_ty, &body_ty)
-            .span_err(body.span)
+        self.unify(return_ty, &body_ty).span_err(body.span)
     }
 }

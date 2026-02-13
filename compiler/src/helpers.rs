@@ -16,9 +16,9 @@ pub trait SpanErr<T, E> {
     fn span_err(self, span: Span) -> Result<T, Spnd<E>>;
 }
 
-pub trait Spannable 
+pub trait Spannable
 where
-    Self: Sized
+    Self: Sized,
 {
     fn span(self, span: impl Into<Span>) -> Spnd<Self> {
         Spnd::span(self, span)

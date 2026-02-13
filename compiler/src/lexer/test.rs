@@ -24,11 +24,7 @@ fn single_char_tokens() {
 fn unknown_input() {
     assert_equal(
         Lexer::lex("$$$$$$$+"),
-        [
-            T::Error.span(0..7),
-            T::Plus.span(7..8),
-            T::Eof.span(8..8),
-        ],
+        [T::Error.span(0..7), T::Plus.span(7..8), T::Eof.span(8..8)],
     );
 }
 
@@ -95,11 +91,7 @@ fn keywords() {
 fn comment() {
     assert_equal(
         Lexer::lex("//hello, world!\nif let"),
-        [
-            T::If.span(16..18),
-            T::Let.span(19..22),
-            T::Eof.span(22..22),
-        ],
+        [T::If.span(16..18), T::Let.span(19..22), T::Eof.span(22..22)],
     );
 }
 
@@ -131,7 +123,7 @@ fn test(var: Type, var2_: Bool) ->
     let mut chars = x.chars()
     if let Some(c) = chars.next() then
         x = x + c
-    else if !var2_ then
+    else if !var2_ then 
         x = x + ","
 "#;
 
@@ -204,16 +196,16 @@ fn test(var: Type, var2_: Bool) ->
             T::Bang.span(224..225),
             T::Ident.span(225..230),
             T::Then.span(231..235),
-            T::Indent.span(236..244),
+            T::Indent.span(237..245),
             // `x` re-assignment
-            T::Ident.span(244..245),
-            T::Eq.span(246..247),
-            T::Ident.span(248..249),
-            T::Plus.span(250..251),
-            T::StringLit.span(252..255),
-            T::Dedent.span(256..256), // end if
-            T::Dedent.span(256..256), // end fn
-            T::Eof.span(256..256),
+            T::Ident.span(245..246),
+            T::Eq.span(247..248),
+            T::Ident.span(249..250),
+            T::Plus.span(251..252),
+            T::StringLit.span(253..256),
+            T::Dedent.span(257..257), // end if
+            T::Dedent.span(257..257), // end fn
+            T::Eof.span(257..257),
         ],
     );
 }

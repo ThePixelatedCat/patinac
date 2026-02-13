@@ -3,7 +3,7 @@ mod rules;
 mod test;
 mod token;
 
-pub use token::{Token, TT};
+pub use token::{TT, Token};
 
 use crate::helpers::Spannable;
 
@@ -12,7 +12,7 @@ pub struct Lexer<'input> {
     output: Vec<Token>,
     pos: usize,
     indent_levels: Vec<usize>,
-    err: Option<usize>
+    err: Option<usize>,
 }
 
 impl<'input> Lexer<'input> {
@@ -23,12 +23,12 @@ impl<'input> Lexer<'input> {
     }
 
     pub fn new(input: &'input str) -> Self {
-        Self { 
-            input, 
-            output: Vec::with_capacity(input.len() / 4), 
-            pos: 0, 
+        Self {
+            input,
+            output: Vec::with_capacity(input.len() / 4),
+            pos: 0,
             indent_levels: vec![0],
-            err: None
+            err: None,
         }
     }
 
@@ -60,10 +60,10 @@ impl<'input> Lexer<'input> {
         } else if input.starts_with(|c: char| c.is_whitespace() && !(c == '\n' || c == '\r')) {
             self.pos += input
                 .char_indices()
-                .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r') )
+                .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r'))
                 .last()
                 .unwrap()
-                .0 
+                .0
                 + 1;
         } else {
             match rules::matches(input) {
@@ -73,10 +73,10 @@ impl<'input> Lexer<'input> {
                     }
 
                     self.output.push(token.span(self.pos..self.pos + len));
-                    
+
                     self.pos += len;
                 }
-                None => { 
+                None => {
                     if self.err.is_none() {
                         self.err = Some(self.pos);
                     }

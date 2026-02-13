@@ -2,7 +2,7 @@ use std::{ops::Range, str::FromStr};
 
 use crate::{
     helpers::{Span, Spannable, Spnd},
-    lexer::{TT as TT, Token},
+    lexer::{TT, Token},
     parser::{
         ParseError, ParseResult, Parser,
         ast::{Bop, Expr, ExprS, MatchArm, MatchArmS, Unop},

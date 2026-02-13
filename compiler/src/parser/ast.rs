@@ -26,7 +26,7 @@ pub enum Item {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeDef {
     pub name: String,
-    pub generic_params: Vec<Spnd<String>>
+    pub generic_params: Vec<Spnd<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

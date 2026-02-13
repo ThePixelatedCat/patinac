@@ -1,7 +1,10 @@
 use crate::helpers::Spannable;
 use crate::lexer::TT;
 use crate::parser::ast::TypeDef;
-use crate::parser::{ParseError, ParseResult, Parser, ast::{Bop, Expr, Field, Item, Pattern, Type, Variant}};
+use crate::parser::{
+    ParseError, ParseResult, Parser,
+    ast::{Bop, Expr, Field, Item, Pattern, Type, Variant},
+};
 
 fn parse_item(input: &str) -> Item {
     let mut parser = Parser::new(input);
@@ -55,7 +58,7 @@ fn const_items() {
 #[test]
 fn struct_items() {
     let item = parse_item(
-r#"
+        r#"
 record Foo<T, U>
     x: Char  ,
     bar: Bar<Baz<T>>
@@ -64,9 +67,12 @@ record Foo<T, U>
     assert_eq!(
         item,
         Item::Record {
-            def: TypeDef { 
-                name: "Foo".into(), 
-                generic_params: vec![String::from("T").span(12..13), String::from("U").span(15..16)] 
+            def: TypeDef {
+                name: "Foo".into(),
+                generic_params: vec![
+                    String::from("T").span(12..13),
+                    String::from("U").span(15..16)
+                ]
             },
             fields: vec![
                 Field {
@@ -103,10 +109,10 @@ record Foo<T, U>
 #[test]
 fn enum_items() {
     let item = parse_item(
-r#"
+        r#"
 enum Foo 
-| X,
-| Y(Bar),
+| X
+| Y(Bar)
 | Z 
     baz: Baz, 
     fizz: Buzz
@@ -115,9 +121,9 @@ enum Foo
     assert_eq!(
         item,
         Item::Enum {
-            def: TypeDef { 
-                name: "Foo".into(), 
-                generic_params: vec![] 
+            def: TypeDef {
+                name: "Foo".into(),
+                generic_params: vec![]
             },
             variants: vec![
                 Variant::Unit("X".into()),
@@ -128,7 +134,7 @@ enum Foo
                             name: "Bar".into(),
                             args: vec![]
                         }
-                        .span(24..27)
+                        .span(19..22)
                     ]
                 ),
                 Variant::Struct(
@@ -140,18 +146,18 @@ enum Foo
                                 name: "Baz".into(),
                                 args: vec![]
                             }
-                            .span(42..45)
+                            .span(38..41)
                         }
-                        .span(38..45),
+                        .span(33..41),
                         Field {
                             name: "fizz".into(),
                             ty: Type::Named {
                                 name: "Buzz".into(),
                                 args: vec![]
                             }
-                            .span(53..57)
+                            .span(54..58)
                         }
-                        .span(47..57)
+                        .span(48..58)
                     ]
                 )
             ]
@@ -202,8 +208,12 @@ fn malformed_items() {
     );
 
     assert_eq!(
-        parse_item_err("const NO_DICTS: {String: Int} = 5"),
-        Err(ParseError::Unexpected(TT::Indent, "start of type name").span(16..17))
+        parse_item_err("const NO_DICTS: [String: Int] = 5"),
+        Err(ParseError::Mismatched {
+            expected: TT::RBracket,
+            found: TT::Colon
+        }
+        .span(23..24))
     );
 
     assert_eq!(
@@ -222,10 +232,9 @@ fn malformed_items() {
 
     assert_eq!(
         parse_item_err("enum NoComma { Bad Syntax }"),
-        Err(ParseError::Unexpected(
-            TT::Ident,
-            "after variant name. expected one of `,` `(` `{`"
+        Err(
+            ParseError::Unexpected(TT::Ident, "after variant name. expected one of `,` `(` `{`")
+                .span(19..25)
         )
-        .span(19..25))
     )
 }

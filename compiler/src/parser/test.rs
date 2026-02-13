@@ -1,7 +1,7 @@
 #[cfg(test)]
-mod items;
-#[cfg(test)]
 mod exprs;
+#[cfg(test)]
+mod items;
 
 use crate::helpers::{Spannable, Spnd};
 use crate::parser::ast::TypeDef;
@@ -16,21 +16,23 @@ fn parse_ast(input: &str) -> Vec<Item> {
 
 #[test]
 fn file() {
-    let items = parse_ast(
-        r#"
-        fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int -> {
-            let mut x: ( Bool, T) = true + sin(y);
-            x = if (bar < 3) {
-                let baz = bar.value + 2 * 4;
-                x + 1;
-            } else if (bar <= 2)
-                fizz(3, 5.1)
-        }
+    todo!("Fix Spans");
 
-        record Foo<T, U> {
-            x: String,
-            bar: Bar<Baz<T>, [U]>,
-        }"#,
+    #[rustfmt::skip]
+    let items = parse_ast(
+r#"
+fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int -> 
+    let mut x: ( Bool, T) = true + sin(y)
+    x = if (bar < 3) then
+        let baz = bar.value + 2 * 4
+        x + 1
+    else if bar <= 2 then
+        fizz(3, 5.1)
+
+record Foo<T, U> 
+    x: String,
+    bar: Bar<Baz<T>, [U]>,
+"#,
     );
 
     assert_eq!(
@@ -75,11 +77,7 @@ fn file() {
                 .span(33..52)
             ],
             return_ty: Some(
-                Type::Fn(
-                    vec![Type::Int.span(58..61)],
-                    Type::Int.span(64..67).into()
-                )
-                .span(55..67)
+                Type::Fn(vec![Type::Int.span(58..61)], Type::Int.span(64..67).into()).span(55..67)
             ),
             body: Expr::Block {
                 exprs: vec![
@@ -210,9 +208,12 @@ fn file() {
     assert_eq!(
         items[1],
         Item::Record {
-            def: TypeDef { 
-                name: "Foo".into(), 
-                generic_params: vec![String::from("T").span(315..316), String::from("U").span(318..320),] 
+            def: TypeDef {
+                name: "Foo".into(),
+                generic_params: vec![
+                    String::from("T").span(315..316),
+                    String::from("U").span(318..320),
+                ]
             },
             fields: vec![
                 Field {
