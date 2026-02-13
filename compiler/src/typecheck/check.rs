@@ -2,15 +2,15 @@ use std::iter;
 
 use crate::{
     helpers::{SpanErr, Spnd},
-    parser::ast::{ExprS, Item, ItemS, Pattern, PatternS},
+    parser::ast::{ExprS, Item, Pattern, PatternS},
 };
 
 use super::{BindingInfo, Type, TypeChecker, TypeErrorS};
 
 impl TypeChecker {
-    pub fn check(&mut self, ast: &[ItemS]) -> Result<(), TypeErrorS> {
+    pub fn check(&mut self, ast: &[Item]) -> Result<(), TypeErrorS> {
         for item in ast {
-            match &item.inner {
+            match &item {
                 Item::Const { name, ty, .. } => {
                     self.env.insert(
                         name.clone(),
@@ -47,33 +47,29 @@ impl TypeChecker {
                         },
                     );
                 }
-                Item::Struct {
-                    name,
-                    generic_params,
+                Item::Record {
+                    def,
                     fields,
                 } => todo!(),
                 Item::Enum {
-                    name,
-                    generic_params,
+                    def,
                     variants,
                 } => todo!(),
             }
         }
 
         for item in ast {
-            match &item.inner {
+            match &item {
                 Item::Const { name, value, .. } => self.check_const(name, value)?,
                 Item::Func {
                     name, params, body, ..
                 } => self.check_func(name, params, body)?,
-                Item::Struct {
-                    name,
-                    generic_params,
+                Item::Record {
+                    def,
                     fields,
                 } => todo!(),
                 Item::Enum {
-                    name,
-                    generic_params,
+                    def,
                     variants,
                 } => todo!(),
             }

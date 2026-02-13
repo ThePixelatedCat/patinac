@@ -105,6 +105,14 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         })
     }
 
+    pub fn ty_annot(&mut self) -> ParseResult<Option<TypeS>> {
+        Ok(if self.consume_at(TT::Colon) {
+            Some(self.parse_ty()?)
+        } else {
+            None
+        })
+    }
+
     pub fn ident(&mut self) -> ParseResult<Spnd<String>> {
         if self.peek() == TT::Ident {
             let span = self.next().unwrap().span;

@@ -3,16 +3,16 @@ use std::ops::Range;
 use crate::{
     helpers::{Spannable, Spnd},
     lexer::{TT, Token},
-    parser::ast::{FieldS, VariantS},
+    parser::ast::{FieldS, TypeDef},
 };
 
 use super::{
     ParseError, ParseResult, Parser,
-    ast::{Field, Item, ItemS, Variant},
+    ast::{Field, Item, Variant},
 };
 
 impl<I: Iterator<Item = Token>> Parser<'_, I> {
-    pub fn file(&mut self) -> ParseResult<Vec<ItemS>> {
+    pub fn file(&mut self) -> ParseResult<Vec<Item>> {
         let mut items = Vec::new();
         while !self.at(TT::Eof) {
             items.push(self.item()?);
@@ -20,7 +20,7 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         Ok(items)
     }
 
-    pub fn item(&mut self) -> ParseResult<ItemS> {
+    pub fn item(&mut self) -> ParseResult<Item> {
         match self.peek() {
             TT::Const => self.const_item(),
             TT::Fn => self.func_item(),
@@ -34,27 +34,22 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
         }
     }
 
-    fn const_item(&mut self) -> ParseResult<ItemS> {
-        let start = self.next().unwrap().span.start;
+    fn const_item(&mut self) -> ParseResult<Item> {
+        self.consume(TT::Const)?;
 
         let name = self.ident()?.inner;
 
-        let ty = if self.consume_at(TT::Colon) {
-            Some(self.parse_ty()?)
-        } else {
-            None
-        };
+        let ty = self.ty_annot()?;
 
         self.consume(TT::Eq)?;
+
         let value = self.expr()?;
 
-        let end = value.span.end;
-
-        Ok(Item::Const { name, ty, value }.span(start..end))
+        Ok(Item::Const { name, ty, value })
     }
 
-    fn func_item(&mut self) -> ParseResult<ItemS> {
-        let start = self.next().unwrap().span.start;
+    fn func_item(&mut self) -> ParseResult<Item> {
+        self.consume(TT::Fn)?;
 
         let name = self.ident()?.inner;
 
@@ -70,67 +65,48 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
         let body = self.expr()?;
 
-        let end = body.span.end;
-
         Ok(Item::Func {
             name,
             params: params.inner,
             return_ty: return_type,
             body,
-        }
-        .span(start..end))
+        })
     }
 
-    fn struct_item(&mut self) -> ParseResult<ItemS> {
-        let start = self.next().unwrap().span.start;
+    fn struct_item(&mut self) -> ParseResult<Item> {
+        self.consume(TT::Record)?;
 
-        let (name, generic_params) = self.type_name()?;
-
-        let Spnd {
-            inner: fields,
-            span,
-        } = self.fields()?;
-        let end = span.end;
-
-        Ok(Item::Struct {
-            name,
-            generic_params,
-            fields,
-        }
-        .span(start..end))
+        Ok(Item::Record {
+            def: self.type_def()?,
+            fields: self.fields()?,
+        })
     }
 
-    fn enum_item(&mut self) -> ParseResult<ItemS> {
-        let start = self.next().unwrap().span.start;
+    fn enum_item(&mut self) -> ParseResult<Item> {
+        self.consume(TT::Enum)?;
 
-        let (name, generic_params) = self.type_name()?;
+        let def = self.type_def()?;
 
-        let variants = Vec::new();
+        let mut variants = Vec::new();
         while self.at(TT::Pipe) {
             variants.push(self.enum_variant()?);
         }
-        let end = variants.last().map_or(with_end, |var| var.span.end);
 
         Ok(Item::Enum {
-            name,
-            generic_params,
-            variants,
-        }
-        .span(start..end))
+            def,
+            variants
+        })
     }
 
-    fn enum_variant(&mut self) -> ParseResult<VariantS> {
+    fn enum_variant(&mut self) -> ParseResult<Variant> {
         let start = self.consume(TT::Pipe)?.span.start;
 
         let name = self.ident()?;
 
         Ok(match self.peek() {
             TT::Indent => {
-                let Spnd {
-                    inner: fields,
-                    span: fields_span,
-                } = self.fields()?;
-                Variant::Struct(name.inner, fields).span(start..fields_span.end)
+                let fields = self.fields()?;
+                Variant::Struct(name.inner, fields)
             }
             TT::LParen => {
                 let Spnd { inner: vals, span } = self.delimited_list(
@@ -139,27 +115,27 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
                     TT::RParen,
                 )?;
 
-                Variant::Tuple(name.inner, vals).span(start..span.end)
+                Variant::Tuple(name.inner, vals)
             }
-            TT::Pipe => Variant::Unit(name.inner).span(name.span),
+            TT::Pipe => Variant::Unit(name.inner),
             _ => {
                 let token = self.next().unwrap();
 
                 return Err(ParseError::Unexpected(
                     token.inner,
-                    "after variant name. expected one of `,` `(` `{`",
+                    "after variant name",
                 )
                 .span(token.span));
             }
         })
     }
 
-    fn type_name(&mut self) -> ParseResult<(String, Vec<String>)> {
+    fn type_def(&mut self) -> ParseResult<TypeDef> {
         let name = self.ident()?.inner;
 
         let generic_params = if self.at(TT::LAngle) {
             self.delimited_list(
-                |this| this.ident().map(|v| v.inner),
+                Self::ident,
                 TT::LAngle,
                 TT::RAngle,
             )?
@@ -168,10 +144,13 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             Vec::new()
         };
 
-        Ok((name, generic_params))
+        Ok(TypeDef { 
+            name, 
+            generic_params 
+        })
     }
 
-    fn fields(&mut self) -> ParseResult<Spnd<Vec<FieldS>>> {
+    fn fields(&mut self) -> ParseResult<Vec<FieldS>> {
         self.delimited_list(
             |this| {
                 if this.peek() == TT::Ident {
@@ -200,5 +179,6 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
             TT::Indent,
             TT::Dedent,
         )
+        .map(|fields| fields.inner)
     }
 }

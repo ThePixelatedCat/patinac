@@ -1,7 +1,5 @@
 use crate::helpers::{Spannable, Spnd};
 
-pub type ItemS = Spnd<Item>;
-impl Spannable for Item {}
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Const {
@@ -15,20 +13,22 @@ pub enum Item {
         return_ty: Option<TypeS>,
         body: ExprS,
     },
-    Struct {
-        name: String,
-        generic_params: Vec<String>,
+    Record {
+        def: TypeDef,
         fields: Vec<FieldS>,
     },
     Enum {
-        name: String,
-        generic_params: Vec<String>,
-        variants: Vec<VariantS>,
+        def: TypeDef,
+        variants: Vec<Variant>,
     },
 }
 
-pub type VariantS = Spnd<Variant>;
-impl Spannable for Variant {}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDef {
+    pub name: String,
+    pub generic_params: Vec<Spnd<String>>
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Variant {
     Unit(String),

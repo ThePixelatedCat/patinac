@@ -4,6 +4,8 @@ use std::{
     ops::{Deref, Range},
 };
 
+impl Spannable for String {}
+
 impl<T, E> SpanErr<T, E> for Result<T, E> {
     fn span_err(self, span: Span) -> Result<T, Spnd<E>> {
         self.map_err(|e| Spnd::span(e, span))
