@@ -224,17 +224,9 @@ fn malformed_items() {
     assert_eq!(
         parse_item_err("record CSyntax { Int five }"),
         Err(ParseError::Mismatched {
-            expected: TT::Ident,
-            found: TT::Int,
+            expected: TT::Indent,
+            found: TT::Error,
         }
-        .span(17..20))
+        .span(15..17))
     );
-
-    assert_eq!(
-        parse_item_err("enum NoComma { Bad Syntax }"),
-        Err(
-            ParseError::Unexpected(TT::Ident, "after variant name. expected one of `,` `(` `{`")
-                .span(19..25)
-        )
-    )
 }

@@ -51,35 +51,39 @@ fn check_full(input: &str) -> Result<(), TypeErrorS> {
 
 #[test]
 fn type_of_if_single_branch() {
-    assert_eq!(check_expr("if (true) {5;}"), Ok(Type::unit()))
+    let input = 
+"if true then 
+    5;
+";
+    assert_eq!(check_expr(input), Ok(Type::unit()))
 }
 
 #[test]
 fn type_of_if_single_branch_err() {
     assert_eq!(
-        check_expr("if (true) 5.0"),
+        check_expr("if true then 5.0"),
         Err(TypeError::MismatchedTypes {
             expected: Type::unit(),
             found: Type::Float
         }
-        .span(10..13))
+        .span(13..16))
     )
 }
 
 #[test]
 fn type_of_if() {
-    assert_eq!(check_expr("if (true) 5.0 else -3.0"), Ok(Type::Float))
+    assert_eq!(check_expr("if true then 5.0 else -3.0"), Ok(Type::Float))
 }
 
 #[test]
 fn type_of_if_err() {
     assert_eq!(
-        check_expr(r#"if (true) "true" else false"#),
+        check_expr(r#"if true then "true" else false"#),
         Err(TypeError::MismatchedTypes {
             expected: Type::string(),
             found: Type::Bool
         }
-        .span(22..27))
+        .span(25..30))
     )
 }
 
@@ -151,15 +155,16 @@ fn type_of_int() {
 
 #[test]
 fn type_of_block() {
-    let input = "{
-        let mut y: UInt = 5;
-        3 + 1 - 2;
-        y = 256;
-        if (y < 3) {
-            let a = -5;
-            a
-        } else 32
-    }";
+    let input = 
+"
+    let mut y: UInt = 5
+    3 + 1 - 2
+    y = 256
+    if y < 3 then
+        let a = -5
+        a
+    else 32
+";
     let expr = parse_expr(input);
     let mut checker = TypeChecker::default();
     let ty = checker.type_of(&expr).unwrap();
@@ -169,12 +174,12 @@ fn type_of_block() {
 
 #[test]
 fn shadowing() {
-    let input = r#"{
-        let a = 5;
-        let a: String = "Hello, World";
-        {let a = 2};
-        a
-    }"#;
+    let input = r#"
+    let a = 5
+    let a: String = "Hello, World"
+        let a = 2
+    a
+"#;
 
     let expr = parse_expr(input);
     let mut checker = TypeChecker::default();
@@ -186,12 +191,12 @@ fn shadowing() {
 #[test]
 fn recursion() {
     let input = "
-        fn fac(n: UInt) -> 
-            if (n == 0) 
-                1 
-            else 
-                n * fac(n - 1)
-        ";
+fn fac(n: UInt) -> 
+    if n == 0 then
+        1 
+    else 
+        n * fac(n - 1)
+";
 
     assert_eq!(check_full(input), Ok(()));
 

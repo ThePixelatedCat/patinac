@@ -19,7 +19,7 @@ impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Mismatched { expected, found } => {
-                write!(f, "expected token {expected}, found token {found}")
+                write!(f, "expected {expected}, found {found}")
             }
             Self::Unexpected(token, desc) => {
                 write!(f, "unexpected token `{token}` at {desc}")
