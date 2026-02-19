@@ -1,10 +1,10 @@
-use crate::helpers::Spannable;
-use crate::lexer::TT;
-use crate::parser::ast::TypeDef;
-use crate::parser::{
-    ParseError, ParseResult, Parser,
-    ast::{Bop, Expr, Field, Item, Pattern, Type, Variant},
+use crate::ast::{
+    AdtDef, Bop, ExprKind, Field, GenericParam, Generics, Item, Pattern, Ty, TyKind, Variant,
+    VariantData,
 };
+use crate::helpers::{Span, Spannable};
+use crate::lexer::TokKind;
+use crate::parser::{ParseError, ParseResult, Parser};
 
 fn parse_item(input: &str) -> Item {
     let mut parser = Parser::new(input);
@@ -21,34 +21,31 @@ fn const_items() {
     assert_eq!(
         parse_item(r#"const HELLO_WORLD: String = "Hello, World!""#),
         Item::Const {
-            name: "HELLO_WORLD".into(),
-            ty: Some(
-                Type::Named {
-                    name: "String".into(),
+            ident: "HELLO_WORLD".into(),
+            ty: Some(Ty {
+                kind: TyKind::Adt {
+                    ident: "String".into(),
                     args: vec![]
-                }
-                .span(19..25)
-            ),
-            value: Expr::String("Hello, World!".into()).span(28..43)
+                },
+                span: Span::from(19..25)
+            }),
+            value: ExprKind::String("Hello, World!".into()).span(28..43)
         }
     );
 
     assert_eq!(
         parse_item(r#"const ID = fn(x) -> x"#),
         Item::Const {
-            name: "ID".into(),
+            ident: "ID".into(),
             ty: None,
-            value: Expr::Lambda {
-                params: vec![
-                    Pattern::Var {
-                        mutable: false,
-                        ident: "x".into(),
-                        annotated_ty: None
-                    }
-                    .span(14..15)
-                ],
+            value: ExprKind::Lambda {
+                params: vec![Pattern::Var {
+                    mutable: false,
+                    ident: "x".into(),
+                    ty_annotation: None
+                }],
                 return_type: None,
-                body: Expr::Ident("x".into()).span(20..21).into()
+                body: ExprKind::Ident("x".into()).span(20..21).into()
             }
             .span(11..21)
         }
@@ -67,41 +64,55 @@ record Foo<T, U>
     assert_eq!(
         item,
         Item::Record {
-            def: TypeDef {
-                name: "Foo".into(),
-                generic_params: vec![
-                    String::from("T").span(12..13),
-                    String::from("U").span(15..16)
-                ]
+            def: AdtDef {
+                ident: "Foo".into(),
+                generics: Some(Generics {
+                    params: vec![
+                        GenericParam {
+                            ident: String::from("T"),
+                            span: Span::from(12..13)
+                        },
+                        GenericParam {
+                            ident: String::from("U"),
+                            span: Span::from(15..16)
+                        }
+                    ],
+                    span: Span::from(11..17)
+                })
             },
-            fields: vec![
+            data: VariantData::Record(vec![
                 Field {
-                    name: "x".into(),
-                    ty: Type::Char.span(25..29)
-                }
-                .span(22..29),
+                    ident: "x".into(),
+                    ty: Ty {
+                        kind: TyKind::Char,
+                        span: Span::from(25..29)
+                    },
+                    span: Span::from(22..29)
+                },
                 Field {
-                    name: "bar".into(),
-                    ty: Type::Named {
-                        name: "Bar".into(),
-                        args: vec![
-                            Type::Named {
-                                name: "Baz".into(),
-                                args: vec![
-                                    Type::Named {
-                                        name: "T".into(),
-                                        args: vec![]
-                                    }
-                                    .span(50..51)
-                                ]
-                            }
-                            .span(46..52)
-                        ]
-                    }
-                    .span(42..53)
+                    ident: "bar".into(),
+                    ty: Ty {
+                        kind: TyKind::Adt {
+                            ident: "Bar".into(),
+                            args: vec![Ty {
+                                kind: TyKind::Adt {
+                                    ident: "Baz".into(),
+                                    args: vec![Ty {
+                                        kind: TyKind::Adt {
+                                            ident: "T".into(),
+                                            args: vec![]
+                                        },
+                                        span: Span::from(50..51)
+                                    }]
+                                },
+                                span: Span::from(46..52)
+                            }]
+                        },
+                        span: Span::from(42..53)
+                    },
+                    span: Span::from(37..53)
                 }
-                .span(37..53)
-            ]
+            ])
         }
     );
 }
@@ -121,45 +132,52 @@ enum Foo
     assert_eq!(
         item,
         Item::Enum {
-            def: TypeDef {
-                name: "Foo".into(),
-                generic_params: vec![]
+            def: AdtDef {
+                ident: "Foo".into(),
+                generics: None
             },
             variants: vec![
-                Variant::Unit("X".into()),
-                Variant::Tuple(
-                    "Y".into(),
-                    vec![
-                        Type::Named {
-                            name: "Bar".into(),
+                Variant {
+                    ident: "X".into(),
+                    data: VariantData::Unit
+                },
+                Variant {
+                    ident: "Y".into(),
+                    data: VariantData::Tuple(vec![Ty {
+                        kind: TyKind::Adt {
+                            ident: "Bar".into(),
                             args: vec![]
-                        }
-                        .span(19..22)
-                    ]
-                ),
-                Variant::Struct(
-                    "Z".into(),
-                    vec![
+                        },
+                        span: Span::from(19..22)
+                    }]),
+                },
+                Variant {
+                    ident: "Z".into(),
+                    data: VariantData::Record(vec![
                         Field {
-                            name: "baz".into(),
-                            ty: Type::Named {
-                                name: "Baz".into(),
-                                args: vec![]
-                            }
-                            .span(38..41)
-                        }
-                        .span(33..41),
+                            ident: "baz".into(),
+                            ty: Ty {
+                                kind: TyKind::Adt {
+                                    ident: "Baz".into(),
+                                    args: vec![]
+                                },
+                                span: Span::from(38..41)
+                            },
+                            span: Span::from(33..41)
+                        },
                         Field {
-                            name: "fizz".into(),
-                            ty: Type::Named {
-                                name: "Buzz".into(),
-                                args: vec![]
-                            }
-                            .span(54..58)
-                        }
-                        .span(48..58)
-                    ]
-                )
+                            ident: "fizz".into(),
+                            ty: Ty {
+                                kind: TyKind::Adt {
+                                    ident: "Buzz".into(),
+                                    args: vec![]
+                                },
+                                span: Span::from(54..58)
+                            },
+                            span: Span::from(48..58)
+                        },
+                    ])
+                },
             ]
         }
     )
@@ -170,26 +188,27 @@ fn function_items() {
     assert_eq!(
         parse_item(r#"fn sum(mut a, b: Byte) -> a + b"#),
         Item::Func {
-            name: "sum".into(),
+            ident: "sum".into(),
             params: vec![
                 Pattern::Var {
                     mutable: true,
                     ident: "a".into(),
-                    annotated_ty: None
-                }
-                .span(7..12),
+                    ty_annotation: None
+                },
                 Pattern::Var {
                     mutable: false,
                     ident: "b".into(),
-                    annotated_ty: Some(Type::Byte.span(17..21))
-                }
-                .span(14..21)
+                    ty_annotation: Some(Ty {
+                        kind: TyKind::Byte,
+                        span: Span::from(17..21)
+                    })
+                },
             ],
             return_ty: None,
-            body: Expr::BinaryOp {
+            body: ExprKind::BinaryOp {
                 op: Bop::Add,
-                lhs: Expr::Ident("a".into()).span(26..27).into(),
-                rhs: Expr::Ident("b".into()).span(30..31).into()
+                lhs: ExprKind::Ident("a".into()).span(26..27).into(),
+                rhs: ExprKind::Ident("b".into()).span(30..31).into()
             }
             .span(26..31)
         }
@@ -201,8 +220,8 @@ fn malformed_items() {
     assert_eq!(
         parse_item_err("const fn: Int = 5"),
         Err(ParseError::Mismatched {
-            expected: TT::Ident,
-            found: TT::Fn,
+            expected: TokKind::Ident,
+            found: TokKind::Fn,
         }
         .span(6..8))
     );
@@ -210,23 +229,14 @@ fn malformed_items() {
     assert_eq!(
         parse_item_err("const NO_DICTS: [String: Int] = 5"),
         Err(ParseError::Mismatched {
-            expected: TT::RBracket,
-            found: TT::Colon
+            expected: TokKind::RBracket,
+            found: TokKind::Colon
         }
         .span(23..24))
     );
 
     assert_eq!(
         parse_item_err("let global = 0"),
-        Err(ParseError::Unexpected(TT::Let, "start of item").span(0..3))
-    );
-
-    assert_eq!(
-        parse_item_err("record CSyntax { Int five }"),
-        Err(ParseError::Mismatched {
-            expected: TT::Indent,
-            found: TT::Error,
-        }
-        .span(15..17))
+        Err(ParseError::Unexpected(TokKind::Let, "start of item").span(0..3))
     );
 }

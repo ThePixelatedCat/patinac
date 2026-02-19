@@ -1,8 +1,6 @@
 use itertools::assert_equal;
 
-use crate::helpers::Spannable;
-
-use super::{Lexer, TT as T};
+use super::{Lexer, TokKind as T};
 
 #[test]
 fn single_char_tokens() {

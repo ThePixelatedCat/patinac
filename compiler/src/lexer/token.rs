@@ -1,10 +1,13 @@
-use crate::helpers::{Spannable, Spnd};
+use crate::helpers::Span;
 use std::fmt::Display;
 
-pub type Token = Spnd<TT>;
-impl Spannable for TT {}
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum TT {
+pub struct Tok {
+    pub kind: TokKind,
+    pub span: Span,
+}
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum TokKind {
     // Literals
     IntLit,
     FloatLit,
@@ -74,7 +77,7 @@ pub enum TT {
     Eof,
 }
 
-impl Display for TT {
+impl Display for TokKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -143,5 +146,14 @@ impl Display for TT {
                 Self::Eof => "eof",
             }
         )
+    }
+}
+
+impl TokKind {
+    pub fn span(self, span: impl Into<Span>) -> Tok {
+        Tok {
+            kind: self,
+            span: span.into(),
+        }
     }
 }

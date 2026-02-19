@@ -1,7 +1,6 @@
 use anyhow::anyhow;
 use std::{
     env, fs,
-    ops::Index,
     sync::mpsc::{self, Receiver},
     thread,
 };

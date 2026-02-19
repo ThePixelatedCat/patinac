@@ -1,48 +1,48 @@
 use super::{BindingInfo, Type, TypeChecker, TypeError, TypeErrorS};
 use crate::{
     helpers::{SpanErr, Spannable, Spnd},
-    parser::ast::{Bop, Expr, ExprS, Pattern, PatternS, TypeS as AstTypeS, Unop},
+    parser::ast::{Bop, Expr, ExprKind, Pattern, PatternS, TypeS as AstTypeS, Unop},
 };
 
 impl TypeChecker {
-    pub fn type_of(&mut self, expr: &ExprS) -> Result<Type, TypeErrorS> {
+    pub fn type_of(&mut self, expr: &Expr) -> Result<Type, TypeErrorS> {
         match &expr.inner {
-            Expr::Ident(ident) => self.type_of_ident(Spnd {
+            ExprKind::Ident(ident) => self.type_of_ident(Spnd {
                 inner: ident,
                 span: expr.span,
             }),
-            Expr::Int(v) => Ok(if *v > i64::MAX as u64 {
+            ExprKind::Int(v) => Ok(if *v > i64::MAX as u64 {
                 Type::UInt
             } else {
                 self.fresh_int_var()
             }),
-            Expr::Float(_) => Ok(Type::Float),
-            Expr::String(_) => Ok(Type::string()),
-            Expr::Char(_) => Ok(Type::Char),
-            Expr::Bool(_) => Ok(Type::Bool),
-            Expr::Array(vals) => self.type_of_array(vals),
-            Expr::Tuple(vals) => self.type_of_tuple(vals),
-            Expr::FnCall { fun, args } => self.type_of_fun_call(fun, args),
-            Expr::BinaryOp { op, lhs, rhs } => self.type_of_binary_op(*op, lhs, rhs),
-            Expr::UnaryOp { op, expr } => self.type_of_unary_op(*op, expr),
-            Expr::Index { arr, index } => self.type_of_indexing(arr, index),
-            Expr::FieldAccess { base, field } => todo!(),
-            Expr::If { cond, th, el } => self.type_of_if(cond, th, el.as_deref()),
-            Expr::For {
+            ExprKind::Float(_) => Ok(Type::Float),
+            ExprKind::String(_) => Ok(Type::string()),
+            ExprKind::Char(_) => Ok(Type::Char),
+            ExprKind::Bool(_) => Ok(Type::Bool),
+            ExprKind::Array(vals) => self.type_of_array(vals),
+            ExprKind::Tuple(vals) => self.type_of_tuple(vals),
+            ExprKind::FnCall { fun, args } => self.type_of_fun_call(fun, args),
+            ExprKind::BinaryOp { op, lhs, rhs } => self.type_of_binary_op(*op, lhs, rhs),
+            ExprKind::UnaryOp { op, expr } => self.type_of_unary_op(*op, expr),
+            ExprKind::Index { arr, index } => self.type_of_indexing(arr, index),
+            ExprKind::FieldAccess { base, field } => todo!(),
+            ExprKind::If { cond, th, el } => self.type_of_if(cond, th, el.as_deref()),
+            ExprKind::For {
                 pattern,
                 iter,
                 body,
             } => todo!(),
-            Expr::While { cond, body } => todo!(),
-            Expr::Match { scrutinee, arms } => todo!(),
-            Expr::Let { binding, value } => self.type_of_let(binding, value),
-            Expr::Assign { ident, value } => self.type_of_assign(ident.as_deref(), value),
-            Expr::Lambda {
+            ExprKind::While { cond, body } => todo!(),
+            ExprKind::Match { scrutinee, arms } => todo!(),
+            ExprKind::Let { binding, value } => self.type_of_let(binding, value),
+            ExprKind::Assign { ident, value } => self.type_of_assign(ident.as_deref(), value),
+            ExprKind::Lambda {
                 params,
                 return_type,
                 body,
             } => self.type_of_fun(params, return_type.as_ref(), body),
-            Expr::Block { exprs, trailing } => self.type_of_block(exprs, *trailing),
+            ExprKind::Block { exprs, trailing } => self.type_of_block(exprs, *trailing),
         }
     }
 
@@ -52,7 +52,7 @@ impl TypeChecker {
             .span_err(ident.span)
     }
 
-    fn type_of_array(&mut self, exprs: &[ExprS]) -> Result<Type, TypeErrorS> {
+    fn type_of_array(&mut self, exprs: &[Expr]) -> Result<Type, TypeErrorS> {
         let inner_ty = self.fresh_var();
 
         for expr in exprs {
@@ -64,14 +64,14 @@ impl TypeChecker {
         Ok(Type::Array(Box::new(inner_ty)))
     }
 
-    fn type_of_tuple(&mut self, vals: &[ExprS]) -> Result<Type, TypeErrorS> {
+    fn type_of_tuple(&mut self, vals: &[Expr]) -> Result<Type, TypeErrorS> {
         vals.iter()
             .map(|e| self.type_of(e))
             .collect::<Result<_, _>>()
             .map(Type::Tuple)
     }
 
-    fn type_of_fun_call(&mut self, fun: &ExprS, args: &[ExprS]) -> Result<Type, TypeErrorS> {
+    fn type_of_fun_call(&mut self, fun: &Expr, args: &[Expr]) -> Result<Type, TypeErrorS> {
         let fun_ty = self.type_of(fun)?;
 
         let arg_tys = args
@@ -86,7 +86,7 @@ impl TypeChecker {
         Ok(return_ty)
     }
 
-    fn type_of_binary_op(&mut self, op: Bop, lhs: &ExprS, rhs: &ExprS) -> Result<Type, TypeErrorS> {
+    fn type_of_binary_op(&mut self, op: Bop, lhs: &Expr, rhs: &Expr) -> Result<Type, TypeErrorS> {
         let (lhs_ty, rhs_ty) = (self.type_of(lhs)?, self.type_of(rhs)?);
 
         match op {
@@ -139,7 +139,7 @@ impl TypeChecker {
         }
     }
 
-    fn type_of_unary_op(&mut self, op: Unop, expr: &ExprS) -> Result<Type, TypeErrorS> {
+    fn type_of_unary_op(&mut self, op: Unop, expr: &Expr) -> Result<Type, TypeErrorS> {
         let expr_ty = self.type_of(expr)?;
 
         match op {
@@ -157,7 +157,7 @@ impl TypeChecker {
         }
     }
 
-    fn type_of_indexing(&mut self, arr: &ExprS, index: &ExprS) -> Result<Type, TypeErrorS> {
+    fn type_of_indexing(&mut self, arr: &Expr, index: &Expr) -> Result<Type, TypeErrorS> {
         let index_ty = self.type_of(index)?;
         self.unify(&Type::UInt, &index_ty).span_err(index.span)?;
 
@@ -173,9 +173,9 @@ impl TypeChecker {
 
     fn type_of_if(
         &mut self,
-        cond: &ExprS,
-        th: &ExprS,
-        el: Option<&ExprS>,
+        cond: &Expr,
+        th: &Expr,
+        el: Option<&Expr>,
     ) -> Result<Type, TypeErrorS> {
         let cond_ty = self.type_of(cond)?;
         self.unify(&Type::Bool, &cond_ty).span_err(cond.span)?;
@@ -192,7 +192,7 @@ impl TypeChecker {
         Ok(th_ty)
     }
 
-    fn type_of_let(&mut self, binding: &PatternS, val: &ExprS) -> Result<Type, TypeErrorS> {
+    fn type_of_let(&mut self, binding: &PatternS, val: &Expr) -> Result<Type, TypeErrorS> {
         let Pattern::Var {
             mutable,
             ident,
@@ -217,7 +217,7 @@ impl TypeChecker {
         Ok(Type::unit())
     }
 
-    fn type_of_assign(&mut self, ident: Spnd<&str>, val: &ExprS) -> Result<Type, TypeErrorS> {
+    fn type_of_assign(&mut self, ident: Spnd<&str>, val: &Expr) -> Result<Type, TypeErrorS> {
         let val_ty = self.type_of(val)?;
 
         let info = self.get_binding(ident.inner).span_err(ident.span)?;
@@ -235,7 +235,7 @@ impl TypeChecker {
         &self,
         params: &[PatternS],
         return_ty: Option<&AstTypeS>,
-        body: &ExprS,
+        body: &Expr,
     ) -> Result<Type, TypeErrorS> {
         let mut snapshot = self.clone();
 
@@ -271,7 +271,7 @@ impl TypeChecker {
         Ok(Type::Fn(param_tys, Box::new(body_ty)))
     }
 
-    fn type_of_block(&self, exprs: &[ExprS], trailing: bool) -> Result<Type, TypeErrorS> {
+    fn type_of_block(&self, exprs: &[Expr], trailing: bool) -> Result<Type, TypeErrorS> {
         let mut snapshot = self.clone();
 
         let mut last = Option::None;

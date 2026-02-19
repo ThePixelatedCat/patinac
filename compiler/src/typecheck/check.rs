@@ -2,7 +2,7 @@ use std::iter;
 
 use crate::{
     helpers::{SpanErr, Spnd},
-    parser::ast::{ExprS, Item, Pattern, PatternS},
+    parser::ast::{Expr, Item, Pattern, PatternS},
 };
 
 use super::{BindingInfo, Type, TypeChecker, TypeErrorS};
@@ -66,7 +66,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_const(&self, name: &str, value: &ExprS) -> Result<(), TypeErrorS> {
+    fn check_const(&self, name: &str, value: &Expr) -> Result<(), TypeErrorS> {
         let BindingInfo { ty: binding_ty, .. } = self
             .get_binding(name)
             .expect("was added to env in initial iteration");
@@ -76,7 +76,7 @@ impl TypeChecker {
         self.unify(binding_ty, &val_ty).span_err(value.span)
     }
 
-    fn check_func(&self, name: &str, params: &[PatternS], body: &ExprS) -> Result<(), TypeErrorS> {
+    fn check_func(&self, name: &str, params: &[PatternS], body: &Expr) -> Result<(), TypeErrorS> {
         let BindingInfo {
             ty: Type::Fn(param_tys, return_ty),
             ..

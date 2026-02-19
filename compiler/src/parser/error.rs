@@ -1,6 +1,6 @@
 use crate::{
     helpers::{Spannable, Spnd},
-    lexer::TT,
+    lexer::TokKind,
 };
 use std::{error::Error, fmt::Display};
 
@@ -10,8 +10,8 @@ pub type ParseErrorS = Spnd<ParseError>;
 impl Spannable for ParseError {}
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
-    Mismatched { expected: TT, found: TT },
-    Unexpected(TT, &'static str),
+    Mismatched { expected: TokKind, found: TokKind },
+    Unexpected(TokKind, &'static str),
     Missing,
 }
 

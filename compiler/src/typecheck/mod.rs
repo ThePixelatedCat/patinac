@@ -3,7 +3,7 @@ mod error;
 mod infer;
 #[cfg(test)]
 mod test;
-mod types;
+pub mod types;
 mod unify;
 
 use std::{cell::RefCell, rc::Rc};
@@ -16,15 +16,8 @@ use crate::parser::ast::TypeS as AstTypeS;
 use error::{TypeError, TypeErrorS};
 use types::{Type, TypeId};
 
-#[derive(Clone)]
-pub struct BindingInfo {
-    ty: Type,
-    mutable: bool,
-}
-
 #[derive(Clone, Default)]
 pub struct TypeChecker {
-    env: HashMap<String, BindingInfo>,
     table: Rc<RefCell<InPlaceUnificationTable<TypeId>>>,
 }
 
@@ -79,10 +72,10 @@ impl TypeChecker {
                 )
             }
             Type::Var(id) | Type::IntVar(id) => self.table.borrow_mut().probe_value(id),
-            Type::Named { name, args } => Type::Named {
+            Type::Adt(name, args) => Type::Adt(
                 name,
-                args: args.into_iter().map(|ty| self.normalise(ty)).collect(),
-            },
+                args.into_iter().map(|ty| self.normalise(ty)).collect(),
+            ),
         }
     }
 

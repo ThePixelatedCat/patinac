@@ -1,5 +1,5 @@
 use crate::instructions::Instr;
-use std::{os::raw, sync::mpsc::Sender};
+use std::sync::mpsc::Sender;
 
 pub fn decode(instructions: Vec<u32>, tx: Sender<Instr>) {
     for raw_instr in instructions {

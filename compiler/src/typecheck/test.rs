@@ -1,7 +1,7 @@
 use super::{Type, TypeChecker, TypeError};
 use crate::{
     helpers::{Span, Spannable, Spnd},
-    parser::{Parser, ast::ExprS},
+    parser::{Parser, ast::Expr},
     typecheck::error::TypeErrorS,
 };
 
@@ -17,14 +17,8 @@ fn unify() {
 
     assert_eq!(checker.unify(&tuple_a, &tuple_b), Ok(()));
 
-    let option_t = Type::Named {
-        name: String::from("Option"),
-        args: vec![t],
-    };
-    let option_u = Type::Named {
-        name: String::from("Option"),
-        args: vec![u],
-    };
+    let option_t = Type::Adt(String::from("Option"), vec![t]);
+    let option_u = Type::Adt(String::from("Option"), vec![u]);
 
     assert_eq!(
         checker.unify(&option_t, &option_u),
@@ -35,7 +29,7 @@ fn unify() {
     );
 }
 
-fn parse_expr(input: &str) -> ExprS {
+fn parse_expr(input: &str) -> Expr {
     Parser::new(input).expr().unwrap()
 }
 
@@ -51,8 +45,7 @@ fn check_full(input: &str) -> Result<(), TypeErrorS> {
 
 #[test]
 fn type_of_if_single_branch() {
-    let input = 
-"if true then 
+    let input = "if true then 
     5;
 ";
     assert_eq!(check_expr(input), Ok(Type::unit()))
@@ -155,8 +148,7 @@ fn type_of_int() {
 
 #[test]
 fn type_of_block() {
-    let input = 
-"
+    let input = "
     let mut y: UInt = 5
     3 + 1 - 2
     y = 256

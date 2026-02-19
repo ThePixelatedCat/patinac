@@ -1,18 +1,15 @@
 use crate::{
-    helpers::Spannable,
-    lexer::{TT, Token},
-    parser::ast::{FieldS, TypeDef},
+    ast::{AdtDef, Field, GenericParam, Generics, Item, Variant, VariantData},
+    helpers::Span,
+    lexer::{Tok, TokKind},
 };
 
-use super::{
-    ParseError, ParseResult, Parser,
-    ast::{Field, Item, Variant},
-};
+use super::{ParseError, ParseResult, Parser};
 
-impl<I: Iterator<Item = Token>> Parser<'_, I> {
+impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn file(&mut self) -> ParseResult<Vec<Item>> {
         let mut items = Vec::new();
-        while !self.at(TT::Eof) {
+        while !self.at(TokKind::Eof) {
             items.push(self.item()?);
         }
         Ok(items)
@@ -20,153 +17,137 @@ impl<I: Iterator<Item = Token>> Parser<'_, I> {
 
     pub fn item(&mut self) -> ParseResult<Item> {
         match self.peek() {
-            TT::Const => self.const_item(),
-            TT::Fn => self.func_item(),
-            TT::Record => self.struct_item(),
-            TT::Enum => self.enum_item(),
-            _ => {
-                let token = self.next().unwrap();
-
-                Err(ParseError::Unexpected(token.inner, "start of item").span(token.span))
-            }
+            TokKind::Const => self.const_item(),
+            TokKind::Fn => self.func_item(),
+            TokKind::Record => self.record_item(),
+            TokKind::Enum => self.enum_item(),
+            _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of item"))),
         }
     }
 
     fn const_item(&mut self) -> ParseResult<Item> {
-        self.consume(TT::Const)?;
+        self.consume(TokKind::Const)?;
 
-        let name = self.ident()?.inner;
+        let name = self.ident()?.0;
 
         let ty = self.ty_annot()?;
 
-        self.consume(TT::Eq)?;
+        self.consume(TokKind::Eq)?;
 
         let value = self.expr()?;
 
-        Ok(Item::Const { name, ty, value })
+        Ok(Item::Const {
+            ident: name,
+            ty,
+            value,
+        })
     }
 
     fn func_item(&mut self) -> ParseResult<Item> {
-        self.consume(TT::Fn)?;
+        self.consume(TokKind::Fn)?;
 
-        let name = self.ident()?.inner;
+        let name = self.ident()?.0;
 
-        let params = self.delimited_list(Self::pattern, TT::LParen, TT::RParen)?;
+        let (params, _) = self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)?;
 
-        let return_type = if self.consume_at(TT::Colon) {
-            Some(self.parse_ty()?)
-        } else {
-            None
-        };
+        let return_ty = self.ty_annot()?;
 
-        self.consume(TT::Arrow)?;
+        self.consume(TokKind::Arrow)?;
 
         let body = self.expr()?;
 
         Ok(Item::Func {
-            name,
-            params: params.inner,
-            return_ty: return_type,
+            ident: name,
+            params,
+            return_ty,
             body,
         })
     }
 
-    fn struct_item(&mut self) -> ParseResult<Item> {
-        self.consume(TT::Record)?;
+    fn record_item(&mut self) -> ParseResult<Item> {
+        self.consume(TokKind::Record)?;
 
         Ok(Item::Record {
             def: self.type_def()?,
-            fields: self.fields()?,
+            data: self.variant_data()?,
         })
     }
 
     fn enum_item(&mut self) -> ParseResult<Item> {
-        self.consume(TT::Enum)?;
+        self.consume(TokKind::Enum)?;
 
         let def = self.type_def()?;
 
         let mut variants = Vec::new();
-        while self.at(TT::Pipe) {
-            variants.push(self.enum_variant()?);
+        while self.consume_at(TokKind::Pipe) {
+            variants.push(self.variant()?);
         }
 
         Ok(Item::Enum { def, variants })
     }
 
-    fn enum_variant(&mut self) -> ParseResult<Variant> {
-        self.consume(TT::Pipe)?;
+    fn variant(&mut self) -> ParseResult<Variant> {
+        let (ident, _) = self.ident()?;
 
-        let name = self.ident()?;
+        let data = self.variant_data()?;
 
+        Ok(Variant { ident, data })
+    }
+
+    fn variant_data(&mut self) -> ParseResult<VariantData> {
         Ok(match self.peek() {
-            TT::Indent => {
-                let fields = self.fields()?;
-                Variant::Struct(name.inner, fields)
-            }
-            TT::LParen => {
-                let vals = self
-                    .delimited_list(Self::parse_ty, TT::LParen, TT::RParen)?
-                    .inner;
+            TokKind::Indent => VariantData::Record(self.fields()?),
+            TokKind::LParen => {
+                let (vals, _) = self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)?;
 
-                Variant::Tuple(name.inner, vals)
+                VariantData::Tuple(vals)
             }
-            TT::Pipe => Variant::Unit(name.inner),
-            _ => {
-                let token = self.next().unwrap();
-
-                return Err(
-                    ParseError::Unexpected(token.inner, "after variant name").span(token.span)
-                );
-            }
+            _ => VariantData::Unit,
         })
     }
 
-    fn type_def(&mut self) -> ParseResult<TypeDef> {
-        let name = self.ident()?.inner;
+    fn type_def(&mut self) -> ParseResult<AdtDef> {
+        let name = self.ident()?.0;
 
-        let generic_params = if self.at(TT::LAngle) {
-            self.delimited_list(Self::ident, TT::LAngle, TT::RAngle)?
-                .inner
-        } else {
-            Vec::new()
-        };
+        let generics = self
+            .at(TokKind::LAngle)
+            .then(|| {
+                let (idents, span) =
+                    self.delimited_list(Self::ident, TokKind::LAngle, TokKind::RAngle)?;
+                let params = idents
+                    .into_iter()
+                    .map(|(ident, span)| GenericParam { ident, span })
+                    .collect();
 
-        Ok(TypeDef {
-            name,
-            generic_params,
+                Ok(Generics { params, span })
+            })
+            .transpose()?;
+
+        Ok(AdtDef {
+            ident: name,
+            generics,
         })
     }
 
-    fn fields(&mut self) -> ParseResult<Vec<FieldS>> {
+    fn fields(&mut self) -> ParseResult<Vec<Field>> {
         self.delimited_list(
             |this| {
-                if this.peek() == TT::Ident {
-                    let name = this.ident()?;
-                    let start = name.span.start;
+                let (name, name_span) = this.ident()?;
 
-                    this.consume(TT::Colon)?;
+                this.consume(TokKind::Colon)?;
+                let ty = this.ty()?;
 
-                    let ty = this.parse_ty()?;
-                    let end = ty.span.end;
+                let span = Span::from(name_span.start..ty.span.end);
 
-                    Ok(Field {
-                        name: name.inner,
-                        ty,
-                    }
-                    .span(start..end))
-                } else {
-                    let token = this.next().unwrap();
-
-                    Err(ParseError::Mismatched {
-                        expected: TT::Ident,
-                        found: token.inner,
-                    }
-                    .span(token.span))
-                }
+                Ok(Field {
+                    ident: name,
+                    ty,
+                    span,
+                })
             },
-            TT::Indent,
-            TT::Dedent,
+            TokKind::Indent,
+            TokKind::Dedent,
         )
-        .map(|fields| fields.inner)
+        .map(|(fields, _)| fields)
     }
 }

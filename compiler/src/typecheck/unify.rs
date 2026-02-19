@@ -41,7 +41,7 @@ impl UnifyValue for Type {
 impl Type {
     fn contains(&self, var: TypeId) -> bool {
         match &self {
-            Self::Named { args, .. } => args.iter().any(|ty| ty.contains(var)),
+            Self::Adt(args, ..) => args.iter().any(|ty| ty.contains(var)),
             Self::Var(id) | Self::IntVar(id) => *id == var,
             Self::Int | Self::UInt | Self::Byte | Self::Float | Self::Bool | Self::Char => false,
             Self::Array(ty) => ty.contains(var),
@@ -83,16 +83,9 @@ impl TypeChecker {
             (Type::Fn(param_tys_a, return_ty_a), Type::Fn(param_tys_b, return_ty_b)) => self
                 .unify(return_ty_a, return_ty_b)
                 .and_then(|()| self.unify_all(param_tys_a, param_tys_b)),
-            (
-                Type::Named {
-                    name: name_a,
-                    args: args_a,
-                },
-                Type::Named {
-                    name: name_b,
-                    args: args_b,
-                },
-            ) if name_a == name_b => self.unify_all(args_a, args_b),
+            (Type::Adt(name_a, args_a), Type::Adt(name_b, args_b)) if name_a == name_b => {
+                self.unify_all(args_a, args_b)
+            }
             (ty_a, ty_b) => Err(TypeError::MismatchedTypes {
                 expected: ty_a.clone(),
                 found: ty_b.clone(),

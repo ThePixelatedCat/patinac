@@ -2,15 +2,15 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::TT;
+use super::TokKind;
 
-type Rule = fn(&str) -> Option<(TT, usize)>;
+type Rule = fn(&str) -> Option<(TokKind, usize)>;
 
-fn match_phrase(i: &str, p: &str, t: TT) -> Option<(TT, usize)> {
+fn match_phrase(i: &str, p: &str, t: TokKind) -> Option<(TokKind, usize)> {
     i.starts_with(p).then_some((t, p.len()))
 }
 
-fn match_regex(i: &str, r: &Regex, t: TT) -> Option<(TT, usize)> {
+fn match_regex(i: &str, r: &Regex, t: TokKind) -> Option<(TokKind, usize)> {
     r.find(i).map(|regex_match| (t, regex_match.end()))
 }
 
@@ -25,7 +25,7 @@ static IDENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
 
 const RULES: [Rule; 57] = {
-    use TT as T;
+    use TokKind as T;
     [
         |i| match_regex(i, &INT_REGEX, T::IntLit),
         |i| match_regex(i, &FLOAT_REGEX, T::FloatLit),
@@ -87,7 +87,7 @@ const RULES: [Rule; 57] = {
     ]
 };
 
-pub(super) fn matches(input: &str) -> Option<(TT, usize)> {
+pub(super) fn matches(input: &str) -> Option<(TokKind, usize)> {
     RULES
         .iter()
         .filter_map(|rule| rule(input))

@@ -1,12 +1,17 @@
 use anyhow::anyhow;
 use std::{env, fs};
 
-use crate::{parser::Parser, typecheck::TypeChecker};
+use crate::parser::Parser;
 
+mod ast;
 mod helpers;
+mod hir;
 mod lexer;
 mod parser;
-mod typecheck;
+//mod resolver;
+//mod typecheck;
+
+//use typecheck::TypeChecker;
 
 fn main() -> anyhow::Result<()> {
     let source_path = env::args()
@@ -18,7 +23,7 @@ fn main() -> anyhow::Result<()> {
 
     let ast = parser.file()?;
 
-    TypeChecker::new().check(&ast)?;
+    //TypeChecker::new().check(&ast)?;
 
     Ok(())
 }

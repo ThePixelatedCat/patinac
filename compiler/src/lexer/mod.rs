@@ -3,20 +3,18 @@ mod rules;
 mod test;
 mod token;
 
-pub use token::{TT, Token};
-
-use crate::helpers::Spannable;
+pub use token::{Tok, TokKind};
 
 pub struct Lexer<'input> {
     input: &'input str,
-    output: Vec<Token>,
+    output: Vec<Tok>,
     pos: usize,
     indent_levels: Vec<usize>,
     err: Option<usize>,
 }
 
 impl<'input> Lexer<'input> {
-    pub fn lex(input: &'input str) -> Vec<Token> {
+    pub fn lex(input: &'input str) -> Vec<Tok> {
         let mut lexer = Self::new(input);
         lexer.all_tokens();
         lexer.output
@@ -37,8 +35,8 @@ impl<'input> Lexer<'input> {
             self.next_token(&self.input[self.pos..]);
         }
 
-        if self.output.last().is_none_or(|t| t.inner != TT::Eof) {
-            self.output.push(TT::Eof.span(self.pos..self.pos));
+        if self.output.last().is_none_or(|t| t.kind != TokKind::Eof) {
+            self.output.push(TokKind::Eof.span(self.pos..self.pos));
         }
     }
 
@@ -69,7 +67,7 @@ impl<'input> Lexer<'input> {
             match rules::matches(input) {
                 Some((token, len)) => {
                     if let Some(start) = self.err {
-                        self.output.push(TT::Error.span(start..self.pos));
+                        self.output.push(TokKind::Error.span(start..self.pos));
                     }
 
                     self.output.push(token.span(self.pos..self.pos + len));
@@ -102,11 +100,11 @@ impl<'input> Lexer<'input> {
             self.indentation(&input[new_level + 1..]);
         } else if new_level > last_level {
             self.indent_levels.push(new_level);
-            self.output.push(TT::Indent.span(start..self.pos));
+            self.output.push(TokKind::Indent.span(start..self.pos));
         } else if new_level < last_level {
             while new_level < self.indent_levels.last().copied().unwrap() {
                 self.indent_levels.pop();
-                self.output.push(TT::Dedent.span(start..self.pos));
+                self.output.push(TokKind::Dedent.span(start..self.pos));
             }
         }
     }

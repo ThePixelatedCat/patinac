@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use ena::unify::UnifyKey;
 
-use crate::parser::ast::Type as AstType;
+use crate::{parser::ast::Type as AstType, resolver::DefId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -17,7 +17,7 @@ pub enum Type {
     Fn(Vec<Type>, Box<Type>),
     Var(TypeId),
     IntVar(TypeId),
-    Named { name: String, args: Vec<Type> },
+    Adt(DefId, Vec<Type>),
 }
 
 impl From<AstType> for Type {
@@ -29,10 +29,9 @@ impl From<AstType> for Type {
             AstType::Float => Self::Float,
             AstType::Bool => Self::Bool,
             AstType::Char => Self::Char,
-            AstType::Named { name, args } => Self::Named {
-                name,
-                args: args.into_iter().map(|ty| ty.inner.into()).collect(),
-            },
+            AstType::Named { name, args } => {
+                Self::Adt(name, args.into_iter().map(|ty| ty.inner.into()).collect())
+            }
             AstType::Array(ty) => Self::Array(Box::new(ty.inner.into())),
             AstType::Tuple(tys) => Self::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect()),
             AstType::Fn(param_tys, return_ty) => Self::Fn(
@@ -52,10 +51,7 @@ impl Type {
     }
 
     pub fn named(name: &str) -> Self {
-        Self::Named {
-            name: name.into(),
-            args: vec![],
-        }
+        Self::Adt(name.into(), vec![])
     }
 
     pub const fn unit() -> Self {
@@ -72,7 +68,7 @@ impl Display for Type {
         match &self {
             Self::Var(_) => "{var}".fmt(f),
             Self::IntVar(_) => "{integer}".fmt(f),
-            Self::Named { name, args } => {
+            Self::Adt(name, args) => {
                 write!(f, "{name}")?;
                 if !args.is_empty() {
                     write!(f, "<{}>", itertools::join(args, ", "))?;
