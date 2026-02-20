@@ -1,6 +1,6 @@
 use crate::{
     ast::{Ty, TyKind},
-    helpers::Span,
+    helpers::{Span, Spnd},
     lexer::{Tok, TokKind},
 };
 
@@ -71,7 +71,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn ast_ty(&mut self) -> ParseResult<Ty> {
-        let (ident, span) = self.ident()?;
+        let Spnd(ident, span) = self.ident()?;
 
         let start = span.start;
 

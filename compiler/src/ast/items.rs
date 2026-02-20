@@ -1,16 +1,16 @@
-use crate::helpers::Span;
+use crate::helpers::{Span, Spnd};
 
-use super::{Expr, Pattern, Ty};
+use super::{Expr, Ident, Pattern, Ty};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Const {
-        ident: String,
+        ident: Ident,
         ty: Option<Ty>,
         value: Expr,
     },
     Func {
-        ident: String,
+        ident: Ident,
         params: Vec<Pattern>,
         return_ty: Option<Ty>,
         body: Expr,
@@ -27,25 +27,22 @@ pub enum Item {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
-    pub ident: String,
+    pub ident: Ident,
     pub ty: Ty,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
-    pub ident: String,
+    pub ident: Ident,
     pub fields: Vec<Field>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtDef {
-    pub ident: String,
+    pub ident: Ident,
     pub generics: Vec<GenericParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenericParam {
-    pub ident: String,
-    pub span: Span,
-}
+pub struct GenericParam(pub Spnd<Ident>);

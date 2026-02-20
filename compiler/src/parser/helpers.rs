@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::{
-    ast::Pattern,
+    ast::{Ident, Pattern},
     helpers::{Span, Spannable, Spnd},
     lexer::{Tok, TokKind},
 };
@@ -18,7 +18,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn pattern(&mut self) -> ParseResult<Pattern> {
         let mutable = self.consume_at(TokKind::Mut);
 
-        let (ident, _) = self.ident()?;
+        let Spnd(ident, _) = self.ident()?;
 
         let ty_annotation = self.ty_annot()?;
 
@@ -29,11 +29,18 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    pub fn ident(&mut self) -> ParseResult<(String, Span)> {
+    pub fn ident(&mut self) -> ParseResult<Spnd<Ident>> {
         let next = self.next().unwrap();
 
         match next.kind {
-            TokKind::Ident => Ok((self.input[Range::from(next.span)].to_string(), next.span)),
+            TokKind::Ident => {
+                let string = self.input[Range::from(next.span)].to_string();
+
+                Ok(Spnd::span(
+                    self.interner.get_or_intern(string).into(),
+                    next.span,
+                ))
+            }
             other => Err(ParseError::Mismatched {
                 expected: TokKind::Ident,
                 found: other,

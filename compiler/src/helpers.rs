@@ -26,33 +26,24 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Spnd<T> {
-    pub inner: T,
-    pub span: Span,
-}
+pub struct Spnd<T>(pub T, pub Span);
 
 impl<T> Spnd<T> {
     pub fn as_deref(&self) -> Spnd<&T::Target>
     where
         T: Deref,
     {
-        Spnd {
-            inner: &*self.inner,
-            span: self.span,
-        }
+        Spnd(&*self.0, self.1)
     }
 
     pub fn span(inner: T, span: impl Into<Span>) -> Self {
-        Self {
-            inner,
-            span: span.into(),
-        }
+        Self(inner, span.into())
     }
 }
 
 impl<T: Display> Display for Spnd<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.span, self.inner)
+        write!(f, "{}: {}", self.1, self.0)
     }
 }
 

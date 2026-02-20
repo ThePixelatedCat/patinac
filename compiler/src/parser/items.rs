@@ -1,20 +1,12 @@
 use crate::{
     ast::{AdtDef, Field, GenericParam, Item, Variant},
-    helpers::Span,
+    helpers::{Span, Spnd},
     lexer::{Tok, TokKind},
 };
 
 use super::{ParseError, ParseResult, Parser};
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
-    pub fn file(&mut self) -> ParseResult<Vec<Item>> {
-        let mut items = Vec::new();
-        while !self.at(TokKind::Eof) {
-            items.push(self.item()?);
-        }
-        Ok(items)
-    }
-
     pub fn item(&mut self) -> ParseResult<Item> {
         match self.peek() {
             TokKind::Const => self.const_item(),
@@ -79,9 +71,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let def = self.adt_def()?;
 
         let mut variants = Vec::new();
-        
-        while { 
-            self.strip_identation(); 
+
+        while {
+            self.strip_identation();
             self.consume_at(TokKind::Pipe)
         } {
             variants.push(Variant {
@@ -94,41 +86,30 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn adt_def(&mut self) -> ParseResult<AdtDef> {
-        let (ident, _) = self.ident()?;
+        let Spnd(ident, _) = self.ident()?;
 
         let generics = if self.at(TokKind::LAngle) {
-            let (idents, _) =
-                self.delimited_list(Self::ident, TokKind::LAngle, TokKind::RAngle)?;
+            let (idents, _) = self.delimited_list(Self::ident, TokKind::LAngle, TokKind::RAngle)?;
 
-            idents
-                .into_iter()
-                .map(|(ident, span)| GenericParam { ident, span })
-                .collect()
+            idents.into_iter().map(GenericParam).collect()
         } else {
             vec![]
         };
 
-        Ok(AdtDef {
-            ident,
-            generics,
-        })
+        Ok(AdtDef { ident, generics })
     }
 
     fn fields(&mut self) -> ParseResult<Vec<Field>> {
         self.delimited_list(
             |this| {
-                let (name, name_span) = this.ident()?;
+                let Spnd(ident, ident_span) = this.ident()?;
 
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
 
-                let span = Span::from(name_span.start..ty.span.end);
+                let span = Span::from(ident_span.start..ty.span.end);
 
-                Ok(Field {
-                    ident: name,
-                    ty,
-                    span,
-                })
+                Ok(Field { ident, ty, span })
             },
             TokKind::LParen,
             TokKind::RParen,

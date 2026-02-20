@@ -1,8 +1,8 @@
-use std::{ops::Range, str::FromStr};
+use std::str::FromStr;
 
 use crate::{
     ast::{Bop, Expr, ExprKind, MatchArm, Unop},
-    helpers::{Span, Spnd},
+    helpers::Span,
     lexer::{Tok, TokKind},
     parser::{ParseError, ParseResult, Parser},
 };
@@ -111,25 +111,21 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn ident_exprs(&mut self) -> ParseResult<Expr> {
-        let ident_token = self.consume(TokKind::Ident)?;
-
-        let ident = self.input[Range::from(ident_token.span)].to_string();
+        let ident = self.ident()?;
+        let ident_span = ident.1;
 
         if self.consume_at(TokKind::Eq) {
             let val = self.expr()?;
 
-            let span = ident_token.span.start..val.span.end;
+            let span = ident_span.start..val.span.end;
 
             Ok(ExprKind::Assign {
-                ident: Spnd {
-                    inner: ident,
-                    span: ident_token.span,
-                },
-                value: val.into(),
+                ident,
+                value: Box::new(val),
             }
             .span(span))
         } else {
-            Ok(ExprKind::Ident(ident).span(ident_token.span))
+            Ok(ExprKind::Ident(ident.0).span(ident_span))
         }
     }
 
@@ -406,15 +402,12 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn field_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
         self.consume(TokKind::Dot)?;
 
-        let (field, field_span) = self.ident()?;
-        let span = lhs.span.start..field_span.end;
+        let field = self.ident()?;
+        let span = lhs.span.start..field.1.end;
 
         Ok(ExprKind::FieldAccess {
             base: Box::new(lhs),
-            field: Spnd {
-                inner: field,
-                span: field_span,
-            },
+            field,
         }
         .span(span))
     }

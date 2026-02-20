@@ -1,68 +1,68 @@
-use crate::ast::{
-    AdtDef, Bop, ExprKind, Field, GenericParam, Item, Pattern, Ty, TyKind, Variant,
-};
-use crate::helpers::{Span, Spannable};
+use crate::ast::{AdtDef, Bop, ExprKind, Field, GenericParam, Item, Pattern, Ty, TyKind, Variant};
+use crate::helpers::{Span, Spannable, Spnd};
 use crate::lexer::TokKind;
-use crate::parser::{ParseError, ParseResult, Parser};
-
-fn parse_item(input: &str) -> Item {
-    let mut parser = Parser::new(input);
-    parser.item().unwrap()
-}
-
-fn parse_item_err(input: &str) -> ParseResult<Item> {
-    let mut parser = Parser::new(input);
-    parser.item()
-}
+use crate::parser::{ParseError, Parser};
 
 #[test]
 fn const_items() {
+    let mut interner = Default::default();
+
+    let mut parser = Parser::new(
+        r#"const hello_world: String = "Hello, World!""#,
+        &mut interner,
+    );
     assert_eq!(
-        parse_item(r#"const HELLO_WORLD: String = "Hello, World!""#),
-        Item::Const {
-            ident: "HELLO_WORLD".into(),
+        parser.item(),
+        Ok(Item::Const {
+            ident: parser.get_ident("hello_world").unwrap(),
             ty: Some(Ty {
                 kind: TyKind::Adt {
-                    ident: "String".into(),
+                    ident: parser.get_ident("String").unwrap(),
                     args: vec![]
                 },
                 span: Span::from(19..25)
             }),
-            value: ExprKind::String("Hello, World!".into()).span(28..43)
-        }
+            value: ExprKind::String(String::from("Hello, World!")).span(28..43)
+        })
     );
 
+    let mut parser = Parser::new(r#"const id = fn(x) -> x"#, &mut interner);
     assert_eq!(
-        parse_item(r#"const ID = fn(x) -> x"#),
-        Item::Const {
-            ident: "ID".into(),
+        parser.item(),
+        Ok(Item::Const {
+            ident: parser.get_ident("id").unwrap(),
             ty: None,
             value: ExprKind::Lambda {
                 params: vec![Pattern::Var {
                     mutable: false,
-                    ident: "x".into(),
+                    ident: parser.get_ident("x").unwrap(),
                     ty_annotation: None
                 }],
                 return_type: None,
-                body: ExprKind::Ident("x".into()).span(20..21).into()
+                body: ExprKind::Ident(parser.get_ident("x").unwrap())
+                    .span(20..21)
+                    .into()
             }
             .span(11..21)
-        }
+        })
     );
 }
 
 #[test]
 fn struct_items() {
+    let mut interner = Default::default();
+
+    let mut parser = Parser::new("record Point(x: Int, y: Int)", &mut interner);
     assert_eq!(
-        parse_item("record Point(x: Int, y: Int)"),
-        Item::Record {
+        parser.item(),
+        Ok(Item::Record {
             def: AdtDef {
-                ident: String::from("Point"),
+                ident: parser.get_ident("Point").unwrap(),
                 generics: vec![]
             },
             fields: vec![
                 Field {
-                    ident: String::from("x"),
+                    ident: parser.get_ident("x").unwrap(),
                     ty: Ty {
                         kind: TyKind::Int,
                         span: Span::from(16..19)
@@ -70,7 +70,7 @@ fn struct_items() {
                     span: Span::from(13..19)
                 },
                 Field {
-                    ident: String::from("y"),
+                    ident: parser.get_ident("y").unwrap(),
                     ty: Ty {
                         kind: TyKind::Int,
                         span: Span::from(24..27)
@@ -78,35 +78,28 @@ fn struct_items() {
                     span: Span::from(21..27)
                 }
             ]
-        }
+        })
     );
 
-    let item = parse_item(
-        "
+    let input = "
 record Foo<T, U>(
     x: Char , 
     bar: Bar<Baz<T>>
-    )",
-);
+    )";
+    let mut parser = Parser::new(input, &mut interner);
     assert_eq!(
-        item,
-        Item::Record {
+        parser.item(),
+        Ok(Item::Record {
             def: AdtDef {
-                ident: "Foo".into(),
+                ident: parser.get_ident("Foo").unwrap(),
                 generics: vec![
-                    GenericParam {
-                        ident: String::from("T"),
-                        span: Span::from(12..13)
-                    },
-                    GenericParam {
-                        ident: String::from("U"),
-                        span: Span::from(15..16)
-                    }
+                    GenericParam(Spnd::span(parser.get_ident("T").unwrap(), 12..13)),
+                    GenericParam(Spnd::span(parser.get_ident("U").unwrap(), 15..16)),
                 ]
             },
             fields: vec![
                 Field {
-                    ident: "x".into(),
+                    ident: parser.get_ident("x").unwrap(),
                     ty: Ty {
                         kind: TyKind::Char,
                         span: Span::from(26..30)
@@ -114,16 +107,16 @@ record Foo<T, U>(
                     span: Span::from(23..30)
                 },
                 Field {
-                    ident: "bar".into(),
+                    ident: parser.get_ident("bar").unwrap(),
                     ty: Ty {
                         kind: TyKind::Adt {
-                            ident: "Bar".into(),
+                            ident: parser.get_ident("Bar").unwrap(),
                             args: vec![Ty {
                                 kind: TyKind::Adt {
-                                    ident: "Baz".into(),
+                                    ident: parser.get_ident("Baz").unwrap(),
                                     args: vec![Ty {
                                         kind: TyKind::Adt {
-                                            ident: "T".into(),
+                                            ident: parser.get_ident("T").unwrap(),
                                             args: vec![]
                                         },
                                         span: Span::from(51..52)
@@ -137,39 +130,41 @@ record Foo<T, U>(
                     span: Span::from(38..54)
                 }
             ]
-        }
+        })
     );
 }
 
 #[test]
 fn enum_items() {
-    let item = parse_item(
-        r#"
+    let mut interner = Default::default();
+
+    let input = r#"
 enum Foo
     | X()
         | Y(v: Bar)
 | Z(baz: Baz, fizz: Buzz)
-"#,
-    );
+"#;
+
+    let mut parser = Parser::new(input, &mut interner);
     assert_eq!(
-        item,
-        Item::Enum {
+        parser.item(),
+        Ok(Item::Enum {
             def: AdtDef {
-                ident: "Foo".into(),
+                ident: parser.get_ident("Foo").unwrap(),
                 generics: vec![]
             },
             variants: vec![
                 Variant {
-                    ident: "X".into(),
+                    ident: parser.get_ident("X").unwrap(),
                     fields: vec![]
                 },
                 Variant {
-                    ident: "Y".into(),
+                    ident: parser.get_ident("Y").unwrap(),
                     fields: vec![Field {
-                        ident: "v".into(),
+                        ident: parser.get_ident("v").unwrap(),
                         ty: Ty {
                             kind: TyKind::Adt {
-                                ident: "Bar".into(),
+                                ident: parser.get_ident("Bar").unwrap(),
                                 args: vec![]
                             },
                             span: Span::from(35..38)
@@ -178,13 +173,13 @@ enum Foo
                     }],
                 },
                 Variant {
-                    ident: "Z".into(),
+                    ident: parser.get_ident("Z").unwrap(),
                     fields: vec![
                         Field {
-                            ident: "baz".into(),
+                            ident: parser.get_ident("baz").unwrap(),
                             ty: Ty {
                                 kind: TyKind::Adt {
-                                    ident: "Baz".into(),
+                                    ident: parser.get_ident("Baz").unwrap(),
                                     args: vec![]
                                 },
                                 span: Span::from(49..52)
@@ -192,10 +187,10 @@ enum Foo
                             span: Span::from(44..52)
                         },
                         Field {
-                            ident: "fizz".into(),
+                            ident: parser.get_ident("fizz").unwrap(),
                             ty: Ty {
                                 kind: TyKind::Adt {
-                                    ident: "Buzz".into(),
+                                    ident: parser.get_ident("Buzz").unwrap(),
                                     args: vec![]
                                 },
                                 span: Span::from(60..64)
@@ -205,25 +200,28 @@ enum Foo
                     ]
                 },
             ]
-        }
+        })
     )
 }
 
 #[test]
 fn function_items() {
+    let mut interner = Default::default();
+
+    let mut parser = Parser::new("fn sum(mut a, b: Byte) -> a + b", &mut interner);
     assert_eq!(
-        parse_item(r#"fn sum(mut a, b: Byte) -> a + b"#),
-        Item::Func {
-            ident: "sum".into(),
+        parser.item(),
+        Ok(Item::Func {
+            ident: parser.get_ident("sum").unwrap(),
             params: vec![
                 Pattern::Var {
                     mutable: true,
-                    ident: "a".into(),
+                    ident: parser.get_ident("a").unwrap(),
                     ty_annotation: None
                 },
                 Pattern::Var {
                     mutable: false,
-                    ident: "b".into(),
+                    ident: parser.get_ident("b").unwrap(),
                     ty_annotation: Some(Ty {
                         kind: TyKind::Byte,
                         span: Span::from(17..21)
@@ -233,18 +231,22 @@ fn function_items() {
             return_ty: None,
             body: ExprKind::BinaryOp {
                 op: Bop::Add,
-                lhs: ExprKind::Ident("a".into()).span(26..27).into(),
-                rhs: ExprKind::Ident("b".into()).span(30..31).into()
+                lhs: ExprKind::Ident(parser.get_ident("a").unwrap())
+                    .span(26..27)
+                    .into(),
+                rhs: ExprKind::Ident(parser.get_ident("b").unwrap())
+                    .span(30..31)
+                    .into()
             }
             .span(26..31)
-        }
+        })
     )
 }
 
 #[test]
 fn malformed_items() {
     assert_eq!(
-        parse_item_err("const fn: Int = 5"),
+        Parser::new("const fn: Int = 5", &mut Default::default()).item(),
         Err(ParseError::Mismatched {
             expected: TokKind::Ident,
             found: TokKind::Fn,
@@ -253,7 +255,7 @@ fn malformed_items() {
     );
 
     assert_eq!(
-        parse_item_err("const NO_DICTS: [String: Int] = 5"),
+        Parser::new("const NO_DICTS: [String: Int] = 5", &mut Default::default()).item(),
         Err(ParseError::Mismatched {
             expected: TokKind::RBracket,
             found: TokKind::Colon
@@ -262,7 +264,7 @@ fn malformed_items() {
     );
 
     assert_eq!(
-        parse_item_err("let global = 0"),
+        Parser::new("let global = false", &mut Default::default()).item(),
         Err(ParseError::Unexpected(TokKind::Let, "start of item").span(0..3))
     );
 }

@@ -1,6 +1,6 @@
 use crate::helpers::{Span, Spnd};
 
-use super::{Pattern, Ty};
+use super::{Ident, Pattern, Ty};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expr {
@@ -9,7 +9,7 @@ pub struct Expr {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind {
-    Ident(String),
+    Ident(Ident),
     Int(u64),
     Float(f64),
     String(String),
@@ -36,7 +36,7 @@ pub enum ExprKind {
     },
     FieldAccess {
         base: Box<Expr>,
-        field: Spnd<String>,
+        field: Spnd<Ident>,
     },
     If {
         cond: Box<Expr>,
@@ -61,7 +61,7 @@ pub enum ExprKind {
         value: Box<Expr>,
     },
     Assign {
-        ident: Spnd<String>,
+        ident: Spnd<Ident>,
         value: Box<Expr>,
     },
     Lambda {

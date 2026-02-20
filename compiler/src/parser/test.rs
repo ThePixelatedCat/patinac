@@ -11,17 +11,12 @@ use crate::{
 use super::Parser;
 use crate::ast::{AdtDef, Bop, ExprKind, Field, Item, Pattern, TyKind};
 
-fn parse_ast(input: &str) -> Vec<Item> {
-    let mut parser = Parser::new(input);
-    parser.file().unwrap()
-}
-
 #[test]
 fn file() {
-    todo!("Fix Spans");
+    let mut interner = Default::default();
 
     #[rustfmt::skip]
-    let items = parse_ast(
+    let input = 
 r#"
 fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int -> 
     let mut x: ( Bool, T) = true + sin(y)
@@ -32,32 +27,36 @@ fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int ->
         fizz(3, 5.1)
 
 record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
-"#,
-    );
+"#;
 
+    let mut parser = Parser::new(input, &mut interner);
+
+    let items = parser.parse().unwrap();
+
+    todo!("Fix Spans");
     assert_eq!(
         items[0],
         Item::Func {
-            ident: "wow_we_did_it".into(),
+            ident: parser.get_ident("wow_we_did_it").unwrap(),
             params: vec![
                 Pattern::Var {
                     mutable: true,
-                    ident: "x".into(),
+                    ident: parser.get_ident("x").unwrap(),
                     ty_annotation: None
                 },
                 Pattern::Var {
                     mutable: false,
-                    ident: "bar".into(),
+                    ident: parser.get_ident("bar").unwrap(),
                     ty_annotation: Some(Ty {
                         kind: TyKind::Adt {
-                            ident: "Bar".into(),
+                            ident: parser.get_ident("Bar").unwrap(),
                             args: vec![
                                 Ty {
                                     kind: TyKind::Adt {
-                                        ident: "Baz".into(),
+                                        ident: parser.get_ident("Baz").unwrap(),
                                         args: vec![Ty {
                                             kind: TyKind::Adt {
-                                                ident: "T".into(),
+                                                ident: parser.get_ident("T").unwrap(),
                                                 args: vec![],
                                             },
                                             span: Span::from(46..47)
@@ -67,7 +66,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                 },
                                 Ty {
                                     kind: TyKind::Adt {
-                                        ident: "U".into(),
+                                        ident: parser.get_ident("U").unwrap(),
                                         args: vec![],
                                     },
                                     span: Span::from(50..51)
@@ -96,7 +95,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                 ExprKind::Let {
                     binding: Pattern::Var {
                         mutable: true,
-                        ident: "x".into(),
+                        ident: parser.get_ident("x").unwrap(),
                         ty_annotation: Some(Ty {
                             kind: TyKind::Tuple(vec![
                                 Ty {
@@ -105,7 +104,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                 },
                                 Ty {
                                     kind: TyKind::Adt {
-                                        ident: "T".into(),
+                                        ident: parser.get_ident("T").unwrap(),
                                         args: vec![]
                                     },
                                     span: Span::from(104..105)
@@ -118,8 +117,12 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                         op: Bop::Add,
                         lhs: ExprKind::Bool(true).span(109..113).into(),
                         rhs: ExprKind::FnCall {
-                            fun: ExprKind::Ident("sin".into()).span(116..119).into(),
-                            args: vec![ExprKind::Ident("y".into()).span(120..121)]
+                            fun: ExprKind::Ident(parser.get_ident("sin").unwrap())
+                                .span(116..119)
+                                .into(),
+                            args: vec![
+                                ExprKind::Ident(parser.get_ident("y").unwrap()).span(120..121)
+                            ]
                         }
                         .span(116..122)
                         .into()
@@ -129,14 +132,13 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                 }
                 .span(85..122),
                 ExprKind::Assign {
-                    ident: Spnd {
-                        inner: "x".into(),
-                        span: (136..137).into()
-                    },
+                    ident: Spnd(parser.get_ident("x").unwrap(), (136..137).into()),
                     value: ExprKind::If {
                         cond: ExprKind::BinaryOp {
                             op: Bop::Lt,
-                            lhs: ExprKind::Ident("bar".into()).span(144..147).into(),
+                            lhs: ExprKind::Ident(parser.get_ident("bar").unwrap())
+                                .span(144..147)
+                                .into(),
                             rhs: ExprKind::Int(3).span(150..151).into()
                         }
                         .span(144..151)
@@ -145,17 +147,19 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                             ExprKind::Let {
                                 binding: Pattern::Var {
                                     mutable: false,
-                                    ident: "baz".into(),
+                                    ident: parser.get_ident("baz").unwrap(),
                                     ty_annotation: None
                                 },
                                 value: ExprKind::BinaryOp {
                                     op: Bop::Add,
                                     lhs: ExprKind::FieldAccess {
-                                        base: ExprKind::Ident("bar".into()).span(181..184).into(),
-                                        field: Spnd {
-                                            inner: "value".into(),
-                                            span: (185..190).into()
-                                        }
+                                        base: ExprKind::Ident(parser.get_ident("bar").unwrap())
+                                            .span(181..184)
+                                            .into(),
+                                        field: Spnd(
+                                            parser.get_ident("value").unwrap(),
+                                            (185..190).into()
+                                        )
                                     }
                                     .span(181..190)
                                     .into(),
@@ -173,7 +177,9 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                             .span(171..198),
                             ExprKind::BinaryOp {
                                 op: Bop::Add,
-                                lhs: ExprKind::Ident("x".into()).span(216..217).into(),
+                                lhs: ExprKind::Ident(parser.get_ident("x").unwrap())
+                                    .span(216..217)
+                                    .into(),
                                 rhs: ExprKind::Int(1).span(220..221).into()
                             }
                             .span(216..221)
@@ -184,13 +190,17 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                             ExprKind::If {
                                 cond: ExprKind::BinaryOp {
                                     op: Bop::Leq,
-                                    lhs: ExprKind::Ident("bar".into()).span(246..249).into(),
+                                    lhs: ExprKind::Ident(parser.get_ident("bar").unwrap())
+                                        .span(246..249)
+                                        .into(),
                                     rhs: ExprKind::Int(2).span(253..254).into()
                                 }
                                 .span(246..254)
                                 .into(),
                                 th: ExprKind::FnCall {
-                                    fun: ExprKind::Ident("fizz".into()).span(272..276).into(),
+                                    fun: ExprKind::Ident(parser.get_ident("fizz").unwrap())
+                                        .span(272..276)
+                                        .into(),
                                     args: vec![
                                         ExprKind::Int(3).span(277..278),
                                         ExprKind::Float(5.1).span(280..283)
@@ -217,24 +227,18 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
         items[1],
         Item::Record {
             def: AdtDef {
-                ident: "Foo".into(),
+                ident: parser.get_ident("Foo").unwrap(),
                 generics: vec![
-                    GenericParam {
-                        ident: String::from("T"),
-                        span: Span::from(315..316)
-                    },
-                    GenericParam {
-                        ident: String::from("U"),
-                        span: Span::from(318..320)
-                    },
+                    GenericParam(Spnd::span(parser.get_ident("T").unwrap(), 315..316)),
+                    GenericParam(Spnd::span(parser.get_ident("U").unwrap(), 318..320)),
                 ]
             },
             fields: vec![
                 Field {
-                    ident: "x".into(),
+                    ident: parser.get_ident("x").unwrap(),
                     ty: Ty {
                         kind: TyKind::Adt {
-                            ident: "String".into(),
+                            ident: parser.get_ident("String").unwrap(),
                             args: vec![],
                         },
                         span: Span::from(338..344)
@@ -242,17 +246,17 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                     span: Span::from(0..0)
                 },
                 Field {
-                    ident: "bar".into(),
+                    ident: parser.get_ident("bar").unwrap(),
                     ty: Ty {
                         kind: TyKind::Adt {
-                            ident: "Bar".into(),
+                            ident: parser.get_ident("Bar").unwrap(),
                             args: vec![
                                 Ty {
                                     kind: TyKind::Adt {
-                                        ident: "Baz".into(),
+                                        ident: parser.get_ident("Baz").unwrap(),
                                         args: vec![Ty {
                                             kind: TyKind::Adt {
-                                                ident: "T".into(),
+                                                ident: parser.get_ident("T").unwrap(),
                                                 args: vec![],
                                             },
                                             span: Span::from(371..372)
@@ -263,7 +267,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                 Ty {
                                     kind: TyKind::Array(Box::new(Ty {
                                         kind: TyKind::Adt {
-                                            ident: "U".into(),
+                                            ident: parser.get_ident("U").unwrap(),
                                             args: vec![],
                                         },
                                         span: Span::from(376..377)

@@ -7,31 +7,47 @@ mod test;
 mod types;
 
 use crate::{
+    ast::{Ident, Item},
     helpers::Spannable,
     lexer::{Lexer, Tok, TokKind},
 };
 use std::{iter::Peekable, ops::Range, vec::IntoIter};
 
 pub use error::{ParseError, ParseResult};
+use string_interner::DefaultStringInterner;
 
 pub struct Parser<'input, I>
 where
     I: Iterator<Item = Tok>,
 {
     input: &'input str,
+    interner: &'input mut DefaultStringInterner,
     tokens: Peekable<I>,
 }
 
 impl<'input> Parser<'input, IntoIter<Tok>> {
-    pub fn new(input: &'input str) -> Self {
+    pub fn new(input: &'input str, interner: &'input mut DefaultStringInterner) -> Self {
         Parser {
             input,
+            interner,
             tokens: Lexer::lex(input).into_iter().peekable(),
         }
     }
 }
 
 impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
+    pub fn parse(&mut self) -> ParseResult<Vec<Item>> {
+        let mut items = Vec::new();
+        while !self.at(TokKind::Eof) {
+            items.push(self.item()?);
+        }
+        Ok(items)
+    }
+
+    pub fn get_ident(&self, name: &str) -> Option<Ident> {
+        self.interner.get(name).map(Ident::from)
+    }
+
     /// Get the next token.
     fn next(&mut self) -> Option<Tok> {
         self.tokens.next()

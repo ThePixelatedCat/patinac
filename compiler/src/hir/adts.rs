@@ -58,23 +58,15 @@ pub struct AdtInfo {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdtData {
-    Record(VariantData),
+    Record(Vec<Field>),
     Enum(Vec<Variant>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     ident: String,
-    data: VariantData,
+    fields: Vec<Field>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VariantData {
-    Unit,
-    Tuple(Vec<Type>),
-    Struct(Vec<Field>),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub ident: String,
