@@ -81,28 +81,12 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                 TokKind::Leq => Bop::Leq,
                 TokKind::RAngle => Bop::Gt,
                 TokKind::Geq => Bop::Geq,
-                // End of expression, terminate loop and return current lhs
-                TokKind::Eof
-                | TokKind::RParen // End of parenthesised expr
-                | TokKind::Dedent // End of block expr
-                | TokKind::RBracket // End of array index expr
-                | TokKind::Comma // List delimiter
-                | TokKind::Semicolon // Stmt seperator
-                | TokKind::Then // Next part of compound expr
-                | TokKind::Else
-                | TokKind::Do
-                | TokKind::With
-                | TokKind::Fn // New item
-                | TokKind::Const
-                | TokKind::Record
-                | TokKind::Enum => return Ok(lhs),
-                _ => {
-                    // let token = self.next().unwrap();
-
-                    // return Err(ParseError::Unexpected(token.inner, "end of expression")
-                    //     .spanned(token.span));
-                    return Ok(lhs)
+                // Stmt seperator, consume then terminate + return
+                TokKind::Semicolon => {
+                    self.next();
+                    return Ok(lhs);
                 }
+                _ => return Ok(lhs),
             };
 
             let (left_binding_power, right_binding_power) = op.binding_power();
@@ -394,21 +378,14 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn block_expr(&mut self) -> ParseResult<Expr> {
         let start = self.consume(TokKind::Indent)?.span.start;
 
-        let mut trailing = true;
-
         let mut exprs = Vec::new();
         while !self.at(TokKind::Dedent) {
             exprs.push(self.expr()?);
-
-            if self.consume_at(TokKind::Semicolon) && self.at(TokKind::Dedent) {
-                trailing = false;
-                break;
-            }
         }
 
         let end = self.consume(TokKind::Dedent)?.span.end;
 
-        Ok(ExprKind::Block { exprs, trailing }.span(start..end))
+        Ok(ExprKind::Block(exprs).span(start..end))
     }
 
     fn index_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {

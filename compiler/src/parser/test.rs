@@ -4,7 +4,7 @@ mod exprs;
 mod items;
 
 use crate::{
-    ast::{GenericParam, Generics, Ty, VariantData},
+    ast::{GenericParam, Ty},
     helpers::{Span, Spnd},
 };
 
@@ -31,9 +31,7 @@ fn wow_we_did_it(mut x, bar: Bar<Baz<T>, U>): fn(Int): Int ->
     else if bar <= 2 then
         fizz(3, 5.1)
 
-record Foo<T, U> 
-    x: String,
-    bar: Bar<Baz<T>, [U]>,
+record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
 "#,
     );
 
@@ -94,131 +92,123 @@ record Foo<T, U>
                 ),
                 span: Span::from(55..67)
             }),
-            body: ExprKind::Block {
-                exprs: vec![
-                    ExprKind::Let {
-                        binding: Pattern::Var {
-                            mutable: true,
-                            ident: "x".into(),
-                            ty_annotation: Some(Ty {
-                                kind: TyKind::Tuple(vec![
-                                    Ty {
-                                        kind: TyKind::Bool,
-                                        span: Span::from(98..102)
+            body: ExprKind::Block(vec![
+                ExprKind::Let {
+                    binding: Pattern::Var {
+                        mutable: true,
+                        ident: "x".into(),
+                        ty_annotation: Some(Ty {
+                            kind: TyKind::Tuple(vec![
+                                Ty {
+                                    kind: TyKind::Bool,
+                                    span: Span::from(98..102)
+                                },
+                                Ty {
+                                    kind: TyKind::Adt {
+                                        ident: "T".into(),
+                                        args: vec![]
                                     },
-                                    Ty {
-                                        kind: TyKind::Adt {
-                                            ident: "T".into(),
-                                            args: vec![]
-                                        },
-                                        span: Span::from(104..105)
-                                    }
-                                ]),
-                                span: Span::from(96..106)
-                            })
-                        },
-                        value: ExprKind::BinaryOp {
-                            op: Bop::Add,
-                            lhs: ExprKind::Bool(true).span(109..113).into(),
-                            rhs: ExprKind::FnCall {
-                                fun: ExprKind::Ident("sin".into()).span(116..119).into(),
-                                args: vec![ExprKind::Ident("y".into()).span(120..121)]
-                            }
-                            .span(116..122)
-                            .into()
-                        }
-                        .span(109..122)
-                        .into()
-                    }
-                    .span(85..122),
-                    ExprKind::Assign {
-                        ident: Spnd {
-                            inner: "x".into(),
-                            span: (136..137).into()
-                        },
-                        value: ExprKind::If {
-                            cond: ExprKind::BinaryOp {
-                                op: Bop::Lt,
-                                lhs: ExprKind::Ident("bar".into()).span(144..147).into(),
-                                rhs: ExprKind::Int(3).span(150..151).into()
-                            }
-                            .span(144..151)
-                            .into(),
-                            th: ExprKind::Block {
-                                exprs: vec![
-                                    ExprKind::Let {
-                                        binding: Pattern::Var {
-                                            mutable: false,
-                                            ident: "baz".into(),
-                                            ty_annotation: None
-                                        },
-                                        value: ExprKind::BinaryOp {
-                                            op: Bop::Add,
-                                            lhs: ExprKind::FieldAccess {
-                                                base: ExprKind::Ident("bar".into())
-                                                    .span(181..184)
-                                                    .into(),
-                                                field: Spnd {
-                                                    inner: "value".into(),
-                                                    span: (185..190).into()
-                                                }
-                                            }
-                                            .span(181..190)
-                                            .into(),
-                                            rhs: ExprKind::BinaryOp {
-                                                op: Bop::Mul,
-                                                lhs: ExprKind::Int(2).span(193..194).into(),
-                                                rhs: ExprKind::Int(4).span(197..198).into()
-                                            }
-                                            .span(193..198)
-                                            .into()
-                                        }
-                                        .span(181..198)
-                                        .into()
-                                    }
-                                    .span(171..198),
-                                    ExprKind::BinaryOp {
-                                        op: Bop::Add,
-                                        lhs: ExprKind::Ident("x".into()).span(216..217).into(),
-                                        rhs: ExprKind::Int(1).span(220..221).into()
-                                    }
-                                    .span(216..221)
-                                ],
-                                trailing: false
-                            }
-                            .span(153..236)
-                            .into(),
-                            el: Some(
-                                ExprKind::If {
-                                    cond: ExprKind::BinaryOp {
-                                        op: Bop::Leq,
-                                        lhs: ExprKind::Ident("bar".into()).span(246..249).into(),
-                                        rhs: ExprKind::Int(2).span(253..254).into()
-                                    }
-                                    .span(246..254)
-                                    .into(),
-                                    th: ExprKind::FnCall {
-                                        fun: ExprKind::Ident("fizz".into()).span(272..276).into(),
-                                        args: vec![
-                                            ExprKind::Int(3).span(277..278),
-                                            ExprKind::Float(5.1).span(280..283)
-                                        ]
-                                    }
-                                    .span(272..284)
-                                    .into(),
-                                    el: None
+                                    span: Span::from(104..105)
                                 }
-                                .span(242..284)
-                                .into()
-                            )
+                            ]),
+                            span: Span::from(96..106)
+                        })
+                    },
+                    value: ExprKind::BinaryOp {
+                        op: Bop::Add,
+                        lhs: ExprKind::Bool(true).span(109..113).into(),
+                        rhs: ExprKind::FnCall {
+                            fun: ExprKind::Ident("sin".into()).span(116..119).into(),
+                            args: vec![ExprKind::Ident("y".into()).span(120..121)]
                         }
-                        .span(140..284)
+                        .span(116..122)
                         .into()
                     }
-                    .span(136..284),
-                ],
-                trailing: true
-            }
+                    .span(109..122)
+                    .into()
+                }
+                .span(85..122),
+                ExprKind::Assign {
+                    ident: Spnd {
+                        inner: "x".into(),
+                        span: (136..137).into()
+                    },
+                    value: ExprKind::If {
+                        cond: ExprKind::BinaryOp {
+                            op: Bop::Lt,
+                            lhs: ExprKind::Ident("bar".into()).span(144..147).into(),
+                            rhs: ExprKind::Int(3).span(150..151).into()
+                        }
+                        .span(144..151)
+                        .into(),
+                        th: ExprKind::Block(vec![
+                            ExprKind::Let {
+                                binding: Pattern::Var {
+                                    mutable: false,
+                                    ident: "baz".into(),
+                                    ty_annotation: None
+                                },
+                                value: ExprKind::BinaryOp {
+                                    op: Bop::Add,
+                                    lhs: ExprKind::FieldAccess {
+                                        base: ExprKind::Ident("bar".into()).span(181..184).into(),
+                                        field: Spnd {
+                                            inner: "value".into(),
+                                            span: (185..190).into()
+                                        }
+                                    }
+                                    .span(181..190)
+                                    .into(),
+                                    rhs: ExprKind::BinaryOp {
+                                        op: Bop::Mul,
+                                        lhs: ExprKind::Int(2).span(193..194).into(),
+                                        rhs: ExprKind::Int(4).span(197..198).into()
+                                    }
+                                    .span(193..198)
+                                    .into()
+                                }
+                                .span(181..198)
+                                .into()
+                            }
+                            .span(171..198),
+                            ExprKind::BinaryOp {
+                                op: Bop::Add,
+                                lhs: ExprKind::Ident("x".into()).span(216..217).into(),
+                                rhs: ExprKind::Int(1).span(220..221).into()
+                            }
+                            .span(216..221)
+                        ])
+                        .span(153..236)
+                        .into(),
+                        el: Some(
+                            ExprKind::If {
+                                cond: ExprKind::BinaryOp {
+                                    op: Bop::Leq,
+                                    lhs: ExprKind::Ident("bar".into()).span(246..249).into(),
+                                    rhs: ExprKind::Int(2).span(253..254).into()
+                                }
+                                .span(246..254)
+                                .into(),
+                                th: ExprKind::FnCall {
+                                    fun: ExprKind::Ident("fizz".into()).span(272..276).into(),
+                                    args: vec![
+                                        ExprKind::Int(3).span(277..278),
+                                        ExprKind::Float(5.1).span(280..283)
+                                    ]
+                                }
+                                .span(272..284)
+                                .into(),
+                                el: None
+                            }
+                            .span(242..284)
+                            .into()
+                        )
+                    }
+                    .span(140..284)
+                    .into()
+                }
+                .span(136..284),
+            ])
             .span(71..294)
         }
     );
@@ -228,21 +218,18 @@ record Foo<T, U>
         Item::Record {
             def: AdtDef {
                 ident: "Foo".into(),
-                generics: Some(Generics {
-                    params: vec![
-                        GenericParam {
-                            ident: String::from("T"),
-                            span: Span::from(315..316)
-                        },
-                        GenericParam {
-                            ident: String::from("U"),
-                            span: Span::from(318..320)
-                        },
-                    ],
-                    span: Span::from(0..0)
-                })
+                generics: vec![
+                    GenericParam {
+                        ident: String::from("T"),
+                        span: Span::from(315..316)
+                    },
+                    GenericParam {
+                        ident: String::from("U"),
+                        span: Span::from(318..320)
+                    },
+                ]
             },
-            data: VariantData::Record(vec![
+            fields: vec![
                 Field {
                     ident: "x".into(),
                     ty: Ty {
@@ -289,7 +276,7 @@ record Foo<T, U>
                     },
                     span: Span::from(0..0)
                 }
-            ])
+            ]
         }
     );
 }

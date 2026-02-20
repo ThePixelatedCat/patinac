@@ -17,7 +17,7 @@ pub enum Item {
     },
     Record {
         def: AdtDef,
-        data: VariantData,
+        fields: Vec<Field>,
     },
     Enum {
         def: AdtDef,
@@ -33,28 +33,15 @@ pub struct Field {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VariantData {
-    Unit,
-    Tuple(Vec<Ty>),
-    Record(Vec<Field>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub ident: String,
-    pub data: VariantData,
+    pub fields: Vec<Field>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtDef {
     pub ident: String,
-    pub generics: Option<Generics>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Generics {
-    pub params: Vec<GenericParam>,
-    pub span: Span,
+    pub generics: Vec<GenericParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

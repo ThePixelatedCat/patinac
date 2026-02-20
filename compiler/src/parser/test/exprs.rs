@@ -36,15 +36,24 @@ fn lit_expressions() {
         .span(0..15)
     );
 
+    let array = parse_expr("
+[
+    1,
+        4
+    ,
+    3,
+    2
+]
+");
     assert_eq!(
-        parse_expr("[1, 4, 3, 2]"),
+        array,
         ExprKind::Array(vec![
-            ExprKind::Int(1).span(1..2),
-            ExprKind::Int(4).span(4..5),
-            ExprKind::Int(3).span(7..8),
-            ExprKind::Int(2).span(10..11)
+            ExprKind::Int(1).span(7..8),
+            ExprKind::Block(vec![ExprKind::Int(4).span(18..19)]).span(10..24),
+            ExprKind::Int(3).span(30..31),
+            ExprKind::Int(2).span(37..38)
         ])
-        .span(0..12)
+        .span(1..40)
     );
 
     assert_eq!(parse_expr("foo"), ExprKind::Ident("foo".into()).span(0..3));
@@ -427,74 +436,68 @@ fn block_expressions() {
     if y < 3 then
         let a = 5
         a
-    else 32;
+    else 32
 ",
     );
     assert_eq!(
         expr,
-        ExprKind::Block {
-            exprs: vec![
-                ExprKind::Let {
-                    binding: Pattern::Var {
-                        mutable: true,
-                        ident: "y".into(),
-                        ty_annotation: None
-                    },
-                    value: ExprKind::Int(5).span(17..18).into()
+        ExprKind::Block(vec![
+            ExprKind::Let {
+                binding: Pattern::Var {
+                    mutable: true,
+                    ident: "y".into(),
+                    ty_annotation: None
+                },
+                value: ExprKind::Int(5).span(17..18).into()
+            }
+            .span(5..18),
+            ExprKind::BinaryOp {
+                op: Bop::Sub,
+                lhs: ExprKind::BinaryOp {
+                    op: Bop::Add,
+                    lhs: ExprKind::Int(3).span(23..24).into(),
+                    rhs: ExprKind::Int(1).span(27..28).into()
                 }
-                .span(5..18),
-                ExprKind::BinaryOp {
-                    op: Bop::Sub,
-                    lhs: ExprKind::BinaryOp {
-                        op: Bop::Add,
-                        lhs: ExprKind::Int(3).span(23..24).into(),
-                        rhs: ExprKind::Int(1).span(27..28).into()
+                .span(23..28)
+                .into(),
+                rhs: ExprKind::Int(2).span(31..32).into()
+            }
+            .span(23..32),
+            ExprKind::Assign {
+                ident: Spnd {
+                    inner: "y".into(),
+                    span: (37..38).into()
+                },
+                value: ExprKind::Int(1).span(41..42).into()
+            }
+            .span(37..42),
+            ExprKind::If {
+                cond: ExprKind::BinaryOp {
+                    op: Bop::Lt,
+                    lhs: ExprKind::Ident("y".into()).span(50..51).into(),
+                    rhs: ExprKind::Int(3).span(54..55).into()
+                }
+                .span(50..55)
+                .into(),
+                th: ExprKind::Block(vec![
+                    ExprKind::Let {
+                        binding: Pattern::Var {
+                            mutable: false,
+                            ident: "a".into(),
+                            ty_annotation: None
+                        },
+                        value: ExprKind::Int(5).span(77..78).into()
                     }
-                    .span(23..28)
-                    .into(),
-                    rhs: ExprKind::Int(2).span(31..32).into()
-                }
-                .span(23..32),
-                ExprKind::Assign {
-                    ident: Spnd {
-                        inner: "y".into(),
-                        span: (37..38).into()
-                    },
-                    value: ExprKind::Int(1).span(41..42).into()
-                }
-                .span(37..42),
-                ExprKind::If {
-                    cond: ExprKind::BinaryOp {
-                        op: Bop::Lt,
-                        lhs: ExprKind::Ident("y".into()).span(50..51).into(),
-                        rhs: ExprKind::Int(3).span(54..55).into()
-                    }
-                    .span(50..55)
-                    .into(),
-                    th: ExprKind::Block {
-                        exprs: vec![
-                            ExprKind::Let {
-                                binding: Pattern::Var {
-                                    mutable: false,
-                                    ident: "a".into(),
-                                    ty_annotation: None
-                                },
-                                value: ExprKind::Int(5).span(77..78).into()
-                            }
-                            .span(69..78),
-                            ExprKind::Ident("a".to_string()).span(87..88)
-                        ],
-                        trailing: true
-                    }
-                    .span(61..93)
-                    .into(),
-                    el: Some(ExprKind::Int(32).span(98..100).into())
-                }
-                .span(47..100)
-            ],
-            trailing: false
-        }
-        .span(1..102)
+                    .span(69..78),
+                    ExprKind::Ident("a".to_string()).span(87..88)
+                ])
+                .span(61..93)
+                .into(),
+                el: Some(ExprKind::Int(32).span(98..100).into())
+            }
+            .span(47..100)
+        ])
+        .span(1..101)
     );
 }
 
@@ -511,13 +514,5 @@ fn malformed_expressions() {
     assert_eq!(
         parse_expr_err("*5"),
         Err(ParseError::Unexpected(TokKind::Times, "start of expression").span(0..1))
-    );
-    assert_eq!(
-        parse_expr_err("print(5, 2;)"),
-        Err(ParseError::Mismatched {
-            expected: TokKind::RParen,
-            found: TokKind::Semicolon
-        }
-        .span(10..11))
     );
 }

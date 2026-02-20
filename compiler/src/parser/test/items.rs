@@ -1,6 +1,5 @@
 use crate::ast::{
-    AdtDef, Bop, ExprKind, Field, GenericParam, Generics, Item, Pattern, Ty, TyKind, Variant,
-    VariantData,
+    AdtDef, Bop, ExprKind, Field, GenericParam, Item, Pattern, Ty, TyKind, Variant,
 };
 use crate::helpers::{Span, Spannable};
 use crate::lexer::TokKind;
@@ -54,40 +53,65 @@ fn const_items() {
 
 #[test]
 fn struct_items() {
-    let item = parse_item(
-        r#"
-record Foo<T, U>
-    x: Char  ,
-    bar: Bar<Baz<T>>
-"#,
+    assert_eq!(
+        parse_item("record Point(x: Int, y: Int)"),
+        Item::Record {
+            def: AdtDef {
+                ident: String::from("Point"),
+                generics: vec![]
+            },
+            fields: vec![
+                Field {
+                    ident: String::from("x"),
+                    ty: Ty {
+                        kind: TyKind::Int,
+                        span: Span::from(16..19)
+                    },
+                    span: Span::from(13..19)
+                },
+                Field {
+                    ident: String::from("y"),
+                    ty: Ty {
+                        kind: TyKind::Int,
+                        span: Span::from(24..27)
+                    },
+                    span: Span::from(21..27)
+                }
+            ]
+        }
     );
+
+    let item = parse_item(
+        "
+record Foo<T, U>(
+    x: Char , 
+    bar: Bar<Baz<T>>
+    )",
+);
     assert_eq!(
         item,
         Item::Record {
             def: AdtDef {
                 ident: "Foo".into(),
-                generics: Some(Generics {
-                    params: vec![
-                        GenericParam {
-                            ident: String::from("T"),
-                            span: Span::from(12..13)
-                        },
-                        GenericParam {
-                            ident: String::from("U"),
-                            span: Span::from(15..16)
-                        }
-                    ],
-                    span: Span::from(11..17)
-                })
+                generics: vec![
+                    GenericParam {
+                        ident: String::from("T"),
+                        span: Span::from(12..13)
+                    },
+                    GenericParam {
+                        ident: String::from("U"),
+                        span: Span::from(15..16)
+                    }
+                ]
             },
-            data: VariantData::Record(vec![
+            fields: vec![
                 Field {
                     ident: "x".into(),
                     ty: Ty {
                         kind: TyKind::Char,
-                        span: Span::from(25..29)
+                        span: Span::from(26..30)
                     },
-                    span: Span::from(22..29)
+                    span: Span::from(23..30)
                 },
                 Field {
                     ident: "bar".into(),
@@ -102,17 +126,17 @@ record Foo<T, U>
                                             ident: "T".into(),
                                             args: vec![]
                                         },
-                                        span: Span::from(50..51)
+                                        span: Span::from(51..52)
                                     }]
                                 },
-                                span: Span::from(46..52)
+                                span: Span::from(47..53)
                             }]
                         },
-                        span: Span::from(42..53)
+                        span: Span::from(43..54)
                     },
-                    span: Span::from(37..53)
+                    span: Span::from(38..54)
                 }
-            ])
+            ]
         }
     );
 }
@@ -121,12 +145,10 @@ record Foo<T, U>
 fn enum_items() {
     let item = parse_item(
         r#"
-enum Foo 
-| X
-| Y(Bar)
-| Z 
-    baz: Baz, 
-    fizz: Buzz
+enum Foo
+    | X()
+        | Y(v: Bar)
+| Z(baz: Baz, fizz: Buzz)
 "#,
     );
     assert_eq!(
@@ -134,26 +156,30 @@ enum Foo
         Item::Enum {
             def: AdtDef {
                 ident: "Foo".into(),
-                generics: None
+                generics: vec![]
             },
             variants: vec![
                 Variant {
                     ident: "X".into(),
-                    data: VariantData::Unit
+                    fields: vec![]
                 },
                 Variant {
                     ident: "Y".into(),
-                    data: VariantData::Tuple(vec![Ty {
-                        kind: TyKind::Adt {
-                            ident: "Bar".into(),
-                            args: vec![]
+                    fields: vec![Field {
+                        ident: "v".into(),
+                        ty: Ty {
+                            kind: TyKind::Adt {
+                                ident: "Bar".into(),
+                                args: vec![]
+                            },
+                            span: Span::from(35..38)
                         },
-                        span: Span::from(19..22)
-                    }]),
+                        span: Span::from(32..38)
+                    }],
                 },
                 Variant {
                     ident: "Z".into(),
-                    data: VariantData::Record(vec![
+                    fields: vec![
                         Field {
                             ident: "baz".into(),
                             ty: Ty {
@@ -161,9 +187,9 @@ enum Foo
                                     ident: "Baz".into(),
                                     args: vec![]
                                 },
-                                span: Span::from(38..41)
+                                span: Span::from(49..52)
                             },
-                            span: Span::from(33..41)
+                            span: Span::from(44..52)
                         },
                         Field {
                             ident: "fizz".into(),
@@ -172,11 +198,11 @@ enum Foo
                                     ident: "Buzz".into(),
                                     args: vec![]
                                 },
-                                span: Span::from(54..58)
+                                span: Span::from(60..64)
                             },
-                            span: Span::from(48..58)
+                            span: Span::from(54..64)
                         },
-                    ])
+                    ]
                 },
             ]
         }

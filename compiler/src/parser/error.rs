@@ -12,7 +12,7 @@ impl Spannable for ParseError {}
 pub enum ParseError {
     Mismatched { expected: TokKind, found: TokKind },
     Unexpected(TokKind, &'static str),
-    Missing,
+    Eof,
 }
 
 impl Display for ParseError {
@@ -24,7 +24,7 @@ impl Display for ParseError {
             Self::Unexpected(token, desc) => {
                 write!(f, "unexpected token `{token}` at {desc}")
             }
-            Self::Missing => "expected another token".fmt(f),
+            Self::Eof => "unexpected end of file".fmt(f),
         }
     }
 }

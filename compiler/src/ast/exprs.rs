@@ -69,10 +69,7 @@ pub enum ExprKind {
         return_type: Option<Ty>,
         body: Box<Expr>,
     },
-    Block {
-        exprs: Vec<Expr>,
-        trailing: bool,
-    },
+    Block(Vec<Expr>),
 }
 
 impl ExprKind {

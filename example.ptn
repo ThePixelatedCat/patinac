@@ -7,3 +7,9 @@ const sum = fn(a, b) -> a + b
 
 const twelve: Int = 12
 const inc: fn(Int): Int = sum(1, _)
+
+record Point(x: Int, y: Int)
+
+// Can be initialised as either of the following:
+const order_init = Point(0, 0)
+const label_init = Point(x: 0, y: 0)

@@ -1,5 +1,5 @@
 mod error;
-mod expressions;
+mod exprs;
 mod helpers;
 mod items;
 #[cfg(test)]
@@ -50,7 +50,8 @@ impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
     fn consume(&mut self, expected: TokKind) -> ParseResult<Tok> {
-        let next = self.next().ok_or_else(|| ParseError::Missing.span(0..0))?;
+        let next = self.next().ok_or_else(|| ParseError::Eof.span(0..0))?;
+
         if next.kind == expected {
             Ok(next)
         } else {
@@ -68,6 +69,17 @@ impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
             self.next();
         }
         at
+    }
+
+    fn strip(&mut self, token: TokKind) {
+        while self.peek() == token {
+            self.next();
+        }
+    }
+
+    fn strip_identation(&mut self) {
+        self.strip(TokKind::Indent);
+        self.strip(TokKind::Dedent);
     }
 
     fn str_at(&self, span: impl Into<Range<usize>>) -> &'input str {

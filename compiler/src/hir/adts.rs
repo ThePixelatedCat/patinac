@@ -14,19 +14,29 @@ impl Index<AdtId> for AdtDefs {
 }
 
 impl AdtDefs {
-    pub fn add_record(
+    pub fn add_record<'src>(
         &mut self,
-        name: String,
-        generic_params: Vec<String>,
+        ident: String,
+        generics: Vec<String>,
         fields: Vec<Field>,
-    ) -> AdtId {
-        let id = AdtId::from(self.0.len());
-        self.0.push(AdtInfo {
-            name,
-            generic_params,
-            data: AdtData::Record(fields),
-        });
-        id
+    ) -> (AdtId, &'src str) {
+        todo!();
+        // let id = AdtId::from(self.0.len());
+        // self.0.push(AdtInfo {
+        //     ident,
+        //     generics,
+        //     data: AdtData::Record(fields),
+        // });
+        // id
+    }
+
+    pub fn add_enum<'src>(
+        &mut self,
+        ident: String,
+        generics: Vec<String>,
+        variants: Vec<Variant>
+    ) -> (AdtId, &'src str) {
+        (AdtId(0), &ident)
     }
 }
 
@@ -41,26 +51,32 @@ impl From<usize> for AdtId {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtInfo {
-    name: String,
-    generic_params: Vec<String>,
+    ident: String,
+    generics: Vec<String>,
     data: AdtData,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdtData {
-    Record(Vec<Field>),
+    Record(VariantData),
     Enum(Vec<Variant>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Variant {
-    Unit(String),
-    Tuple(String, Vec<Type>),
-    Struct(String, Vec<Field>),
+pub struct Variant {
+    ident: String,
+    data: VariantData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VariantData {
+    Unit,
+    Tuple(Vec<Type>),
+    Struct(Vec<Field>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
-    pub name: String,
+    pub ident: String,
     pub ty: Type,
 }

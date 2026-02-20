@@ -2,8 +2,8 @@ use ego_tree::{NodeId, NodeMut, NodeRef, Tree};
 use fnv::FnvHashMap;
 
 use crate::{
+    ast::{AdtDef, Item},
     hir::Hir,
-    ast::{Item, AstDef},
     typecheck::types::Type,
 };
 
@@ -29,24 +29,25 @@ impl Resolver {
     pub fn resolve(&mut self, ast: Vec<Item>) {
         for item in ast {
             match item {
-                Item::Const { name, ty, value } => todo!(),
+                Item::Const { ident, ty, value } => todo!(),
                 Item::Func {
-                    name,
+                    ident,
                     params,
                     return_ty,
                     body,
                 } => todo!(),
                 Item::Record {
-                    def:
-                        AstDef {
-                            name,
-                            generics: generic_params,
-                        },
+                    def: AdtDef { ident, generics },
                     data,
                 } => {
-                    self.hir.type_defs.add_record(name, generic_params, fields);
+                    self.hir.type_defs.add_record(ident, generics, data);
                 }
-                Item::Enum { def, variants } => todo!(),
+                Item::Enum {
+                    def: AdtDef { ident, generics },
+                    variants,
+                } => {
+                    self.hir.type_defs.add_enum(ident, generics, data);
+                }
             }
         }
 

@@ -5,7 +5,7 @@ use crate::parser::Parser;
 
 mod ast;
 mod helpers;
-mod hir;
+//mod hir;
 mod lexer;
 mod parser;
 //mod resolver;
