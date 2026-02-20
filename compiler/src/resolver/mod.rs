@@ -38,7 +38,7 @@ impl Resolver {
                 } => todo!(),
                 Item::Record {
                     def: AdtDef { ident, generics },
-                    data,
+                    fields,
                 } => {
                     self.hir.type_defs.add_record(ident, generics, data);
                 }

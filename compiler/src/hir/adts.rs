@@ -1,5 +1,7 @@
 use std::ops::Index;
 
+use crate::ast::Ident;
+
 use super::Type;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
@@ -32,11 +34,11 @@ impl AdtDefs {
 
     pub fn add_enum<'src>(
         &mut self,
-        ident: String,
-        generics: Vec<String>,
+        ident: Ident,
+        generics: Vec<Ident>,
         variants: Vec<Variant>
-    ) -> (AdtId, &'src str) {
-        (AdtId(0), &ident)
+    ) -> AdtId {
+        todo!()
     }
 }
 
@@ -51,7 +53,7 @@ impl From<usize> for AdtId {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtInfo {
-    ident: String,
+    ident: Ident,
     generics: Vec<String>,
     data: AdtData,
 }
@@ -64,11 +66,11 @@ pub enum AdtData {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
-    ident: String,
+    ident: Ident,
     fields: Vec<Field>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
-    pub ident: String,
+    pub ident: Ident,
     pub ty: Type,
 }
