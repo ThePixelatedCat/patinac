@@ -1,0 +1,15 @@
+[package]
+name = "parse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Internal
+lex = { path = "../lex" }
+ast = { path = "../ast" }
+span = { path = "../span" }
+# External
+string-interner = "0.19.0"
+
+[lints]
+workspace = true

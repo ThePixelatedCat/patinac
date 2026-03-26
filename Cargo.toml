@@ -1,3 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["compiler", "runtime"]
+members = ["compile", "span", "lex", "ast", "parse", "typecheck"]
+
+[workspace.lints.clippy]
+enum_glob_use = "deny"
+pedantic = "warn"
+nursery = "warn"

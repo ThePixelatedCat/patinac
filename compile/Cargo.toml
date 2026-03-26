@@ -1,0 +1,18 @@
+[package]
+name = "compile"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Internal
+span = { path = "../span" }
+lex = { path = "../lex" }
+ast = { path = "../ast" }
+parse = { path = "../parse" }
+typecheck = { path = "../typecheck" }
+# External
+anyhow = "1.0.100"
+string-interner = "0.19.0"
+
+[lints]
+workspace = true
