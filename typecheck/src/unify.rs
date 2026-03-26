@@ -2,9 +2,9 @@ use std::{cmp, iter};
 
 use ena::unify::UnifyValue;
 
-use super::{Type, TypeChecker, TypeError, TypeId};
+use super::{Ty, TypeChecker, TypeError, TypeVar};
 
-impl UnifyValue for Type {
+impl UnifyValue for Ty {
     type Error = TypeError;
 
     #[allow(clippy::unnested_or_patterns, reason = "clarity")]
@@ -38,8 +38,8 @@ impl UnifyValue for Type {
     }
 }
 
-impl Type {
-    fn contains(&self, var: TypeId) -> bool {
+impl Ty {
+    fn contains(&self, var: TypeVar) -> bool {
         match &self {
             Self::Adt(args, ..) => args.iter().any(|ty| ty.contains(var)),
             Self::Var(id) | Self::IntVar(id) => *id == var,
@@ -58,7 +58,7 @@ impl TypeChecker {
     /// at which point we unify them in the table,
     /// or until we can no longer traverse them or we know they're mismatched,
     /// at which point we error
-    pub(super) fn unify(&self, a: &Type, b: &Type) -> Result<(), TypeError> {
+    pub(super) fn unify(&self, a: &Ty, b: &Ty) -> Result<(), TypeError> {
         if let Some(n_a) = self.normalise_id(a) {
             return self.unify(&n_a, b);
         } else if let Some(n_b) = self.normalise_id(b) {
@@ -66,24 +66,24 @@ impl TypeChecker {
         }
 
         match (a, b) {
-            (Type::IntVar(id_a) | Type::Var(id_a), Type::IntVar(id_b) | Type::Var(id_b)) => {
+            (Ty::IntVar(id_a) | Ty::Var(id_a), Ty::IntVar(id_b) | Ty::Var(id_b)) => {
                 self.table.borrow_mut().unify_var_var(*id_a, *id_b)
             }
-            (Type::IntVar(id) | Type::Var(id), ty) | (ty, Type::IntVar(id) | Type::Var(id)) => {
+            (Ty::IntVar(id) | Ty::Var(id), ty) | (ty, Ty::IntVar(id) | Ty::Var(id)) => {
                 self.table.borrow_mut().unify_var_value(*id, ty.clone())
             }
-            (Type::Int, Type::Int)
-            | (Type::UInt, Type::UInt)
-            | (Type::Byte, Type::Byte)
-            | (Type::Float, Type::Float)
-            | (Type::Bool, Type::Bool)
-            | (Type::Char, Type::Char) => Ok(()),
-            (Type::Array(ty_a), Type::Array(ty_b)) => self.unify(ty_a, ty_b),
-            (Type::Tuple(tys_a), Type::Tuple(tys_b)) => self.unify_all(tys_a, tys_b),
-            (Type::Fn(param_tys_a, return_ty_a), Type::Fn(param_tys_b, return_ty_b)) => self
+            (Ty::Int, Ty::Int)
+            | (Ty::UInt, Ty::UInt)
+            | (Ty::Byte, Ty::Byte)
+            | (Ty::Float, Ty::Float)
+            | (Ty::Bool, Ty::Bool)
+            | (Ty::Char, Ty::Char) => Ok(()),
+            (Ty::Array(ty_a), Ty::Array(ty_b)) => self.unify(ty_a, ty_b),
+            (Ty::Tuple(tys_a), Ty::Tuple(tys_b)) => self.unify_all(tys_a, tys_b),
+            (Ty::Fn(param_tys_a, return_ty_a), Ty::Fn(param_tys_b, return_ty_b)) => self
                 .unify(return_ty_a, return_ty_b)
                 .and_then(|()| self.unify_all(param_tys_a, param_tys_b)),
-            (Type::Adt(name_a, args_a), Type::Adt(name_b, args_b)) if name_a == name_b => {
+            (Ty::Adt(name_a, args_a), Ty::Adt(name_b, args_b)) if name_a == name_b => {
                 self.unify_all(args_a, args_b)
             }
             (ty_a, ty_b) => Err(TypeError::MismatchedTypes {
@@ -93,16 +93,11 @@ impl TypeChecker {
         }
     }
 
-    fn unify_all(&self, tys_a: &[Type], tys_b: &[Type]) -> Result<(), TypeError> {
+    fn unify_all(&self, tys_a: &[Ty], tys_b: &[Ty]) -> Result<(), TypeError> {
         iter::zip(tys_a, tys_b).try_for_each(|(a, b)| self.unify(a, b))
     }
 
-    pub(super) fn unify_either(
-        &self,
-        ty: &Type,
-        opt_a: &Type,
-        opt_b: &Type,
-    ) -> Result<(), TypeError> {
+    pub(super) fn unify_either(&self, ty: &Ty, opt_a: &Ty, opt_b: &Ty) -> Result<(), TypeError> {
         let snapshot = self.table.borrow_mut().snapshot();
 
         match self.unify(opt_a, ty) {

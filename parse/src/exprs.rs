@@ -1,10 +1,12 @@
 use std::str::FromStr;
 
-use ast::{Bop, Expr, ExprKind, MatchArm, Unop};
-use span::Span;
+use ast::{Bop, Expr as _Expr, ExprKind, MatchArm, Unop};
 use lex::{Tok, TokKind};
+use span::Span;
 
 use crate::{ParseError, ParseResult, Parser};
+
+type Expr = _Expr<()>;
 
 fn process_escapes(input: &str) -> String {
     input
@@ -100,7 +102,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
             let span = lhs.span.start..rhs.span.end;
 
-            lhs = ExprKind::BinaryOp {
+            lhs = ExprKind::BinOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
@@ -131,19 +133,13 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn int_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::IntLit)?.span;
         let val = u64::from_str(self.str_at(span)).unwrap();
-        Ok(Expr {
-            kind: ExprKind::Int(val),
-            span,
-        })
+        Ok(ExprKind::Int(val).span(span))
     }
 
     fn float_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::FloatLit)?.span;
         let val = f64::from_str(self.str_at(span)).unwrap();
-        Ok(Expr {
-            kind: ExprKind::Float(val),
-            span,
-        })
+        Ok(ExprKind::Float(val).span(span))
     }
 
     fn char_lit_expr(&mut self) -> ParseResult<Expr> {
@@ -152,27 +148,18 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             .chars()
             .next()
             .unwrap();
-        Ok(Expr {
-            kind: ExprKind::Char(val),
-            span,
-        })
+        Ok(ExprKind::Char(val).span(span))
     }
 
     fn string_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::StringLit)?.span;
         let val = process_escapes(self.str_at(span.start + 1..span.end - 1));
-        Ok(Expr {
-            kind: ExprKind::String(val),
-            span,
-        })
+        Ok(ExprKind::String(val).span(span))
     }
 
     fn array_lit_expr(&mut self) -> ParseResult<Expr> {
         let (arr, span) = self.delimited_list(Self::expr, TokKind::LBracket, TokKind::RBracket)?;
-        Ok(Expr {
-            kind: ExprKind::Array(arr),
-            span,
-        })
+        Ok(ExprKind::Array(arr).span(span))
     }
 
     fn paren_exprs(&mut self) -> ParseResult<Expr> {
@@ -287,7 +274,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         .span(span))
     }
 
-    fn match_arm(&mut self) -> ParseResult<MatchArm> {
+    fn match_arm(&mut self) -> ParseResult<MatchArm<()>> {
         let start = self.consume(TokKind::Pipe)?.span.start;
 
         let pattern = self.pattern()?;
@@ -393,7 +380,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         Ok(ExprKind::Index {
             arr: Box::new(lhs),
-            index,
+            idx: index,
         }
         .span(start..end))
     }
@@ -417,8 +404,8 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let (args, Span { end, .. }) =
             self.delimited_list(Self::expr, TokKind::LParen, TokKind::RParen)?;
 
-        Ok(ExprKind::FnCall {
-            fun: Box::new(lhs),
+        Ok(ExprKind::App {
+            func: Box::new(lhs),
             args,
         }
         .span(start..end))

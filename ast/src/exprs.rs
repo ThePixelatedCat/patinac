@@ -3,89 +3,102 @@ use span::{Span, Spnd};
 use super::{Binding, Ident, Pat, Ty};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Expr {
-    pub kind: ExprKind,
+pub struct Expr<T> {
+    pub kind: ExprKind<T>,
     pub span: Span,
+    pub ty: T,
 }
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum ExprKind {
+pub enum ExprKind<T> {
     Ident(Ident),
     Int(u64),
     Float(f64),
     String(String),
     Char(char),
     Bool(bool),
-    Array(Vec<Expr>),
-    Tuple(Vec<Expr>),
-    FnCall {
-        fun: Box<Expr>,
-        args: Vec<Expr>,
+    Array(Vec<Expr<T>>),
+    Tuple(Vec<Expr<T>>),
+    App {
+        func: Box<Expr<T>>,
+        args: Vec<Expr<T>>,
     },
-    BinaryOp {
+    BinOp {
         op: Bop,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: Box<Expr<T>>,
+        rhs: Box<Expr<T>>,
     },
     UnaryOp {
         op: Unop,
-        expr: Box<Expr>,
+        expr: Box<Expr<T>>,
     },
     Index {
-        arr: Box<Expr>,
-        index: Box<Expr>,
+        arr: Box<Expr<T>>,
+        idx: Box<Expr<T>>,
     },
     FieldAccess {
-        base: Box<Expr>,
+        base: Box<Expr<T>>,
         field: Spnd<Ident>,
     },
     If {
-        cond: Box<Expr>,
-        th: Box<Expr>,
-        el: Option<Box<Expr>>,
+        cond: Box<Expr<T>>,
+        th: Box<Expr<T>>,
+        el: Option<Box<Expr<T>>>,
     },
     For {
         pattern: Pat,
-        iter: Box<Expr>,
-        body: Box<Expr>,
+        iter: Box<Expr<T>>,
+        body: Box<Expr<T>>,
     },
     While {
-        cond: Box<Expr>,
-        body: Box<Expr>,
+        cond: Box<Expr<T>>,
+        body: Box<Expr<T>>,
     },
     Match {
-        scrutinee: Box<Expr>,
-        arms: Vec<MatchArm>,
+        scrutinee: Box<Expr<T>>,
+        arms: Vec<MatchArm<T>>,
     },
     Let {
         binding: Binding,
-        value: Box<Expr>,
+        value: Box<Expr<T>>,
     },
     Assign {
         ident: Spnd<Ident>,
-        value: Box<Expr>,
+        value: Box<Expr<T>>,
     },
     Lambda {
         params: Vec<Binding>,
         return_ty: Option<Ty>,
-        body: Box<Expr>,
+        body: Box<Expr<T>>,
     },
-    Block(Vec<Expr>),
+    Block(Vec<Expr<T>>),
 }
 
-impl ExprKind {
-    pub fn span(self, span: impl Into<Span>) -> Expr {
+impl ExprKind<()> {
+    pub fn span(self, span: impl Into<Span>) -> Expr<()> {
         Expr {
             kind: self,
             span: span.into(),
+            ty: (),
+        }
+    }
+}
+
+impl<T> ExprKind<T> {
+    pub fn span_ty(self, span: impl Into<Span>, ty: T) -> Expr<T> {
+        Expr {
+            kind: self,
+            span: span.into(),
+            ty,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MatchArm {
+pub struct MatchArm<T> {
     pub pattern: Pat,
-    pub guard: Option<Box<Expr>>,
-    pub body: Box<Expr>,
+    pub guard: Option<Box<Expr<T>>>,
+    pub body: Box<Expr<T>>,
     pub span: Span,
 }
 

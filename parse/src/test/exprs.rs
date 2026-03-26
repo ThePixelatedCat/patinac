@@ -1,10 +1,10 @@
 use ast::{Binding, Bop, Expr, ExprKind, Pat, Ty, TyKind, Unop};
-use span::{Span, Spannable, Spnd};
 use lex::TokKind;
+use span::{Span, Spannable, Spnd};
 
 use crate::{ParseError, ParseResult, Parser};
 
-fn parse_expr(input: &str) -> ParseResult<Expr> {
+fn parse_expr(input: &str) -> ParseResult<Expr<()>> {
     let mut interner = Default::default();
     let mut parser = Parser::new(input, &mut interner);
     parser.expr()
@@ -100,10 +100,10 @@ fn unop_expressions() {
 fn binop_expressions() {
     assert_eq!(
         parse_expr("4 + 2 * 3"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Add,
             lhs: ExprKind::Int(4).span(0..1).into(),
-            rhs: ExprKind::BinaryOp {
+            rhs: ExprKind::BinOp {
                 op: Bop::Mul,
                 lhs: ExprKind::Int(2).span(4..5).into(),
                 rhs: ExprKind::Int(3).span(8..9).into()
@@ -116,9 +116,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 * 2 + 3"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Add,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::Mul,
                 lhs: ExprKind::Int(4).span(0..1).into(),
                 rhs: ExprKind::Int(2).span(4..5).into()
@@ -132,9 +132,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 - 2 - 3"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Sub,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::Sub,
                 lhs: ExprKind::Int(4).span(0..1).into(),
                 rhs: ExprKind::Int(2).span(4..5).into()
@@ -148,10 +148,10 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 ** 2 ** 3"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Exp,
             lhs: ExprKind::Int(4).span(0..1).into(),
-            rhs: ExprKind::BinaryOp {
+            rhs: ExprKind::BinOp {
                 op: Bop::Exp,
                 lhs: ExprKind::Int(2).span(5..6).into(),
                 rhs: ExprKind::Int(3).span(10..11).into()
@@ -164,9 +164,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 ^ 2 ^ 3"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Xor,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::Xor,
                 lhs: ExprKind::Int(4).span(0..1).into(),
                 rhs: ExprKind::Int(2).span(4..5).into()
@@ -180,10 +180,10 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("true || false && true"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Or,
             lhs: ExprKind::Bool(true).span(0..4).into(),
-            rhs: ExprKind::BinaryOp {
+            rhs: ExprKind::BinOp {
                 op: Bop::And,
                 lhs: ExprKind::Bool(false).span(8..13).into(),
                 rhs: ExprKind::Bool(true).span(17..21).into(),
@@ -196,9 +196,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("3 & 1 | 5"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::BOr,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::BAnd,
                 lhs: ExprKind::Int(3).span(0..1).into(),
                 rhs: ExprKind::Int(1).span(4..5).into(),
@@ -212,9 +212,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("(3 >= 4) != true"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Neq,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::Geq,
                 lhs: ExprKind::Int(3).span(1..2).into(),
                 rhs: ExprKind::Int(4).span(6..7).into(),
@@ -228,9 +228,9 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("(4 > 3) == true"),
-        Ok(ExprKind::BinaryOp {
+        Ok(ExprKind::BinOp {
             op: Bop::Eqq,
-            lhs: ExprKind::BinaryOp {
+            lhs: ExprKind::BinOp {
                 op: Bop::Gt,
                 lhs: ExprKind::Int(4).span(1..2).into(),
                 rhs: ExprKind::Int(3).span(5..6).into(),
@@ -250,8 +250,8 @@ fn compound_expressions() {
     let mut parser = Parser::new("bar (  x, 2)", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::FnCall {
-            fun: ExprKind::Ident(parser.get_ident("bar").unwrap())
+        Ok(ExprKind::App {
+            func: ExprKind::Ident(parser.get_ident("bar").unwrap())
                 .span(0..3)
                 .into(),
             args: vec![
@@ -267,8 +267,8 @@ fn compound_expressions() {
         parser.expr(),
         Ok(ExprKind::If {
             cond: ExprKind::Float(0.5).span(3..6).into(),
-            th: ExprKind::FnCall {
-                fun: ExprKind::Ident(parser.get_ident("foo").unwrap())
+            th: ExprKind::App {
+                func: ExprKind::Ident(parser.get_ident("foo").unwrap())
                     .span(12..15)
                     .into(),
                 args: Vec::new()
@@ -327,8 +327,8 @@ fn compound_expressions() {
     let mut parser = Parser::new("(fn(a, b: Int) -> a + b)(1, 2)", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::FnCall {
-            fun: ExprKind::Lambda {
+        Ok(ExprKind::App {
+            func: ExprKind::Lambda {
                 params: vec![
                     Binding {
                         pat: Pat::Var {
@@ -349,7 +349,7 @@ fn compound_expressions() {
                     }
                 ],
                 return_ty: None,
-                body: ExprKind::BinaryOp {
+                body: ExprKind::BinOp {
                     op: Bop::Add,
                     lhs: ExprKind::Ident(parser.get_ident("a").unwrap())
                         .span(18..19)
@@ -381,7 +381,7 @@ fn compound_expressions() {
             ])
             .span(0..9)
             .into(),
-            index: ExprKind::BinaryOp {
+            idx: ExprKind::BinOp {
                 op: Bop::Sub,
                 lhs: ExprKind::Int(1).span(10..11).into(),
                 rhs: ExprKind::Int(1).span(12..13).into()
@@ -420,11 +420,11 @@ fn var_expressions() {
                 },
                 ty: None
             },
-            value: ExprKind::BinaryOp {
+            value: ExprKind::BinOp {
                 op: Bop::Add,
                 lhs: ExprKind::Int(7).span(8..9).into(),
-                rhs: ExprKind::FnCall {
-                    fun: ExprKind::Ident(parser.get_ident("sin").unwrap())
+                rhs: ExprKind::App {
+                    func: ExprKind::Ident(parser.get_ident("sin").unwrap())
                         .span(12..15)
                         .into(),
                     args: vec![ExprKind::Float(3.0).span(16..18)]
@@ -462,10 +462,10 @@ fn var_expressions() {
         parser.expr(),
         Ok(ExprKind::Assign {
             ident: Spnd(parser.get_ident("y").unwrap(), (0..1).into()),
-            value: ExprKind::BinaryOp {
+            value: ExprKind::BinOp {
                 op: Bop::Add,
                 lhs: ExprKind::Int(3).span(4..5).into(),
-                rhs: ExprKind::BinaryOp {
+                rhs: ExprKind::BinOp {
                     op: Bop::Mul,
                     lhs: ExprKind::Int(7).span(8..9).into(),
                     rhs: ExprKind::Float(0.5).span(12..15).into()
@@ -508,9 +508,9 @@ fn block_expressions() {
                 value: ExprKind::Int(5).span(17..18).into()
             }
             .span(5..18),
-            ExprKind::BinaryOp {
+            ExprKind::BinOp {
                 op: Bop::Sub,
-                lhs: ExprKind::BinaryOp {
+                lhs: ExprKind::BinOp {
                     op: Bop::Add,
                     lhs: ExprKind::Int(3).span(23..24).into(),
                     rhs: ExprKind::Int(1).span(27..28).into()
@@ -526,7 +526,7 @@ fn block_expressions() {
             }
             .span(37..42),
             ExprKind::If {
-                cond: ExprKind::BinaryOp {
+                cond: ExprKind::BinOp {
                     op: Bop::Lt,
                     lhs: ExprKind::Ident(parser.get_ident("y").unwrap())
                         .span(50..51)

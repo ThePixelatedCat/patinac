@@ -7,6 +7,11 @@ pub use exprs::*;
 pub use items::*;
 use string_interner::DefaultSymbol;
 
+pub struct Ast<T> {
+    adts: Vec<AdtItem>,
+    execs: Vec<ExecItem<T>>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ident(DefaultSymbol);
 
@@ -46,5 +51,5 @@ pub enum TyKind {
     Array(Box<Ty>),
     Tuple(Vec<Ty>),
     Fn(Vec<Ty>, Box<Ty>),
-    Adt { ident: Ident, args: Vec<Ty> },
+    Adt(Ident, Vec<Ty>),
 }

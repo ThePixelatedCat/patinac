@@ -1,8 +1,10 @@
-use ast::{AdtDef, Field, GenericParam, Item, Variant};
+use ast::{AdtDef, Field, GenericParam, Item as _Item, Variant};
 use lex::{Tok, TokKind};
 use span::{Span, Spnd};
 
-use super::{ParseError, ParseResult, Parser};
+use crate::{ParseError, ParseResult, Parser};
+
+type Item = _Item<()>;
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn item(&mut self) -> ParseResult<Item> {

@@ -1,40 +1,40 @@
 use std::fmt::Display;
 
+use ast::Ident;
 use ena::unify::UnifyKey;
 
-use crate::{hir::Ty as HirTy, hir::TyKind, resolver::DefId};
-
 #[derive(Debug, Clone, PartialEq)]
-pub enum Type {
+pub enum Ty {
     Int,
     UInt,
     Byte,
     Float,
     Bool,
     Char,
-    Array(Box<Type>),
-    Tuple(Vec<Type>),
-    Fn(Vec<Type>, Box<Type>),
-    Var(TypeId),
-    IntVar(TypeId),
-    Adt(DefId, Vec<Type>),
+    Array(Box<Ty>),
+    Tuple(Vec<Ty>),
+    Func(Vec<Ty>, Box<Ty>),
+    Var(TypeVar),
+    Adt(Ident, Vec<Ty>),
 }
 
-impl From<HirTy> for Type {
-    fn from(value: HirTy) -> Self {
+impl From<ast::Ty> for Ty {
+    fn from(value: ast::Ty) -> Self {
         match value.kind {
-            TyKind::Int => Self::Int,
-            TyKind::UInt => Self::UInt,
-            TyKind::Byte => Self::Byte,
-            TyKind::Float => Self::Float,
-            TyKind::Bool => Self::Bool,
-            TyKind::Char => Self::Char,
-            TyKind::Adt(id) => {
-                Self::Adt(name, args.into_iter().map(|ty| ty.inner.into()).collect())
+            ast::TyKind::Int => Self::Int,
+            ast::TyKind::UInt => Self::UInt,
+            ast::TyKind::Byte => Self::Byte,
+            ast::TyKind::Float => Self::Float,
+            ast::TyKind::Bool => Self::Bool,
+            ast::TyKind::Char => Self::Char,
+            ast::TyKind::Adt(ident, args) => {
+                Self::Adt(ident, args.into_iter().map(|ty| ty.inner.into()).collect())
             }
-            TyKind::Array(ty) => Self::Array(Box::new(ty.inner.into())),
-            TyKind::Tuple(tys) => Self::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect()),
-            TyKind::Fn(param_tys, return_ty) => Self::Fn(
+            ast::TyKind::Array(ty) => Self::Array(Box::new(ty.inner.into())),
+            ast::TyKind::Tuple(tys) => {
+                Self::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect())
+            }
+            ast::TyKind::Fn(param_tys, return_ty) => Self::Func(
                 param_tys.into_iter().map(|ty| ty.inner.into()).collect(),
                 Box::new(return_ty.inner.into()),
             ),
@@ -42,8 +42,8 @@ impl From<HirTy> for Type {
     }
 }
 
-impl Type {
-    pub const fn id(&self) -> Option<TypeId> {
+impl Ty {
+    pub const fn id(&self) -> Option<TypeVar> {
         match self {
             Self::Var(id) | Self::IntVar(id) => Some(*id),
             _ => None,
@@ -63,7 +63,7 @@ impl Type {
     }
 }
 
-impl Display for Type {
+impl Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             Self::Var(_) => "{var}".fmt(f),
@@ -83,7 +83,7 @@ impl Display for Type {
             Self::Char => "Char".fmt(f),
             Self::Array(ty) => write!(f, "[{ty}]"),
             Self::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
-            Self::Fn(param_tys, result_ty) => {
+            Self::Func(param_tys, result_ty) => {
                 write!(f, "fn({}): {result_ty}", itertools::join(param_tys, ", "))
             }
         }
@@ -91,10 +91,10 @@ impl Display for Type {
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypeId(u32);
+pub struct TypeVar(u32);
 
-impl UnifyKey for TypeId {
-    type Value = Type;
+impl UnifyKey for TypeVar {
+    type Value = Ty;
 
     fn index(&self) -> u32 {
         self.0

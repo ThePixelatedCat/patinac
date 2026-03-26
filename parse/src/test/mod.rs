@@ -116,11 +116,11 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                             span: Span::from(96..106)
                         })
                     },
-                    value: ExprKind::BinaryOp {
+                    value: ExprKind::BinOp {
                         op: Bop::Add,
                         lhs: ExprKind::Bool(true).span(109..113).into(),
-                        rhs: ExprKind::FnCall {
-                            fun: ExprKind::Ident(parser.get_ident("sin").unwrap())
+                        rhs: ExprKind::App {
+                            func: ExprKind::Ident(parser.get_ident("sin").unwrap())
                                 .span(116..119)
                                 .into(),
                             args: vec![
@@ -137,7 +137,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                 ExprKind::Assign {
                     ident: Spnd(parser.get_ident("x").unwrap(), (136..137).into()),
                     value: ExprKind::If {
-                        cond: ExprKind::BinaryOp {
+                        cond: ExprKind::BinOp {
                             op: Bop::Lt,
                             lhs: ExprKind::Ident(parser.get_ident("bar").unwrap())
                                 .span(144..147)
@@ -155,7 +155,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                     },
                                     ty: None
                                 },
-                                value: ExprKind::BinaryOp {
+                                value: ExprKind::BinOp {
                                     op: Bop::Add,
                                     lhs: ExprKind::FieldAccess {
                                         base: ExprKind::Ident(parser.get_ident("bar").unwrap())
@@ -168,7 +168,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                     }
                                     .span(181..190)
                                     .into(),
-                                    rhs: ExprKind::BinaryOp {
+                                    rhs: ExprKind::BinOp {
                                         op: Bop::Mul,
                                         lhs: ExprKind::Int(2).span(193..194).into(),
                                         rhs: ExprKind::Int(4).span(197..198).into()
@@ -180,7 +180,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                 .into()
                             }
                             .span(171..198),
-                            ExprKind::BinaryOp {
+                            ExprKind::BinOp {
                                 op: Bop::Add,
                                 lhs: ExprKind::Ident(parser.get_ident("x").unwrap())
                                     .span(216..217)
@@ -193,7 +193,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                         .into(),
                         el: Some(
                             ExprKind::If {
-                                cond: ExprKind::BinaryOp {
+                                cond: ExprKind::BinOp {
                                     op: Bop::Leq,
                                     lhs: ExprKind::Ident(parser.get_ident("bar").unwrap())
                                         .span(246..249)
@@ -202,8 +202,8 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                 }
                                 .span(246..254)
                                 .into(),
-                                th: ExprKind::FnCall {
-                                    fun: ExprKind::Ident(parser.get_ident("fizz").unwrap())
+                                th: ExprKind::App {
+                                    func: ExprKind::Ident(parser.get_ident("fizz").unwrap())
                                         .span(272..276)
                                         .into(),
                                     args: vec![

@@ -71,7 +71,7 @@ impl TypeChecker {
             .get_binding(name)
             .expect("was added to env in initial iteration");
 
-        let val_ty = self.clone().type_of(value)?;
+        let val_ty = self.clone().infer(value)?;
 
         self.unify(binding_ty, &val_ty).span_err(value.span)
     }
@@ -107,7 +107,7 @@ impl TypeChecker {
             },
         );
 
-        let body_ty = snapshot.type_of(body)?;
+        let body_ty = snapshot.infer(body)?;
 
         self.unify(return_ty, &body_ty).span_err(body.span)
     }

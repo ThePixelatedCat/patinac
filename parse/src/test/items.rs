@@ -238,7 +238,7 @@ fn function_items() {
                 }
             ],
             return_ty: None,
-            body: ExprKind::BinaryOp {
+            body: ExprKind::BinOp {
                 op: Bop::Add,
                 lhs: ExprKind::Ident(parser.get_ident("a").unwrap())
                     .span(26..27)

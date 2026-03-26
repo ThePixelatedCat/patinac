@@ -4,20 +4,26 @@ mod infer;
 #[cfg(test)]
 mod test;
 pub mod types;
-mod unify;
+//mod unify;
 
 use std::{cell::RefCell, rc::Rc};
 
 use ena::unify::{InPlaceUnificationTable, UnifyKey};
 
-use crate::parser::ast::TypeS as AstTypeS;
-
 use error::{TypeError, TypeErrorS};
-use types::{Type, TypeId};
+use types::{Ty, TypeVar};
+
+#[derive(Clone)]
+enum Constraint {
+    TypeEqual(Ty, Ty),
+    EitherTypeEqual(Ty, (Ty, Ty)),
+    Int(Ty),
+}
 
 #[derive(Clone, Default)]
 pub struct TypeChecker {
-    table: Rc<RefCell<InPlaceUnificationTable<TypeId>>>,
+    table: InPlaceUnificationTable<TypeVar>,
+    constraints: Vec<Constraint>,
 }
 
 impl TypeChecker {
@@ -25,64 +31,31 @@ impl TypeChecker {
         Self::default()
     }
 
-    fn get_binding(&self, ident: &str) -> Result<&BindingInfo, TypeError> {
-        self.env
-            .get(ident)
-            .ok_or_else(|| TypeError::UnboundIdent(ident.to_owned()))
-    }
-
     #[allow(clippy::cast_possible_truncation)]
-    fn fresh_int_var(&self) -> Type {
-        let id = self.table.borrow_mut().len() as u32;
-        let var = Type::IntVar(TypeId::from_index(id));
-        self.table.borrow_mut().new_key(var.clone());
+    fn fresh_var(&mut self) -> Ty {
+        let id = self.table.len() as u32;
+        let var = Ty::Var(TypeVar::from_index(id));
+        self.table.new_key(var.clone());
         var
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    fn fresh_var(&self) -> Type {
-        let id = self.table.borrow_mut().len() as u32;
-        let var = Type::Var(TypeId::from_index(id));
-        self.table.borrow_mut().new_key(var.clone());
-        var
+    fn constrain_eq(&mut self, a: Ty, b: Ty) {
+        self.constraints.push(Constraint::TypeEqual(a, b));
     }
 
-    fn normalise_id(&self, ty: &Type) -> Option<Type> {
-        ty.id()
-            .and_then(|id| match self.table.borrow_mut().probe_value(id) {
-                Type::Var(_) | Type::IntVar(_) => None,
-                bound_ty => Some(bound_ty),
-            })
+    fn constrain_either_eq(&mut self, a: Ty, tys: (Ty, Ty)) {
+        self.constraints.push(Constraint::EitherTypeEqual(a, tys));
     }
 
-    fn normalise(&self, ty: Type) -> Type {
-        match ty {
-            Type::Int | Type::UInt | Type::Byte | Type::Float | Type::Bool | Type::Char => ty,
-            Type::Array(mut ty) => {
-                *ty = self.normalise(*ty);
-                Type::Array(ty)
-            }
-            Type::Tuple(tys) => Type::Tuple(tys.into_iter().map(|ty| self.normalise(ty)).collect()),
-            Type::Fn(param_tys, mut return_ty) => {
-                *return_ty = self.normalise(*return_ty);
-                Type::Fn(
-                    param_tys.into_iter().map(|ty| self.normalise(ty)).collect(),
-                    return_ty,
-                )
-            }
-            Type::Var(id) | Type::IntVar(id) => self.table.borrow_mut().probe_value(id),
-            Type::Adt(name, args) => Type::Adt(
-                name,
-                args.into_iter().map(|ty| self.normalise(ty)).collect(),
-            ),
-        }
+    fn constrain_int(&mut self, a: Ty) {
+        self.constraints.push(Constraint::Int(a));
     }
 
     #[allow(
         clippy::ref_option,
         reason = "niche use-cases, avoids using as_ref at callsite"
     )]
-    fn convert(&self, ast_ty: &Option<AstTypeS>) -> Type {
+    fn convert(&self, ast_ty: &Option<AstTypeS>) -> Ty {
         ast_ty
             .as_ref()
             .map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())

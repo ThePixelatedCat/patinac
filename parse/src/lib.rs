@@ -10,7 +10,7 @@ use std::{iter::Peekable, ops::Range, vec::IntoIter};
 
 use string_interner::DefaultStringInterner;
 
-use ast::{Ident, Item};
+use ast::{Ast, Ident, Item};
 use lex::{Lexer, Tok, TokKind};
 use span::Spannable;
 
@@ -36,7 +36,7 @@ impl<'input> Parser<'input, IntoIter<Tok>> {
 }
 
 impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
-    pub fn parse(&mut self) -> ParseResult<Vec<Item>> {
+    pub fn parse(&mut self) -> ParseResult<Ast<()>> {
         let mut items = Vec::new();
         while !self.at(TokKind::Eof) {
             items.push(self.item()?);

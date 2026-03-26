@@ -1,28 +1,31 @@
-use span::{Span, Spnd};
+use span::Span;
 
-use super::{Binding, Expr, Ident, Ty};
+use crate::{Expr, Ident, Pat, Ty};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Item {
+pub enum ExecItem<T> {
     Const {
         ident: Ident,
         ty: Option<Ty>,
-        value: Expr,
+        value: Expr<T>,
     },
     Func {
         ident: Ident,
-        params: Vec<Binding>,
-        return_ty: Option<Ty>,
-        body: Expr,
+        params: Vec<Param>,
+        return_ty: Ty,
+        body: Expr<T>,
     },
-    Record {
-        def: AdtDef,
-        fields: Vec<Field>,
-    },
-    Enum {
-        def: AdtDef,
-        variants: Vec<Variant>,
-    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Param {
+    pub pat: Pat,
+    pub ty: Ty,
+}
+
+pub enum AdtItem {
+    Record { def: AdtDef, fields: Vec<Field> },
+    Enum { def: AdtDef, variants: Vec<Variant> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,8 +44,5 @@ pub struct Variant {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtDef {
     pub ident: Ident,
-    pub generics: Vec<GenericParam>,
+    pub generics: Vec<Ident>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenericParam(pub Spnd<Ident>);
