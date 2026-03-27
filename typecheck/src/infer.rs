@@ -1,8 +1,6 @@
-use crate::Constraint;
-
 use super::{Ty, TypeChecker, TypeError, TypeErrorS};
-use ast::{Binding, Bop, Expr, ExprKind, Ident, Unop};
-use span::{Span, SpanErr, Spannable, Spnd};
+use ast::{Binding, Bop, Expr, ExprKind, Ident, Pat, Unop};
+use span::{Span, Spannable};
 
 type Env = im::HashMap<Ident, BindingInfo>;
 
@@ -12,28 +10,24 @@ struct BindingInfo {
     mutable: bool,
 }
 
+impl BindingInfo {
+    fn new(ty: Ty, mutable: bool) -> Self {
+        Self { ty, mutable }
+    }
+}
+
 impl TypeChecker {
-    pub fn infer(&mut self, env: Env, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
+    pub fn infer(&mut self, env: &mut Env, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
         let span = expr.span;
         match expr.kind {
             ExprKind::Ident(ident) => self.infer_ident(env, span, ident),
-            ExprKind::Int(i) => {
-                let ty = if (i as i32) > i32::MAX {
-                    Ty::UInt
-                } else {
-                    let int_var = self.fresh_var();
-                    self.constrain_int(int_var.clone());
-                    int_var
-                };
-
-                Ok(ExprKind::Int(i).span_ty(span, ty))
-            }
+            ExprKind::Int(i) => Ok(ExprKind::Int(i).span_ty(span, self.fresh_int_var())),
             ExprKind::Float(f) => Ok(ExprKind::Float(f).span_ty(span, Ty::Float)),
             ExprKind::String(s) => Ok(ExprKind::String(s).span_ty(span, Ty::string())),
             ExprKind::Char(c) => Ok(ExprKind::Char(c).span_ty(span, Ty::Char)),
             ExprKind::Bool(b) => Ok(ExprKind::Bool(b).span_ty(span, Ty::Bool)),
-            ExprKind::Array(vals) => self.infer_array(vals),
-            ExprKind::Tuple(vals) => self.infer_tuple(env, span, vals),
+            ExprKind::Array(exprs) => self.infer_array(env, span, exprs),
+            ExprKind::Tuple(exprs) => self.infer_tuple(env, span, exprs),
             ExprKind::App { func, args } => self.infer_app(env, span, *func, args),
             ExprKind::BinOp { op, lhs, rhs } => self.infer_binop(env, span, op, *lhs, *rhs),
             ExprKind::UnaryOp { op, expr } => self.infer_unop(env, span, op, *expr),
@@ -47,67 +41,82 @@ impl TypeChecker {
             } => todo!(),
             ExprKind::While { cond, body } => todo!(),
             ExprKind::Match { scrutinee, arms } => todo!(),
-            ExprKind::Let { binding, value } => self.infer_let(binding, value),
-            ExprKind::Assign { ident, value } => self.infer_assign(ident.as_deref(), value),
+            ExprKind::Let { binding, val } => self.infer_let(env, span, binding, *val),
+            ExprKind::Assign { ident, val } => self.infer_assign(env, span, ident, *val),
             ExprKind::Lambda {
                 params,
-                return_type,
+                return_ty,
                 body,
-            } => self.infer_fun(params, return_type.as_ref(), body),
-            ExprKind::Block { exprs, trailing } => self.infer_block(exprs, *trailing),
+            } => self.infer_lambda(env, span, params, return_ty, *body),
+            ExprKind::Block(exprs) => self.infer_block(env, span, exprs),
         }
+    }
+
+    fn infer_multi(
+        &mut self,
+        env: &mut Env,
+        exprs: Vec<Expr<()>>,
+    ) -> Result<Vec<Expr<Ty>>, TypeErrorS> {
+        exprs.into_iter().map(|e| self.infer(env, e)).collect()
     }
 
     fn types_of(
         &mut self,
-        env: Env,
+        env: &mut Env,
         exprs: Vec<Expr<()>>,
     ) -> Result<(Vec<Expr<Ty>>, Vec<Ty>), TypeErrorS> {
-        Ok(exprs
+        Ok(self
+            .infer_multi(env, exprs)?
             .into_iter()
-            .map(|e| self.infer(env.clone(), e))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
+            .map(|e| {
+                let ty = e.ty.clone();
+                (e, ty)
+            })
             .unzip())
     }
 
-    fn infer_ident(&self, env: Env, span: Span, ident: Ident) -> Result<Expr<Ty>, TypeErrorS> {
+    fn infer_ident(&self, env: &Env, span: Span, ident: Ident) -> Result<Expr<Ty>, TypeErrorS> {
         let info = env.get(&ident).ok_or(TypeError::UnboundIdent.span(span))?;
         Ok(ExprKind::Ident(ident).span_ty(span, info.ty.clone()))
     }
 
-    fn infer_array(&mut self, exprs: Vec<Expr<()>>) -> Result<Expr<Ty>, TypeErrorS> {
+    fn infer_array(
+        &mut self,
+        env: &mut Env,
+        span: Span,
+        exprs: Vec<Expr<()>>,
+    ) -> Result<Expr<Ty>, TypeErrorS> {
+        let exprs = self.infer_multi(env, exprs)?;
+
         let inner_ty = self.fresh_var();
 
-        for expr in exprs {
-            let this_ty = self.infer(expr)?;
-
-            self.unify(&inner_ty, &this_ty).span_err(expr.span)?;
+        for val in &exprs {
+            self.constrain_eq(val.ty.clone(), inner_ty.clone());
         }
 
-        Ok(Ty::Array(Box::new(inner_ty)))
+        Ok(ExprKind::Array(exprs).span_ty(span, Ty::Array(Box::new(inner_ty))))
     }
 
     fn infer_tuple(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
-        vals: Vec<Expr<()>>,
+        exprs: Vec<Expr<()>>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let (vals, tys) = self.types_of(env, vals)?;
-        Ok(ExprKind::Tuple(vals).span_ty(span, Ty::Tuple(tys)))
+        let (exprs, tys) = self.types_of(env, exprs)?;
+        Ok(ExprKind::Tuple(exprs).span_ty(span, Ty::Tuple(tys)))
     }
 
     fn infer_app(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         func: Expr<()>,
         args: Vec<Expr<()>>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let (args, arg_tys) = self.types_of(env.clone(), args)?;
+        let (args, arg_tys) = self.types_of(env, args)?;
 
-        let func = self.infer(env.clone(), func)?;
+        let func = self.infer(env, func)?;
 
         let return_ty = self.fresh_var();
         self.constrain_eq(
@@ -124,41 +133,37 @@ impl TypeChecker {
 
     fn infer_binop(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         op: Bop,
         lhs: Expr<()>,
         rhs: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let lhs = self.infer(env.clone(), lhs)?;
-        let rhs = self.infer(env.clone(), rhs)?;
+        let lhs = self.infer(env, lhs)?;
+        let rhs = self.infer(env, rhs)?;
 
         let ty = match op {
             Bop::Add | Bop::Sub | Bop::Mul | Bop::Div => {
-                self.unify_either(&lhs_ty, &self.fresh_int_var(), &Ty::Float)
-                    .span_err(lhs.span)?;
+                let int_var = self.fresh_int_var();
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var));
+                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone());
 
-                self.unify(&lhs_ty, &rhs_ty).span_err(rhs.span)?;
-
-                Ok(lhs_ty)
+                lhs.ty.clone()
             }
             Bop::Exp => {
-                self.unify_either(&lhs_ty, &self.fresh_int_var(), &Ty::Float)
-                    .span_err(lhs.span)?;
+                let int_var = self.fresh_int_var();
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var.clone()));
+                self.constrain_eq(rhs.ty.clone(), int_var);
 
-                self.unify(&self.fresh_int_var(), &rhs_ty)
-                    .span_err(rhs.span)?;
-
-                Ok(lhs_ty)
+                lhs.ty.clone()
             }
             Bop::BOr | Bop::BAnd => {
                 let int_var = self.fresh_int_var();
 
-                self.unify(&int_var, &lhs_ty).span_err(lhs.span)?;
+                self.constrain_eq(lhs.ty.clone(), int_var.clone());
+                self.constrain_eq(rhs.ty.clone(), int_var.clone());
 
-                self.unify(&int_var, &rhs_ty).span_err(rhs.span)?;
-
-                Ok(int_var)
+                int_var
             }
             Bop::And | Bop::Or | Bop::Xor => {
                 self.constrain_eq(lhs.ty.clone(), Ty::Bool);
@@ -172,12 +177,11 @@ impl TypeChecker {
                 Ty::Bool
             }
             Bop::Gt | Bop::Lt | Bop::Geq | Bop::Leq => {
-                self.unify_either(&lhs_ty, &self.fresh_int_var(), &Ty::Float)
-                    .span_err(lhs.span)?;
+                let int_var = self.fresh_int_var();
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var));
+                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone());
 
-                self.unify(&lhs_ty, &rhs_ty).span_err(rhs.span)?;
-
-                Ok(Ty::Bool)
+                Ty::Bool
             }
         };
 
@@ -191,7 +195,7 @@ impl TypeChecker {
 
     fn infer_unop(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         op: Unop,
         expr: Expr<()>,
@@ -220,17 +224,17 @@ impl TypeChecker {
 
     fn infer_indexing(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         arr: Expr<()>,
         index: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let arr = self.infer(env.clone(), arr)?;
+        let arr = self.infer(env, arr)?;
 
         let inner_ty = self.fresh_var();
         self.constrain_eq(arr.ty.clone(), Ty::Array(Box::new(inner_ty.clone())));
 
-        let idx = self.infer(env.clone(), index)?;
+        let idx = self.infer(env, index)?;
         self.constrain_eq(idx.ty.clone(), Ty::UInt);
 
         Ok(ExprKind::Index {
@@ -242,20 +246,18 @@ impl TypeChecker {
 
     fn infer_if(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         cond: Expr<()>,
         th: Expr<()>,
         el: Option<Expr<()>>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let cond = self.infer(env.clone(), cond)?;
+        let cond = self.infer(env, cond)?;
         self.constrain_eq(cond.ty.clone(), Ty::Bool);
 
-        let th = self.infer(env.clone(), th)?;
+        let th = self.infer(env, th)?;
 
-        let el = el
-            .map(|el| self.infer(env.clone(), el).map(Box::new))
-            .transpose()?;
+        let el = el.map(|el| self.infer(env, el).map(Box::new)).transpose()?;
         self.constrain_eq(
             th.ty.clone(),
             el.as_ref().map_or_else(Ty::unit, |el| el.ty.clone()),
@@ -272,101 +274,115 @@ impl TypeChecker {
 
     fn infer_let(
         &mut self,
-        env: Env,
+        env: &mut Env,
         span: Span,
         binding: Binding,
         val: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let Pattern::Var {
-            mutable,
-            ident,
-            annotated_ty,
-        } = &binding.inner;
+        let val = self.infer(env, val)?;
 
-        let val_ty = self.infer(val)?;
-
-        if let Some(ty) = annotated_ty {
-            let annot_ty = ty.inner.clone().into();
-            self.unify(&annot_ty, &val_ty).span_err(val.span)?;
+        if let Some(ty) = &binding.ty {
+            self.constrain_eq(val.ty.clone(), ty.clone().into());
         }
 
-        self.env.insert(
-            ident.to_owned(),
-            BindingInfo {
-                ty: val_ty,
-                mutable: *mutable,
-            },
-        );
+        match &binding.pat {
+            Pat::Tuple(_) => {
+                todo!("tuple patterns are unimplemented")
+            }
+            Pat::Var { mutable, ident } => {
+                env.insert(*ident, BindingInfo::new(val.ty.clone(), *mutable));
+            }
+            Pat::Discard => {}
+        }
 
-        Ok(Ty::unit())
+        let ty = val.ty.clone();
+        Ok(ExprKind::Let {
+            binding,
+            val: Box::new(val),
+        }
+        .span_ty(span, ty))
     }
 
-    fn infer_assign(&mut self, ident: Spnd<&str>, val: &Expr) -> Result<Expr<Ty>, TypeErrorS> {
-        let val_ty = self.infer(val)?;
+    fn infer_assign(
+        &mut self,
+        env: &mut Env,
+        span: Span,
+        ident: Ident,
+        val: Expr<()>,
+    ) -> Result<Expr<Ty>, TypeErrorS> {
+        let val = self.infer(env, val)?;
 
-        let info = self.get_binding(ident.inner).span_err(ident.span)?;
+        let info = env.get(&ident).ok_or(TypeError::UnboundIdent.span(span))?;
 
         if !info.mutable {
-            return Err(TypeError::Mutation(ident.inner.to_owned()).span(ident.span));
+            return Err(TypeError::Mutation.span(span));
         }
 
-        self.unify(&info.ty, &val_ty).span_err(val.span)?;
+        self.constrain_eq(val.ty.clone(), info.ty.clone());
 
-        Ok(Ty::unit())
+        Ok(ExprKind::Assign {
+            ident,
+            val: Box::new(val),
+        }
+        .span_ty(span, Ty::unit()))
     }
 
-    pub(super) fn infer_fun(
-        &self,
-        params: &[PatternS],
-        return_ty: Option<&AstTypeS>,
-        body: &Expr,
+    pub(super) fn infer_lambda(
+        &mut self,
+        env: &Env,
+        span: Span,
+        params: Vec<Binding>,
+        return_ty: Option<ast::Ty>,
+        body: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
-        let mut snapshot = self.clone();
+        let mut env = env.clone();
 
         let mut param_tys = Vec::new();
-        for param in params {
-            let Pattern::Var {
-                mutable,
-                ident,
-                annotated_ty,
-            } = &param.inner;
-
-            let param_ty = annotated_ty
+        for param in &params {
+            let param_ty = param
+                .ty
                 .as_ref()
-                .map_or_else(|| snapshot.fresh_var(), |ty| ty.inner.clone().into());
+                .map_or_else(|| self.fresh_var(), |ty| ty.clone().into());
 
-            param_tys.push(param_ty.clone());
+            match param.pat {
+                Pat::Tuple(_) => {
+                    todo!("tuple patterns are unimplemented")
+                }
+                Pat::Var { mutable, ident } => {
+                    env.insert(ident, BindingInfo::new(param_ty.clone(), mutable));
+                }
+                Pat::Discard => {}
+            }
 
-            let binding = BindingInfo {
-                ty: param_ty,
-                mutable: *mutable,
-            };
-
-            snapshot.env.insert(ident.to_owned(), binding);
+            param_tys.push(param_ty);
         }
 
-        let body_ty = snapshot.infer(body)?;
+        let body = self.infer(&mut env, body)?;
 
-        if let Some(ty) = return_ty {
-            let return_ty = ty.inner.clone().into();
-            snapshot.unify(&return_ty, &body_ty).span_err(body.span)?;
+        if let Some(ty) = &return_ty {
+            self.constrain_eq(body.ty.clone(), ty.clone().into());
         }
 
-        Ok(Ty::Func(param_tys, Box::new(body_ty)))
+        let body_ty = body.ty.clone();
+
+        Ok(ExprKind::Lambda {
+            params,
+            return_ty,
+            body: Box::new(body),
+        }
+        .span_ty(span, Ty::Func(param_tys, Box::new(body_ty))))
     }
 
-    fn infer_block(&self, exprs: &[Expr], trailing: bool) -> Result<Expr<Ty>, TypeErrorS> {
-        let mut snapshot = self.clone();
+    fn infer_block(
+        &mut self,
+        env: &Env,
+        span: Span,
+        exprs: Vec<Expr<()>>,
+    ) -> Result<Expr<Ty>, TypeErrorS> {
+        let exprs = self.infer_multi(&mut env.clone(), exprs)?;
 
-        let mut last = Option::None;
-        for expr in exprs {
-            last = Some(snapshot.infer(expr)?);
-        }
+        let ty = exprs.last().map_or_else(Ty::unit, |e| e.ty.clone());
 
-        Ok(if trailing && let Some(ty) = last {
-            ty
-        } else {
-            Ty::unit()
-        })
+        Ok(ExprKind::Block(exprs).span_ty(span, ty))
     }
 }

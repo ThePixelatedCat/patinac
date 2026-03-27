@@ -15,6 +15,7 @@ pub enum Ty {
     Tuple(Vec<Ty>),
     Func(Vec<Ty>, Box<Ty>),
     Var(TypeVar),
+    IntVar(TypeVar),
     Adt(Ident, Vec<Ty>),
 }
 
@@ -28,15 +29,13 @@ impl From<ast::Ty> for Ty {
             ast::TyKind::Bool => Self::Bool,
             ast::TyKind::Char => Self::Char,
             ast::TyKind::Adt(ident, args) => {
-                Self::Adt(ident, args.into_iter().map(|ty| ty.inner.into()).collect())
+                Self::Adt(ident, args.into_iter().map(ast::Ty::into).collect())
             }
-            ast::TyKind::Array(ty) => Self::Array(Box::new(ty.inner.into())),
-            ast::TyKind::Tuple(tys) => {
-                Self::Tuple(tys.into_iter().map(|ty| ty.inner.into()).collect())
-            }
+            ast::TyKind::Array(ty) => Self::Array(Box::new(Self::from(*ty))),
+            ast::TyKind::Tuple(tys) => Self::Tuple(tys.into_iter().map(ast::Ty::into).collect()),
             ast::TyKind::Fn(param_tys, return_ty) => Self::Func(
-                param_tys.into_iter().map(|ty| ty.inner.into()).collect(),
-                Box::new(return_ty.inner.into()),
+                param_tys.into_iter().map(ast::Ty::into).collect(),
+                Box::new(Self::from(*return_ty)),
             ),
         }
     }

@@ -420,7 +420,7 @@ fn var_expressions() {
                 },
                 ty: None
             },
-            value: ExprKind::BinOp {
+            val: ExprKind::BinOp {
                 op: Bop::Add,
                 lhs: ExprKind::Int(7).span(8..9).into(),
                 rhs: ExprKind::App {
@@ -452,7 +452,7 @@ fn var_expressions() {
                     span: Span::from(11..15)
                 })
             },
-            value: ExprKind::Int(7).span(18..19).into()
+            val: ExprKind::Int(7).span(18..19).into()
         }
         .span(0..19))
     );
@@ -462,7 +462,7 @@ fn var_expressions() {
         parser.expr(),
         Ok(ExprKind::Assign {
             ident: Spnd(parser.get_ident("y").unwrap(), (0..1).into()),
-            value: ExprKind::BinOp {
+            val: ExprKind::BinOp {
                 op: Bop::Add,
                 lhs: ExprKind::Int(3).span(4..5).into(),
                 rhs: ExprKind::BinOp {
@@ -505,7 +505,7 @@ fn block_expressions() {
                     },
                     ty: None
                 },
-                value: ExprKind::Int(5).span(17..18).into()
+                val: ExprKind::Int(5).span(17..18).into()
             }
             .span(5..18),
             ExprKind::BinOp {
@@ -522,7 +522,7 @@ fn block_expressions() {
             .span(23..32),
             ExprKind::Assign {
                 ident: Spnd(parser.get_ident("y").unwrap(), (37..38).into()),
-                value: ExprKind::Int(1).span(41..42).into()
+                val: ExprKind::Int(1).span(41..42).into()
             }
             .span(37..42),
             ExprKind::If {
@@ -544,7 +544,7 @@ fn block_expressions() {
                             },
                             ty: None
                         },
-                        value: ExprKind::Int(5).span(77..78).into()
+                        val: ExprKind::Int(5).span(77..78).into()
                     }
                     .span(69..78),
                     ExprKind::Ident(parser.get_ident("a").unwrap()).span(87..88)

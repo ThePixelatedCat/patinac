@@ -60,11 +60,11 @@ pub enum ExprKind<T> {
     },
     Let {
         binding: Binding,
-        value: Box<Expr<T>>,
+        val: Box<Expr<T>>,
     },
     Assign {
-        ident: Spnd<Ident>,
-        value: Box<Expr<T>>,
+        ident: Ident,
+        val: Box<Expr<T>>,
     },
     Lambda {
         params: Vec<Binding>,

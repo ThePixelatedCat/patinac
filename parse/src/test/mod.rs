@@ -116,7 +116,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                             span: Span::from(96..106)
                         })
                     },
-                    value: ExprKind::BinOp {
+                    val: ExprKind::BinOp {
                         op: Bop::Add,
                         lhs: ExprKind::Bool(true).span(109..113).into(),
                         rhs: ExprKind::App {
@@ -136,7 +136,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                 .span(85..122),
                 ExprKind::Assign {
                     ident: Spnd(parser.get_ident("x").unwrap(), (136..137).into()),
-                    value: ExprKind::If {
+                    val: ExprKind::If {
                         cond: ExprKind::BinOp {
                             op: Bop::Lt,
                             lhs: ExprKind::Ident(parser.get_ident("bar").unwrap())
@@ -155,7 +155,7 @@ record Foo<T, U>(x: String, bar: Bar<Baz<T>, [U]>)
                                     },
                                     ty: None
                                 },
-                                value: ExprKind::BinOp {
+                                val: ExprKind::BinOp {
                                     op: Bop::Add,
                                     lhs: ExprKind::FieldAccess {
                                         base: ExprKind::Ident(parser.get_ident("bar").unwrap())

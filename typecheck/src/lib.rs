@@ -16,8 +16,7 @@ use types::{Ty, TypeVar};
 #[derive(Clone)]
 enum Constraint {
     TypeEqual(Ty, Ty),
-    EitherTypeEqual(Ty, (Ty, Ty)),
-    Int(Ty),
+    EitherTypeEqual(Ty, (Ty, Ty))
 }
 
 #[derive(Clone, Default)]
@@ -39,16 +38,20 @@ impl TypeChecker {
         var
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    fn fresh_int_var(&mut self) -> Ty {
+        let id = self.table.len() as u32;
+        let var = Ty::IntVar(TypeVar::from_index(id));
+        self.table.new_key(var.clone());
+        var
+    }
+
     fn constrain_eq(&mut self, a: Ty, b: Ty) {
         self.constraints.push(Constraint::TypeEqual(a, b));
     }
 
     fn constrain_either_eq(&mut self, a: Ty, tys: (Ty, Ty)) {
         self.constraints.push(Constraint::EitherTypeEqual(a, tys));
-    }
-
-    fn constrain_int(&mut self, a: Ty) {
-        self.constraints.push(Constraint::Int(a));
     }
 
     #[allow(

@@ -122,7 +122,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
             Ok(ExprKind::Assign {
                 ident,
-                value: Box::new(val),
+                val: Box::new(val),
             }
             .span(span))
         } else {
@@ -332,7 +332,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         Ok(ExprKind::Let {
             binding,
-            value: Box::new(value),
+            val: Box::new(value),
         }
         .span(span))
     }
