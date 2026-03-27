@@ -3,6 +3,7 @@ resolver = "3"
 members = ["compile", "span", "lex", "ast", "parse", "typecheck"]
 
 [workspace.lints.clippy]
-enum_glob_use = "deny"
-pedantic = "warn"
-nursery = "warn"
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }

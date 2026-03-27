@@ -1,66 +1,100 @@
-mod check;
 mod error;
 mod infer;
+mod substitute;
 #[cfg(test)]
 mod test;
 pub mod types;
-//mod unify;
+mod unify;
 
-use std::{cell::RefCell, rc::Rc};
-
-use ena::unify::{InPlaceUnificationTable, UnifyKey};
+use ast::Expr;
+use ena::unify::{InPlaceUnificationTable, UnificationTable};
 
 use error::{TypeError, TypeErrorS};
-use types::{Ty, TypeVar};
+use span::Span;
+use string_interner::DefaultStringInterner;
+use types::{Ty, TyVar};
 
 #[derive(Clone)]
-enum Constraint {
+struct BindingInfo {
+    ty: Ty,
+    mutable: bool,
+}
+
+impl BindingInfo {
+    const fn new(ty: Ty, mutable: bool) -> Self {
+        Self { ty, mutable }
+    }
+}
+
+struct Constraint {
+    kind: ConstraintKind,
+    span: Span,
+}
+
+enum ConstraintKind {
     TypeEqual(Ty, Ty),
-    EitherTypeEqual(Ty, (Ty, Ty))
+    EitherTypeEqual(Ty, (Ty, Ty)),
 }
 
-#[derive(Clone, Default)]
-pub struct TypeChecker {
-    table: InPlaceUnificationTable<TypeVar>,
+pub struct TypeChecker<'a> {
+    table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
+    interner: &'a mut DefaultStringInterner,
 }
 
-impl TypeChecker {
-    pub fn new() -> Self {
-        Self::default()
+impl<'a> TypeChecker<'a> {
+    pub fn new(interner: &'a mut DefaultStringInterner) -> Self {
+        Self {
+            table: UnificationTable::default(),
+            constraints: Vec::default(),
+            interner,
+        }
+    }
+}
+
+impl TypeChecker<'_> {
+    pub fn type_infer(&mut self, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
+        // Constraint generation
+        let typed_expr = self.infer(&mut im::HashMap::default(), expr)?;
+
+        // Constraint solving
+        self.unify()?;
+
+        // Substitution
+        let substituted_ast = self.sub_ast(typed_expr)?;
+
+        Ok(substituted_ast)
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn fresh_var(&mut self) -> Ty {
-        let id = self.table.len() as u32;
-        let var = Ty::Var(TypeVar::from_index(id));
-        self.table.new_key(var.clone());
-        var
+        Ty::Var(self.table.new_key(None))
     }
 
-    #[allow(clippy::cast_possible_truncation)]
     fn fresh_int_var(&mut self) -> Ty {
-        let id = self.table.len() as u32;
-        let var = Ty::IntVar(TypeVar::from_index(id));
-        self.table.new_key(var.clone());
-        var
+        Ty::IntVar(self.table.new_key(None))
     }
 
-    fn constrain_eq(&mut self, a: Ty, b: Ty) {
-        self.constraints.push(Constraint::TypeEqual(a, b));
+    fn constrain_eq(&mut self, a: Ty, b: Ty, span: Span) {
+        self.constraints.push(Constraint {
+            kind: ConstraintKind::TypeEqual(a, b),
+            span,
+        });
     }
 
-    fn constrain_either_eq(&mut self, a: Ty, tys: (Ty, Ty)) {
-        self.constraints.push(Constraint::EitherTypeEqual(a, tys));
+    fn constrain_either_eq(&mut self, a: Ty, tys: (Ty, Ty), span: Span) {
+        self.constraints.push(Constraint {
+            kind: ConstraintKind::EitherTypeEqual(a, tys),
+            span,
+        });
     }
 
-    #[allow(
-        clippy::ref_option,
-        reason = "niche use-cases, avoids using as_ref at callsite"
-    )]
-    fn convert(&self, ast_ty: &Option<AstTypeS>) -> Ty {
-        ast_ty
-            .as_ref()
-            .map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())
-    }
+    // #[allow(
+    //     clippy::ref_option,
+    //     reason = "niche use-cases, avoids using as_ref at callsite"
+    // )]
+    // fn convert(&self, ast_ty: &Option<AstTypeS>) -> Ty {
+    //     ast_ty
+    //         .as_ref()
+    //         .map_or_else(|| self.fresh_var(), |ty| ty.inner.clone().into())
+    // }
 }

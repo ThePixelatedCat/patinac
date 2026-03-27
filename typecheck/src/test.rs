@@ -1,47 +1,25 @@
-use super::{Ty, TypeChecker, TypeError};
-use crate::{
-    helpers::{Span, Spannable, Spnd},
-    parser::{Parser, ast::Expr},
-    typecheck::error::TypeErrorS,
-};
+use crate::types::TyVar;
 
-#[test]
-fn unify() {
-    let checker = TypeChecker::default();
+use super::{Ty, TypeChecker, TypeError, TypeErrorS};
+use ast::Expr;
+use ena::unify::UnifyKey;
+use parse::{Parser, ast::Expr};
+use span::{Span, Spannable, Spnd};
+use string_interner::DefaultStringInterner;
 
-    let t = checker.fresh_var();
-    let u = checker.fresh_var();
-
-    let tuple_a = Ty::Tuple(vec![t.clone(), Ty::UInt]);
-    let tuple_b = Ty::Tuple(vec![Ty::Int, u.clone()]);
-
-    assert_eq!(checker.unify(&tuple_a, &tuple_b), Ok(()));
-
-    let option_t = Ty::Adt(String::from("Option"), vec![t]);
-    let option_u = Ty::Adt(String::from("Option"), vec![u]);
-
-    assert_eq!(
-        checker.unify(&option_t, &option_u),
-        Err(TypeError::MismatchedTypes {
-            expected: Ty::Int,
-            found: Ty::UInt
-        })
-    );
-}
-
-fn parse_expr(input: &str) -> Expr {
+fn parse_expr(input: &str) -> Expr<()> {
     Parser::new(input).expr().unwrap()
 }
 
 fn check_expr(input: &str) -> Result<Ty, TypeErrorS> {
-    let mut checker = TypeChecker::default();
-    let ty = checker.infer(&parse_expr(input))?;
-    Ok(checker.normalise(ty))
+    let mut interner = DefaultStringInterner::new();
+    let mut checker = TypeChecker::new(&mut interner);
+    checker.type_infer(parse_expr(input)).map(|expr| expr.ty)
 }
 
-fn check_full(input: &str) -> Result<(), TypeErrorS> {
-    TypeChecker::default().check(&Parser::new(input).file().unwrap())
-}
+// fn check_full(input: &str) -> Result<(), TypeErrorS> {
+//     TypeChecker::default().check(&Parser::new(input).file().unwrap())
+// }
 
 #[test]
 fn type_of_if_single_branch() {
@@ -55,11 +33,7 @@ fn type_of_if_single_branch() {
 fn type_of_if_single_branch_err() {
     assert_eq!(
         check_expr("if true then 5.0"),
-        Err(TypeError::MismatchedTypes {
-            expected: Ty::unit(),
-            found: Ty::Float
-        }
-        .span(13..16))
+        Err(TypeError::TypesNotEqual(Ty::unit(), Ty::Float).span(13..16))
     )
 }
 
@@ -72,11 +46,7 @@ fn type_of_if() {
 fn type_of_if_err() {
     assert_eq!(
         check_expr(r#"if true then "true" else false"#),
-        Err(TypeError::MismatchedTypes {
-            expected: Ty::string(),
-            found: Ty::Bool
-        }
-        .span(25..30))
+        Err(TypeError::TypesNotEqual(Ty::string(), Ty::Bool).span(25..30))
     )
 }
 
@@ -116,16 +86,10 @@ fn lambdas() {
 
 #[test]
 fn maths() {
-    assert!(matches!(
+    assert_eq!(
         check_expr("1 + 1.0"),
-        Err(Spnd {
-            inner: TypeError::MismatchedTypes {
-                expected: Ty::IntVar(_),
-                found: Ty::Float
-            },
-            span: Span { start: 4, end: 7 }
-        })
-    ));
+        Err(TypeError::TypesNotEqual(Ty::IntVar(TyVar::from_index(0)), Ty::Float).span(4..7))
+    );
     assert_eq!(check_expr("1.0 + 1.0"), Ok(Ty::Float))
 }
 
@@ -157,11 +121,8 @@ fn type_of_block() {
         a
     else 32
 ";
-    let expr = parse_expr(input);
-    let mut checker = TypeChecker::default();
-    let ty = checker.infer(&expr).unwrap();
 
-    assert_eq!(checker.normalise(ty), Ty::Int);
+    assert_eq!(check_expr(input), Ok(Ty::Int));
 }
 
 #[test]

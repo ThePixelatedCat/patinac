@@ -1,29 +1,19 @@
-use super::{Ty, TypeChecker, TypeError, TypeErrorS};
 use ast::{Binding, Bop, Expr, ExprKind, Ident, Pat, Unop};
 use span::{Span, Spannable};
 
+use super::{BindingInfo, Ty, TypeChecker, TypeError, TypeErrorS};
+
 type Env = im::HashMap<Ident, BindingInfo>;
 
-#[derive(Clone)]
-struct BindingInfo {
-    ty: Ty,
-    mutable: bool,
-}
-
-impl BindingInfo {
-    fn new(ty: Ty, mutable: bool) -> Self {
-        Self { ty, mutable }
-    }
-}
-
-impl TypeChecker {
-    pub fn infer(&mut self, env: &mut Env, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
+impl TypeChecker<'_> {
+    #[expect(unused)]
+    pub(super) fn infer(&mut self, env: &mut Env, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
         let span = expr.span;
         match expr.kind {
             ExprKind::Ident(ident) => self.infer_ident(env, span, ident),
             ExprKind::Int(i) => Ok(ExprKind::Int(i).span_ty(span, self.fresh_int_var())),
             ExprKind::Float(f) => Ok(ExprKind::Float(f).span_ty(span, Ty::Float)),
-            ExprKind::String(s) => Ok(ExprKind::String(s).span_ty(span, Ty::string())),
+            ExprKind::String(s) => Ok(ExprKind::String(s).span_ty(span, Ty::string(self.interner))),
             ExprKind::Char(c) => Ok(ExprKind::Char(c).span_ty(span, Ty::Char)),
             ExprKind::Bool(b) => Ok(ExprKind::Bool(b).span_ty(span, Ty::Bool)),
             ExprKind::Array(exprs) => self.infer_array(env, span, exprs),
@@ -76,7 +66,9 @@ impl TypeChecker {
     }
 
     fn infer_ident(&self, env: &Env, span: Span, ident: Ident) -> Result<Expr<Ty>, TypeErrorS> {
-        let info = env.get(&ident).ok_or(TypeError::UnboundIdent.span(span))?;
+        let info = env
+            .get(&ident)
+            .ok_or_else(|| TypeError::UnboundIdent.span(span))?;
         Ok(ExprKind::Ident(ident).span_ty(span, info.ty.clone()))
     }
 
@@ -90,8 +82,8 @@ impl TypeChecker {
 
         let inner_ty = self.fresh_var();
 
-        for val in &exprs {
-            self.constrain_eq(val.ty.clone(), inner_ty.clone());
+        for expr in &exprs {
+            self.constrain_eq(expr.ty.clone(), inner_ty.clone(), expr.span);
         }
 
         Ok(ExprKind::Array(exprs).span_ty(span, Ty::Array(Box::new(inner_ty))))
@@ -122,6 +114,7 @@ impl TypeChecker {
         self.constrain_eq(
             func.ty.clone(),
             Ty::Func(arg_tys, Box::new(return_ty.clone())),
+            func.span,
         );
 
         Ok(ExprKind::App {
@@ -145,41 +138,41 @@ impl TypeChecker {
         let ty = match op {
             Bop::Add | Bop::Sub | Bop::Mul | Bop::Div => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var));
-                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone());
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
+                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone(), rhs.span);
 
                 lhs.ty.clone()
             }
             Bop::Exp => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var.clone()));
-                self.constrain_eq(rhs.ty.clone(), int_var);
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var.clone()), lhs.span);
+                self.constrain_eq(rhs.ty.clone(), int_var, rhs.span);
 
                 lhs.ty.clone()
             }
             Bop::BOr | Bop::BAnd => {
                 let int_var = self.fresh_int_var();
 
-                self.constrain_eq(lhs.ty.clone(), int_var.clone());
-                self.constrain_eq(rhs.ty.clone(), int_var.clone());
+                self.constrain_eq(lhs.ty.clone(), int_var.clone(), lhs.span);
+                self.constrain_eq(rhs.ty.clone(), int_var.clone(), rhs.span);
 
                 int_var
             }
             Bop::And | Bop::Or | Bop::Xor => {
-                self.constrain_eq(lhs.ty.clone(), Ty::Bool);
-                self.constrain_eq(rhs.ty.clone(), Ty::Bool);
+                self.constrain_eq(lhs.ty.clone(), Ty::Bool, lhs.span);
+                self.constrain_eq(rhs.ty.clone(), Ty::Bool, rhs.span);
 
                 Ty::Bool
             }
             Bop::Eqq | Bop::Neq => {
-                self.constrain_eq(lhs.ty.clone(), rhs.ty.clone());
+                self.constrain_eq(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 Ty::Bool
             }
             Bop::Gt | Bop::Lt | Bop::Geq | Bop::Leq => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var));
-                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone());
+                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
+                self.constrain_eq(rhs.ty.clone(), lhs.ty.clone(), rhs.span);
 
                 Ty::Bool
             }
@@ -204,12 +197,12 @@ impl TypeChecker {
 
         let ty = match op {
             Unop::Not => {
-                self.constrain_eq(expr.ty.clone(), Ty::Bool);
+                self.constrain_eq(expr.ty.clone(), Ty::Bool, expr.span);
 
                 Ty::Bool
             }
             Unop::Neg => {
-                self.constrain_either_eq(expr.ty.clone(), (Ty::Int, Ty::Float)); //TODO any int
+                self.constrain_either_eq(expr.ty.clone(), (Ty::Int, Ty::Float), expr.span); //TODO any int
 
                 expr.ty.clone()
             }
@@ -232,10 +225,14 @@ impl TypeChecker {
         let arr = self.infer(env, arr)?;
 
         let inner_ty = self.fresh_var();
-        self.constrain_eq(arr.ty.clone(), Ty::Array(Box::new(inner_ty.clone())));
+        self.constrain_eq(
+            arr.ty.clone(),
+            Ty::Array(Box::new(inner_ty.clone())),
+            arr.span,
+        );
 
         let idx = self.infer(env, index)?;
-        self.constrain_eq(idx.ty.clone(), Ty::UInt);
+        self.constrain_eq(idx.ty.clone(), Ty::UInt, idx.span);
 
         Ok(ExprKind::Index {
             arr: Box::new(arr),
@@ -253,15 +250,19 @@ impl TypeChecker {
         el: Option<Expr<()>>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
         let cond = self.infer(env, cond)?;
-        self.constrain_eq(cond.ty.clone(), Ty::Bool);
+        self.constrain_eq(cond.ty.clone(), Ty::Bool, cond.span);
 
         let th = self.infer(env, th)?;
 
-        let el = el.map(|el| self.infer(env, el).map(Box::new)).transpose()?;
-        self.constrain_eq(
-            th.ty.clone(),
-            el.as_ref().map_or_else(Ty::unit, |el| el.ty.clone()),
-        );
+        let el = el.map(|el| self.infer(env, el)).transpose()?.map(Box::new);
+        match &el {
+            Some(el) => {
+                self.constrain_eq(el.ty.clone(), th.ty.clone(), el.span);
+            }
+            None => {
+                self.constrain_eq(th.ty.clone(), Ty::unit(), th.span);
+            }
+        }
 
         let th_ty = th.ty.clone();
         Ok(ExprKind::If {
@@ -282,7 +283,7 @@ impl TypeChecker {
         let val = self.infer(env, val)?;
 
         if let Some(ty) = &binding.ty {
-            self.constrain_eq(val.ty.clone(), ty.clone().into());
+            self.constrain_eq(val.ty.clone(), ty.clone().into(), val.span);
         }
 
         match &binding.pat {
@@ -312,13 +313,15 @@ impl TypeChecker {
     ) -> Result<Expr<Ty>, TypeErrorS> {
         let val = self.infer(env, val)?;
 
-        let info = env.get(&ident).ok_or(TypeError::UnboundIdent.span(span))?;
+        let info = env
+            .get(&ident)
+            .ok_or_else(|| TypeError::UnboundIdent.span(span))?;
 
         if !info.mutable {
             return Err(TypeError::Mutation.span(span));
         }
 
-        self.constrain_eq(val.ty.clone(), info.ty.clone());
+        self.constrain_eq(val.ty.clone(), info.ty.clone(), val.span);
 
         Ok(ExprKind::Assign {
             ident,
@@ -360,7 +363,7 @@ impl TypeChecker {
         let body = self.infer(&mut env, body)?;
 
         if let Some(ty) = &return_ty {
-            self.constrain_eq(body.ty.clone(), ty.clone().into());
+            self.constrain_eq(body.ty.clone(), ty.clone().into(), body.span);
         }
 
         let body_ty = body.ty.clone();

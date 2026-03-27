@@ -1,9 +1,10 @@
 use std::fmt::Display;
 
 use ast::Ident;
-use ena::unify::UnifyKey;
+use ena::unify::{EqUnifyValue, UnifyKey};
+use string_interner::DefaultStringInterner;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
     Int,
     UInt,
@@ -14,10 +15,12 @@ pub enum Ty {
     Array(Box<Ty>),
     Tuple(Vec<Ty>),
     Func(Vec<Ty>, Box<Ty>),
-    Var(TypeVar),
-    IntVar(TypeVar),
     Adt(Ident, Vec<Ty>),
+    Var(TyVar),
+    IntVar(TyVar),
 }
+
+impl EqUnifyValue for Ty {}
 
 impl From<ast::Ty> for Ty {
     fn from(value: ast::Ty) -> Self {
@@ -42,23 +45,13 @@ impl From<ast::Ty> for Ty {
 }
 
 impl Ty {
-    pub const fn id(&self) -> Option<TypeVar> {
-        match self {
-            Self::Var(id) | Self::IntVar(id) => Some(*id),
-            _ => None,
-        }
-    }
-
-    pub fn named(name: &str) -> Self {
-        Self::Adt(name.into(), vec![])
-    }
-
+    #[must_use]
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
 
-    pub fn string() -> Self {
-        Self::named("String")
+    pub fn string(interner: &mut DefaultStringInterner) -> Self {
+        Self::Adt(interner.get_or_intern("String").into(), vec![])
     }
 }
 
@@ -68,7 +61,7 @@ impl Display for Ty {
             Self::Var(_) => "{var}".fmt(f),
             Self::IntVar(_) => "{integer}".fmt(f),
             Self::Adt(name, args) => {
-                write!(f, "{name}")?;
+                write!(f, "temp{name:?}")?; //TODO properly print error
                 if !args.is_empty() {
                     write!(f, "<{}>", itertools::join(args, ", "))?;
                 }
@@ -90,20 +83,20 @@ impl Display for Ty {
 }
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypeVar(u32);
+pub struct TyVar(u32);
 
-impl UnifyKey for TypeVar {
-    type Value = Ty;
+impl UnifyKey for TyVar {
+    type Value = Option<Ty>;
 
     fn index(&self) -> u32 {
         self.0
     }
 
-    fn from_index(id: u32) -> Self {
-        Self(id)
+    fn from_index(u: u32) -> Self {
+        Self(u)
     }
 
     fn tag() -> &'static str {
-        "TypeId"
+        "TypeVar"
     }
 }

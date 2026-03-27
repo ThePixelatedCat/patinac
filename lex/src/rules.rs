@@ -87,7 +87,7 @@ const RULES: [Rule; 57] = {
     ]
 };
 
-pub(super) fn matches(input: &str) -> Option<(TokKind, usize)> {
+pub fn matches(input: &str) -> Option<(TokKind, usize)> {
     RULES
         .iter()
         .filter_map(|rule| rule(input))
