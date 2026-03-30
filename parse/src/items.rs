@@ -88,8 +88,8 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn adt_def(&mut self) -> ParseResult<AdtDef> {
         let Spnd(ident, _) = self.ident()?;
 
-        let generics = if self.at(TokKind::LAngle) {
-            let (idents, _) = self.delimited_list(Self::ident, TokKind::LAngle, TokKind::RAngle)?;
+        let generics = if self.at(TokKind::Lt) {
+            let (idents, _) = self.delimited_list(Self::ident, TokKind::Lt, TokKind::Gt)?;
 
             idents.into_iter().map(GenericParam).collect()
         } else {

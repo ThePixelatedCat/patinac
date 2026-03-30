@@ -96,12 +96,11 @@ fn comment() {
 #[test]
 fn literals() {
     assert_equal(
-        Lexer::lex(r#"1 .5 0.211 1. true "test"'\n''\''"#),
+        Lexer::lex(r#"1 0.21 1.5E-2 true "test"'\n''\''"#),
         [
             T::IntLit.span(0..1),
-            T::FloatLit.span(2..4),
-            T::FloatLit.span(5..10),
-            T::FloatLit.span(11..13),
+            T::FloatLit.span(2..6),
+            T::FloatLit.span(7..13),
             T::True.span(14..18),
             T::StringLit.span(19..25),
             T::CharLit.span(25..29),
@@ -115,7 +114,7 @@ fn literals() {
 fn function() {
     let input = r#"
 // this is a comment!
-fn test(var: Type, var2_: Bool) ->
+fn test(var: Type, var2_: Bool): Int -> {
  
     let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2 ** 4
     let mut chars = x.chars()
@@ -123,6 +122,7 @@ fn test(var: Type, var2_: Bool) ->
         x = x + c
     else if !var2_ then 
         x = x + ","
+}
 "#;
 
     let tokens = Lexer::lex(&input);
@@ -141,69 +141,67 @@ fn test(var: Type, var2_: Bool) ->
             T::Colon.span(47..48),
             T::Bool.span(49..53),
             T::RParen.span(53..54),
-            T::Arrow.span(55..57),
-            T::LBrace.span(60..64),
+            T::Colon.span(54..55),
+            T::Int.span(56..59),
+            T::Arrow.span(60..62),
+            T::LBrace.span(63..64),
             // `x` assignment
-            T::Let.span(64..67),
-            T::Ident.span(68..69),
-            T::Eq.span(70..71),
-            T::CharLit.span(72..76),
-            T::Plus.span(77..78),
-            T::StringLit.span(79..105),
-            T::Plus.span(106..107),
-            T::IntLit.span(108..109),
-            T::FSlash.span(110..111),
-            T::FloatLit.span(112..119),
-            T::Exponent.span(120..122),
-            T::IntLit.span(123..124),
+            T::Let.span(71..74),
+            T::Ident.span(75..76),
+            T::Eq.span(77..78),
+            T::CharLit.span(79..83),
+            T::Plus.span(84..85),
+            T::StringLit.span(86..112),
+            T::Plus.span(113..114),
+            T::IntLit.span(115..116),
+            T::FSlash.span(117..118),
+            T::FloatLit.span(119..126),
+            T::Exponent.span(127..129),
+            T::IntLit.span(130..131),
             // `chars` assignment
-            T::Let.span(129..132),
-            T::Mut.span(133..136),
-            T::Ident.span(137..142),
-            T::Eq.span(143..144),
-            T::Ident.span(145..146),
-            T::Dot.span(146..147),
-            T::Ident.span(147..152),
-            T::LParen.span(152..153),
-            T::RParen.span(153..154),
+            T::Let.span(136..139),
+            T::Mut.span(140..143),
+            T::Ident.span(144..149),
+            T::Eq.span(150..151),
+            T::Ident.span(152..153),
+            T::Dot.span(153..154),
+            T::Ident.span(154..159),
+            T::LParen.span(159..160),
+            T::RParen.span(160..161),
             // if
-            T::If.span(159..161),
-            T::Let.span(162..165),
-            T::Ident.span(166..170),
-            T::LParen.span(170..171),
-            T::Ident.span(171..172),
-            T::RParen.span(172..173),
-            T::Eq.span(174..175),
-            T::Ident.span(176..181),
-            T::Dot.span(181..182),
-            T::Ident.span(182..186),
-            T::LParen.span(186..187),
-            T::RParen.span(187..188),
-            T::Then.span(189..193),
-            T::LBrace.span(194..202),
+            T::If.span(166..168),
+            T::Let.span(169..172),
+            T::Ident.span(173..177),
+            T::LParen.span(177..178),
+            T::Ident.span(178..179),
+            T::RParen.span(179..180),
+            T::Eq.span(181..182),
+            T::Ident.span(183..188),
+            T::Dot.span(188..189),
+            T::Ident.span(189..193),
+            T::LParen.span(193..194),
+            T::RParen.span(194..195),
+            T::Then.span(196..200),
             // `x` re-assignment
-            T::Ident.span(202..203),
-            T::Eq.span(204..205),
-            T::Ident.span(206..207),
-            T::Plus.span(208..209),
-            T::Ident.span(210..211),
+            T::Ident.span(209..210),
+            T::Eq.span(211..212),
+            T::Ident.span(213..214),
+            T::Plus.span(215..216),
+            T::Ident.span(217..218),
             // else if
-            T::RBrace.span(212..216),
-            T::Else.span(216..220),
-            T::If.span(221..223),
-            T::Bang.span(224..225),
-            T::Ident.span(225..230),
-            T::Then.span(231..235),
-            T::LBrace.span(237..245),
+            T::Else.span(223..227),
+            T::If.span(228..230),
+            T::Bang.span(231..232),
+            T::Ident.span(232..237),
+            T::Then.span(238..242),
             // `x` re-assignment
-            T::Ident.span(245..246),
-            T::Eq.span(247..248),
-            T::Ident.span(249..250),
-            T::Plus.span(251..252),
-            T::StringLit.span(253..256),
-            T::RBrace.span(257..257), // end if
-            T::RBrace.span(257..257), // end fn
-            T::Eof.span(257..257),
+            T::Ident.span(252..253),
+            T::Eq.span(254..255),
+            T::Ident.span(256..257),
+            T::Plus.span(258..259),
+            T::StringLit.span(260..263),
+            T::RBrace.span(264..265),
+            T::Eof.span(266..266),
         ],
     );
 }

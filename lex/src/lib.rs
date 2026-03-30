@@ -8,104 +8,67 @@ pub use token::{Tok, TokKind};
 pub struct Lexer<'input> {
     input: &'input str,
     output: Vec<Tok>,
-    pos: usize,
-    indent_levels: Vec<usize>,
-    err: Option<usize>,
 }
 
 impl<'input> Lexer<'input> {
     pub fn lex(input: &'input str) -> Vec<Tok> {
-        let mut lexer = Self::new(input);
+        let mut lexer = Self {
+            input,
+            output: Vec::with_capacity(input.len() / 4),
+        };
         lexer.all_tokens();
         lexer.output
     }
 
-    pub fn new(input: &'input str) -> Self {
-        Self {
-            input,
-            output: Vec::with_capacity(input.len() / 4),
-            pos: 0,
-            indent_levels: vec![0],
-            err: None,
-        }
-    }
-
     pub fn all_tokens(&mut self) {
-        while self.pos < self.input.len() {
-            self.next_token(&self.input[self.pos..]);
+        let mut pos = 0;
+        while let Some(token) = self.next_token(pos) {
+            pos = token.span.end;
+            self.output.push(token);
         }
 
-        if self.output.last().is_none_or(|t| t.kind != TokKind::Eof) {
-            self.output.push(TokKind::Eof.span(self.pos..self.pos));
-        }
+        let end = self.input.len();
+        self.output.push(TokKind::Eof.span(end..end));
     }
 
-    fn next_token(&mut self, input: &str) {
+    fn next_token(&self, pos: usize) -> Option<Tok> {
+        let input = self.get_rest(pos)?;
+
         if input.starts_with("//") {
-            self.pos += input
-                .find('\n')
+            let comment_length = input
+                .find(['\n', '\r'])
                 .expect("expected newline to terminate comment");
-        } else if input.starts_with(['\n', '\r']) {
-            let newlines = input
+            self.next_token(pos + comment_length)
+        } else if input.starts_with(char::is_whitespace) {
+            let whitespace_length = input
                 .char_indices()
-                .take_while(|(_, c)| *c == '\n' || *c == '\r')
+                .take_while(|(_, c)| c.is_whitespace())
                 .last()
                 .unwrap()
-                .0
-                + 1;
-            self.pos += newlines;
-            self.indentation(&input[newlines..]);
-        } else if input.starts_with(|c: char| c.is_whitespace() && !(c == '\n' || c == '\r')) {
-            self.pos += input
-                .char_indices()
-                .take_while(|(_, c)| c.is_whitespace() && !(*c == '\n' || *c == '\r'))
-                .last()
-                .unwrap()
-                .0
-                + 1;
+                .0;
+            self.next_token(pos + whitespace_length + 1)
         } else {
-            match rules::matches(input) {
-                Some((token, len)) => {
-                    if let Some(start) = self.err {
-                        self.output.push(TokKind::Error.span(start..self.pos));
-                    }
-
-                    self.output.push(token.span(self.pos..self.pos + len));
-
-                    self.pos += len;
-                }
-                None => {
-                    if self.err.is_none() {
-                        self.err = Some(self.pos);
-                    }
-                    self.pos += 1;
-                }
-            }
+            Some(rules::matches(input).map_or_else(
+                || self.err_token(pos),
+                |(token, len)| token.span(pos..pos + len),
+            ))
         }
     }
 
-    fn indentation(&mut self, input: &str) {
-        let start = self.pos;
+    fn err_token(&self, pos: usize) -> Tok {
+        let start = pos;
+        let mut end = start;
 
-        let new_level = input
-            .char_indices()
-            .take_while(|(_, c)| *c == '\t' || *c == ' ')
-            .last()
-            .map_or(0, |(i, _)| i + 1);
-        self.pos += new_level;
-
-        let last_level = self.indent_levels.last().copied().unwrap();
-        if input[new_level..].starts_with('\n') {
-            self.pos += 1;
-            self.indentation(&input[new_level + 1..]);
-        } else if new_level > last_level {
-            self.indent_levels.push(new_level);
-            self.output.push(TokKind::LBrace.span(start..self.pos));
-        } else if new_level < last_level {
-            while new_level < self.indent_levels.last().copied().unwrap() {
-                self.indent_levels.pop();
-                self.output.push(TokKind::RBrace.span(start..self.pos));
-            }
+        while let Some(input) = self.get_rest(end)
+            && rules::matches(input).is_none()
+        {
+            end += 1;
         }
+
+        TokKind::Error.span(start..end)
+    }
+
+    fn get_rest(&self, pos: usize) -> Option<&str> {
+        (pos < self.input.len()).then(|| &self.input[pos..])
     }
 }

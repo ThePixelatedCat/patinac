@@ -78,9 +78,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                 TokKind::Neq => Bop::Neq,
                 TokKind::And => Bop::And,
                 TokKind::Or => Bop::Or,
-                TokKind::LAngle => Bop::Lt,
+                TokKind::Lt => Bop::Lt,
                 TokKind::Leq => Bop::Leq,
-                TokKind::RAngle => Bop::Gt,
+                TokKind::Gt => Bop::Gt,
                 TokKind::Geq => Bop::Geq,
                 // Stmt seperator, consume then terminate + return
                 TokKind::Semicolon => {

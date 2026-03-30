@@ -73,9 +73,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let start = span.start;
 
-        let (generics, end) = if self.at(TokKind::LAngle) {
+        let (generics, end) = if self.at(TokKind::Lt) {
             let (generics, generics_span) =
-                self.delimited_list(Self::ty, TokKind::LAngle, TokKind::RAngle)?;
+                self.delimited_list(Self::ty, TokKind::Lt, TokKind::Gt)?;
             (generics, generics_span.end)
         } else {
             (Vec::new(), span.end)

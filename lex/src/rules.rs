@@ -32,16 +32,21 @@ const OCT_INT: &str = "(0o[0-7][0-7_]*)";
 const HEX_INT: &str = "(0x[0-9a-fA-F][0-9a-fA-F_]*)";
 const INT: &str = formatcp!("^{DEC_INT}|{BIN_INT}|{OCT_INT}|{HEX_INT}");
 
-const EXPONENT: &str = "([Ee]-?DEC_INT)";
+const EXPONENT: &str = formatcp!("([Ee]-?{DEC_INT})");
 const FLOAT: &str = formatcp!(r"^{DEC_INT}\.{DEC_INT}{EXPONENT}?");
 
 const ESCAPE: &str = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#;
 const CHAR: &str = formatcp!(r"^'([^\t\n\r'\\]|{ESCAPE})'");
+#[allow(
+    clippy::needless_raw_string_hashes,
+    reason = "not sure what clippy is on but it's definitely needed"
+)]
 const STRING: &str = formatcp!(r##"^("([^"\\]|{ESCAPE})*")|((?s)#".*"#)"##);
 
 const IDENT: &str = "^[A-Za-z_][A-Za-z_0-9]*";
 
-const RULES: [fn(&str) -> Option<(TokKind, usize)>; 59] = {
+type Rule = fn(&str) -> Option<(TokKind, usize)>;
+const RULES: [Rule; 59] = {
     [
         reg_rule!(INT => IntLit),
         reg_rule!(FLOAT => FloatLit),
@@ -58,8 +63,8 @@ const RULES: [fn(&str) -> Option<(TokKind, usize)>; 59] = {
         rule!("|" => Pipe),
         rule!("!" => Bang),
         rule!("^" => Xor),
-        rule!("<" => LAngle),
-        rule!(">" => RAngle),
+        rule!("<" => Lt),
+        rule!(">" => Gt),
         rule!("+" => Plus),
         rule!("-" => Minus),
         rule!("*" => Times),
