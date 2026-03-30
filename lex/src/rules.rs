@@ -46,7 +46,7 @@ const STRING: &str = formatcp!(r##"^("([^"\\]|{ESCAPE})*")|((?s)#".*"#)"##);
 const IDENT: &str = "^[A-Za-z_][A-Za-z_0-9]*";
 
 type Rule = fn(&str) -> Option<(TokKind, usize)>;
-const RULES: [Rule; 59] = {
+const RULES: [Rule; 62] = {
     [
         reg_rule!(INT => IntLit),
         reg_rule!(FLOAT => FloatLit),
@@ -104,6 +104,9 @@ const RULES: [Rule; 59] = {
         rule!("do" => Do),
         rule!("match" => Match),
         rule!("with" => With),
+        rule!("return" => Return),
+        rule!("break" => Break),
+        rule!("continue" => Continue),
         rule!("true" => True),
         rule!("false" => False),
         reg_rule!(IDENT => Ident),

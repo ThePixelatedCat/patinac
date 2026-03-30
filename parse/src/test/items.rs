@@ -1,8 +1,8 @@
 use ast::{
-    AdtDef, Binding, Bop, ExprKind, Field, GenericParam, Item, Pat, Ty, TyKind, Variant,
+    AdtDef, Binding, ExprKind, Field, GenericParam, InfixOp, Item, Pat, Ty, TyKind, Variant,
 };
-use span::{Span, Spannable, Spnd};
 use lex::TokKind;
+use span::{Span, Spannable, Spnd};
 
 use crate::{ParseError, Parser};
 
@@ -17,10 +17,10 @@ fn const_items() {
     assert_eq!(
         parser.item(),
         Ok(Item::Const {
-            ident: parser.get_ident("hello_world").unwrap(),
+            ident: parser.get_interned("hello_world").unwrap(),
             ty: Some(Ty {
                 kind: TyKind::Adt {
-                    ident: parser.get_ident("String").unwrap(),
+                    ident: parser.get_interned("String").unwrap(),
                     args: vec![]
                 },
                 span: Span::from(19..25)
@@ -33,18 +33,18 @@ fn const_items() {
     assert_eq!(
         parser.item(),
         Ok(Item::Const {
-            ident: parser.get_ident("id").unwrap(),
+            ident: parser.get_interned("id").unwrap(),
             ty: None,
-            value: ExprKind::Lambda {
+            value: ExprKind::LambdaExpr {
                 params: vec![Binding {
-                    pat: Pat::Var {
+                    pat: Pat::Ident {
                         mutable: false,
-                        ident: parser.get_ident("x").unwrap(),
+                        ident: parser.get_interned("x").unwrap(),
                     },
                     ty: None
                 }],
                 return_ty: None,
-                body: ExprKind::Ident(parser.get_ident("x").unwrap())
+                body: ExprKind::Ident(parser.get_interned("x").unwrap())
                     .span(20..21)
                     .into()
             }
@@ -62,12 +62,12 @@ fn struct_items() {
         parser.item(),
         Ok(Item::Record {
             def: AdtDef {
-                ident: parser.get_ident("Point").unwrap(),
+                ident: parser.get_interned("Point").unwrap(),
                 generics: vec![]
             },
             fields: vec![
                 Field {
-                    ident: parser.get_ident("x").unwrap(),
+                    ident: parser.get_interned("x").unwrap(),
                     ty: Ty {
                         kind: TyKind::Int,
                         span: Span::from(16..19)
@@ -75,7 +75,7 @@ fn struct_items() {
                     span: Span::from(13..19)
                 },
                 Field {
-                    ident: parser.get_ident("y").unwrap(),
+                    ident: parser.get_interned("y").unwrap(),
                     ty: Ty {
                         kind: TyKind::Int,
                         span: Span::from(24..27)
@@ -96,15 +96,15 @@ record Foo<T, U>(
         parser.item(),
         Ok(Item::Record {
             def: AdtDef {
-                ident: parser.get_ident("Foo").unwrap(),
+                ident: parser.get_interned("Foo").unwrap(),
                 generics: vec![
-                    GenericParam(Spnd::span(parser.get_ident("T").unwrap(), 12..13)),
-                    GenericParam(Spnd::span(parser.get_ident("U").unwrap(), 15..16)),
+                    GenericParam(Spnd::span(parser.get_interned("T").unwrap(), 12..13)),
+                    GenericParam(Spnd::span(parser.get_interned("U").unwrap(), 15..16)),
                 ]
             },
             fields: vec![
                 Field {
-                    ident: parser.get_ident("x").unwrap(),
+                    ident: parser.get_interned("x").unwrap(),
                     ty: Ty {
                         kind: TyKind::Char,
                         span: Span::from(26..30)
@@ -112,16 +112,16 @@ record Foo<T, U>(
                     span: Span::from(23..30)
                 },
                 Field {
-                    ident: parser.get_ident("bar").unwrap(),
+                    ident: parser.get_interned("bar").unwrap(),
                     ty: Ty {
                         kind: TyKind::Adt {
-                            ident: parser.get_ident("Bar").unwrap(),
+                            ident: parser.get_interned("Bar").unwrap(),
                             args: vec![Ty {
                                 kind: TyKind::Adt {
-                                    ident: parser.get_ident("Baz").unwrap(),
+                                    ident: parser.get_interned("Baz").unwrap(),
                                     args: vec![Ty {
                                         kind: TyKind::Adt {
-                                            ident: parser.get_ident("T").unwrap(),
+                                            ident: parser.get_interned("T").unwrap(),
                                             args: vec![]
                                         },
                                         span: Span::from(51..52)
@@ -155,21 +155,21 @@ enum Foo
         parser.item(),
         Ok(Item::Enum {
             def: AdtDef {
-                ident: parser.get_ident("Foo").unwrap(),
+                ident: parser.get_interned("Foo").unwrap(),
                 generics: vec![]
             },
             variants: vec![
                 Variant {
-                    ident: parser.get_ident("X").unwrap(),
+                    ident: parser.get_interned("X").unwrap(),
                     fields: vec![]
                 },
                 Variant {
-                    ident: parser.get_ident("Y").unwrap(),
+                    ident: parser.get_interned("Y").unwrap(),
                     fields: vec![Field {
-                        ident: parser.get_ident("v").unwrap(),
+                        ident: parser.get_interned("v").unwrap(),
                         ty: Ty {
                             kind: TyKind::Adt {
-                                ident: parser.get_ident("Bar").unwrap(),
+                                ident: parser.get_interned("Bar").unwrap(),
                                 args: vec![]
                             },
                             span: Span::from(35..38)
@@ -178,13 +178,13 @@ enum Foo
                     }],
                 },
                 Variant {
-                    ident: parser.get_ident("Z").unwrap(),
+                    ident: parser.get_interned("Z").unwrap(),
                     fields: vec![
                         Field {
-                            ident: parser.get_ident("baz").unwrap(),
+                            ident: parser.get_interned("baz").unwrap(),
                             ty: Ty {
                                 kind: TyKind::Adt {
-                                    ident: parser.get_ident("Baz").unwrap(),
+                                    ident: parser.get_interned("Baz").unwrap(),
                                     args: vec![]
                                 },
                                 span: Span::from(49..52)
@@ -192,10 +192,10 @@ enum Foo
                             span: Span::from(44..52)
                         },
                         Field {
-                            ident: parser.get_ident("fizz").unwrap(),
+                            ident: parser.get_interned("fizz").unwrap(),
                             ty: Ty {
                                 kind: TyKind::Adt {
-                                    ident: parser.get_ident("Buzz").unwrap(),
+                                    ident: parser.get_interned("Buzz").unwrap(),
                                     args: vec![]
                                 },
                                 span: Span::from(60..64)
@@ -217,19 +217,19 @@ fn function_items() {
     assert_eq!(
         parser.item(),
         Ok(Item::Func {
-            ident: parser.get_ident("sum").unwrap(),
+            ident: parser.get_interned("sum").unwrap(),
             params: vec![
                 Binding {
-                    pat: Pat::Var {
+                    pat: Pat::Ident {
                         mutable: true,
-                        ident: parser.get_ident("a").unwrap(),
+                        ident: parser.get_interned("a").unwrap(),
                     },
                     ty: None
                 },
                 Binding {
-                    pat: Pat::Var {
+                    pat: Pat::Ident {
                         mutable: false,
-                        ident: parser.get_ident("b").unwrap(),
+                        ident: parser.get_interned("b").unwrap(),
                     },
                     ty: Some(Ty {
                         kind: TyKind::Byte,
@@ -238,12 +238,12 @@ fn function_items() {
                 }
             ],
             return_ty: None,
-            body: ExprKind::BinOp {
-                op: Bop::Add,
-                lhs: ExprKind::Ident(parser.get_ident("a").unwrap())
+            body: ExprKind::InfixExpr {
+                op: InfixOp::Add,
+                lhs: ExprKind::Ident(parser.get_interned("a").unwrap())
                     .span(26..27)
                     .into(),
-                rhs: ExprKind::Ident(parser.get_ident("b").unwrap())
+                rhs: ExprKind::Ident(parser.get_interned("b").unwrap())
                     .span(30..31)
                     .into()
             }

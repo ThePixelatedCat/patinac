@@ -1,6 +1,6 @@
 use ast::{Ty, TyKind};
 use lex::{Tok, TokKind};
-use span::{Span, Spnd};
+use span::Span;
 
 use crate::{ParseError, ParseResult, Parser};
 
@@ -15,7 +15,7 @@ macro_rules! primitive {
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn ty(&mut self) -> ParseResult<Ty> {
-        match self.peek() {
+        match self.peek()? {
             TokKind::Int => primitive!(self, Int),
             TokKind::UInt => primitive!(self, UInt),
             TokKind::Byte => primitive!(self, Byte),
@@ -44,7 +44,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn tuple_ty(&mut self) -> ParseResult<Ty> {
-        let (types, span) = self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)?;
+        let (types, span) = self.delimited_list(Self::ty, TokKind::LBrace, TokKind::RBrace)?;
 
         Ok(Ty {
             kind: TyKind::Tuple(types),
@@ -55,21 +55,24 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn fn_ty(&mut self) -> ParseResult<Ty> {
         let start = self.consume(TokKind::Fn)?.span.start;
 
-        let (params, _) = self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)?;
+        let (params, _) = self.delimited_list(
+            |this| Ok((this.consume_at(TokKind::Mut), this.ty()?)),
+            TokKind::LParen,
+            TokKind::RParen,
+        )?;
 
-        self.consume(TokKind::Colon)?;
+        self.consume(TokKind::Arrow)?;
         let result = Box::new(self.ty()?);
 
-        let end = result.span.end;
-
+        let span = start..result.span.end;
         Ok(Ty {
             kind: TyKind::Fn(params, result),
-            span: Span::from(start..end),
+            span: Span::from(span),
         })
     }
 
     fn ast_ty(&mut self) -> ParseResult<Ty> {
-        let Spnd(ident, span) = self.ident()?;
+        let (ident, span) = self.ident()?;
 
         let start = span.start;
 
@@ -82,10 +85,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         };
 
         Ok(Ty {
-            kind: TyKind::Adt {
-                ident,
-                args: generics,
-            },
+            kind: TyKind::Adt(ident, generics),
             span: Span::from(start..end),
         })
     }

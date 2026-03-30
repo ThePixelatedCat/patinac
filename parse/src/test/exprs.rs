@@ -1,6 +1,6 @@
-use ast::{Binding, Bop, Expr, ExprKind, Pat, Ty, TyKind, Unop};
+use ast::{Arg, Binding, Expr, ExprKind, InfixOp, Pat, Ty, TyKind, UnaryOp};
 use lex::TokKind;
-use span::{Span, Spannable, Spnd};
+use span::{Span, Spannable};
 
 use crate::{ParseError, ParseResult, Parser};
 
@@ -12,26 +12,26 @@ fn parse_expr(input: &str) -> ParseResult<Expr<()>> {
 
 #[test]
 fn lit_expressions() {
-    assert_eq!(parse_expr("42"), Ok(ExprKind::Int(42).span(0..2)));
+    assert_eq!(parse_expr("42"), Ok(ExprKind::int(42).span(0..2)));
 
     assert_eq!(
         parse_expr("  2.7768"),
-        Ok(ExprKind::Float(2.7768).span(2..8))
+        Ok(ExprKind::float(2.7768).span(2..8))
     );
 
     assert_eq!(
         parse_expr(r#""I am a Str!""#),
-        Ok(ExprKind::String(String::from("I am a Str!")).span(0..13))
+        Ok(ExprKind::string("I am a Str!").span(0..13))
     );
 
-    assert_eq!(parse_expr(r"'\''"), Ok(ExprKind::Char('\'').span(0..4)));
+    assert_eq!(parse_expr(r"'\''"), Ok(ExprKind::char('\'').span(0..4)));
 
     assert_eq!(
-        parse_expr(r#"(42,(2,),"end")"#),
+        parse_expr(r#"{42,{2,},"end"}"#),
         Ok(ExprKind::Tuple(vec![
-            ExprKind::Int(42).span(1..3),
-            ExprKind::Tuple(vec![ExprKind::Int(2).span(5..6)]).span(4..8),
-            ExprKind::String(String::from("end")).span(9..14)
+            ExprKind::int(42).span(1..3),
+            ExprKind::Tuple(vec![ExprKind::int(2).span(5..6)]).span(4..8),
+            ExprKind::string("end").span(9..14)
         ])
         .span(0..15))
     );
@@ -50,10 +50,10 @@ fn lit_expressions() {
     assert_eq!(
         array,
         Ok(ExprKind::Array(vec![
-            ExprKind::Int(1).span(7..8),
-            ExprKind::Block(vec![ExprKind::Int(4).span(18..19)]).span(10..24),
-            ExprKind::Int(3).span(30..31),
-            ExprKind::Int(2).span(37..38)
+            ExprKind::int(1).span(7..8),
+            ExprKind::int(4).span(18..19),
+            ExprKind::int(3).span(30..31),
+            ExprKind::int(2).span(37..38)
         ])
         .span(1..40))
     );
@@ -62,7 +62,7 @@ fn lit_expressions() {
     let mut parser = Parser::new("foo", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::Ident(parser.get_ident("foo").unwrap()).span(0..3))
+        Ok(ExprKind::ident(parser.get_interned("foo")).span(0..3))
     );
 }
 
@@ -72,9 +72,9 @@ fn unop_expressions() {
     let mut parser = Parser::new("!  is_visible", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::UnaryOp {
-            op: Unop::Not,
-            expr: ExprKind::Ident(parser.get_ident("is_visible").unwrap())
+        Ok(ExprKind::UnaryExpr {
+            op: UnaryOp::Not,
+            expr: ExprKind::ident(parser.get_interned("is_visible"))
                 .span(3..13)
                 .into(),
         }
@@ -82,13 +82,16 @@ fn unop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("-(-13)"),
-        Ok(ExprKind::UnaryOp {
-            op: Unop::Neg,
-            expr: ExprKind::UnaryOp {
-                op: Unop::Neg,
-                expr: ExprKind::Int(13).span(3..5).into(),
-            }
+        parse_expr("-{-13}"),
+        Ok(ExprKind::UnaryExpr {
+            op: UnaryOp::Neg,
+            expr: ExprKind::Block(vec![
+                ExprKind::UnaryExpr {
+                    op: UnaryOp::Neg,
+                    expr: ExprKind::int(13).span(3..5).into(),
+                }
+                .span(2..5)
+            ])
             .span(1..6)
             .into()
         }
@@ -100,13 +103,13 @@ fn unop_expressions() {
 fn binop_expressions() {
     assert_eq!(
         parse_expr("4 + 2 * 3"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Add,
-            lhs: ExprKind::Int(4).span(0..1).into(),
-            rhs: ExprKind::BinOp {
-                op: Bop::Mul,
-                lhs: ExprKind::Int(2).span(4..5).into(),
-                rhs: ExprKind::Int(3).span(8..9).into()
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Add,
+            lhs: ExprKind::int(4).span(0..1).into(),
+            rhs: ExprKind::InfixExpr {
+                op: InfixOp::Mul,
+                lhs: ExprKind::int(2).span(4..5).into(),
+                rhs: ExprKind::int(3).span(8..9).into()
             }
             .span(4..9)
             .into()
@@ -116,45 +119,45 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 * 2 + 3"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Add,
-            lhs: ExprKind::BinOp {
-                op: Bop::Mul,
-                lhs: ExprKind::Int(4).span(0..1).into(),
-                rhs: ExprKind::Int(2).span(4..5).into()
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Add,
+            lhs: ExprKind::InfixExpr {
+                op: InfixOp::Mul,
+                lhs: ExprKind::int(4).span(0..1).into(),
+                rhs: ExprKind::int(2).span(4..5).into()
             }
             .span(0..5)
             .into(),
-            rhs: ExprKind::Int(3).span(8..9).into(),
+            rhs: ExprKind::int(3).span(8..9).into(),
         }
         .span(0..9))
     );
 
     assert_eq!(
         parse_expr("4 - 2 - 3"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Sub,
-            lhs: ExprKind::BinOp {
-                op: Bop::Sub,
-                lhs: ExprKind::Int(4).span(0..1).into(),
-                rhs: ExprKind::Int(2).span(4..5).into()
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Sub,
+            lhs: ExprKind::InfixExpr {
+                op: InfixOp::Sub,
+                lhs: ExprKind::int(4).span(0..1).into(),
+                rhs: ExprKind::int(2).span(4..5).into()
             }
             .span(0..5)
             .into(),
-            rhs: ExprKind::Int(3).span(8..9).into(),
+            rhs: ExprKind::int(3).span(8..9).into(),
         }
         .span(0..9))
     );
 
     assert_eq!(
         parse_expr("4 ** 2 ** 3"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Exp,
-            lhs: ExprKind::Int(4).span(0..1).into(),
-            rhs: ExprKind::BinOp {
-                op: Bop::Exp,
-                lhs: ExprKind::Int(2).span(5..6).into(),
-                rhs: ExprKind::Int(3).span(10..11).into()
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Exp,
+            lhs: ExprKind::int(4).span(0..1).into(),
+            rhs: ExprKind::InfixExpr {
+                op: InfixOp::Exp,
+                lhs: ExprKind::int(2).span(5..6).into(),
+                rhs: ExprKind::int(3).span(10..11).into()
             }
             .span(5..11)
             .into()
@@ -164,29 +167,29 @@ fn binop_expressions() {
 
     assert_eq!(
         parse_expr("4 ^ 2 ^ 3"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Xor,
-            lhs: ExprKind::BinOp {
-                op: Bop::Xor,
-                lhs: ExprKind::Int(4).span(0..1).into(),
-                rhs: ExprKind::Int(2).span(4..5).into()
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Xor,
+            lhs: ExprKind::InfixExpr {
+                op: InfixOp::Xor,
+                lhs: ExprKind::int(4).span(0..1).into(),
+                rhs: ExprKind::int(2).span(4..5).into()
             }
             .span(0..5)
             .into(),
-            rhs: ExprKind::Int(3).span(8..9).into(),
+            rhs: ExprKind::int(3).span(8..9).into(),
         }
         .span(0..9))
     );
 
     assert_eq!(
         parse_expr("true || false && true"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Or,
-            lhs: ExprKind::Bool(true).span(0..4).into(),
-            rhs: ExprKind::BinOp {
-                op: Bop::And,
-                lhs: ExprKind::Bool(false).span(8..13).into(),
-                rhs: ExprKind::Bool(true).span(17..21).into(),
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Or,
+            lhs: ExprKind::bool(true).span(0..4).into(),
+            rhs: ExprKind::InfixExpr {
+                op: InfixOp::And,
+                lhs: ExprKind::bool(false).span(8..13).into(),
+                rhs: ExprKind::bool(true).span(17..21).into(),
             }
             .span(8..21)
             .into()
@@ -195,49 +198,39 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("3 & 1 | 5"),
-        Ok(ExprKind::BinOp {
-            op: Bop::BOr,
-            lhs: ExprKind::BinOp {
-                op: Bop::BAnd,
-                lhs: ExprKind::Int(3).span(0..1).into(),
-                rhs: ExprKind::Int(1).span(4..5).into(),
-            }
-            .span(0..5)
-            .into(),
-            rhs: ExprKind::Int(5).span(8..9).into()
-        }
-        .span(0..9))
-    );
-
-    assert_eq!(
-        parse_expr("(3 >= 4) != true"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Neq,
-            lhs: ExprKind::BinOp {
-                op: Bop::Geq,
-                lhs: ExprKind::Int(3).span(1..2).into(),
-                rhs: ExprKind::Int(4).span(6..7).into(),
-            }
+        parse_expr("{3 >= 4} != true"),
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Neq,
+            lhs: ExprKind::Block(vec![
+                ExprKind::InfixExpr {
+                    op: InfixOp::Geq,
+                    lhs: ExprKind::int(3).span(1..2).into(),
+                    rhs: ExprKind::int(4).span(6..7).into(),
+                }
+                .span(1..7)
+            ])
             .span(0..8)
             .into(),
-            rhs: ExprKind::Bool(true).span(12..16).into()
+            rhs: ExprKind::bool(true).span(12..16).into()
         }
         .span(0..16))
     );
 
     assert_eq!(
-        parse_expr("(4 > 3) == true"),
-        Ok(ExprKind::BinOp {
-            op: Bop::Eqq,
-            lhs: ExprKind::BinOp {
-                op: Bop::Gt,
-                lhs: ExprKind::Int(4).span(1..2).into(),
-                rhs: ExprKind::Int(3).span(5..6).into(),
-            }
+        parse_expr("{4 > 3} == true"),
+        Ok(ExprKind::InfixExpr {
+            op: InfixOp::Eqq,
+            lhs: ExprKind::Block(vec![
+                ExprKind::InfixExpr {
+                    op: InfixOp::Gt,
+                    lhs: ExprKind::int(4).span(1..2).into(),
+                    rhs: ExprKind::int(3).span(5..6).into(),
+                }
+                .span(1..6)
+            ])
             .span(0..7)
             .into(),
-            rhs: ExprKind::Bool(true).span(11..15).into()
+            rhs: ExprKind::bool(true).span(11..15).into()
         }
         .span(0..15))
     );
@@ -247,28 +240,44 @@ fn binop_expressions() {
 fn compound_expressions() {
     let mut interner = Default::default();
 
-    let mut parser = Parser::new("bar (  x, 2)", &mut interner);
+    let mut parser = Parser::new("bar (  mut x, 2, .foo = bar)", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::App {
-            func: ExprKind::Ident(parser.get_ident("bar").unwrap())
+        Ok(ExprKind::CallExpr {
+            func: ExprKind::ident(parser.get_interned("bar"))
                 .span(0..3)
                 .into(),
             args: vec![
-                ExprKind::Ident(parser.get_ident("x").unwrap()).span(7..8),
-                ExprKind::Int(2).span(10..11),
+                Arg {
+                    mutable: true,
+                    label: None,
+                    val: ExprKind::ident(parser.get_interned("x")).span(11..12)
+                },
+                Arg {
+                    mutable: false,
+                    label: None,
+                    val: ExprKind::int(2).span(14..15)
+                },
+                Arg {
+                    mutable: false,
+                    label: Some(Pat::Ident {
+                        ident: parser.get_interned("foo"),
+                        subpat: None
+                    }),
+                    val: ExprKind::ident(parser.get_interned("bar")).span(24..27)
+                },
             ],
         }
-        .span(0..12))
+        .span(0..28))
     );
 
     let mut parser = Parser::new("if 0.5 then foo()", &mut interner);
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::If {
-            cond: ExprKind::Float(0.5).span(3..6).into(),
-            th: ExprKind::App {
-                func: ExprKind::Ident(parser.get_ident("foo").unwrap())
+            cond: ExprKind::float(0.5).span(3..6).into(),
+            th: ExprKind::CallExpr {
+                func: ExprKind::ident(parser.get_interned("foo"))
                     .span(12..15)
                     .into(),
                 args: Vec::new()
@@ -284,12 +293,12 @@ fn compound_expressions() {
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::If {
-            cond: ExprKind::Float(0.5).span(3..6).into(),
-            th: ExprKind::Ident(parser.get_ident("foo").unwrap())
+            cond: ExprKind::float(0.5).span(3..6).into(),
+            th: ExprKind::ident(parser.get_interned("foo"))
                 .span(12..15)
                 .into(),
             el: Some(
-                ExprKind::Ident(parser.get_ident("bar").unwrap())
+                ExprKind::ident(parser.get_interned("bar"))
                     .span(21..24)
                     .into()
             )
@@ -301,18 +310,16 @@ fn compound_expressions() {
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::If {
-            cond: ExprKind::Ident(parser.get_ident("a").unwrap())
-                .span(3..4)
-                .into(),
+            cond: ExprKind::ident(parser.get_interned("a")).span(3..4).into(),
             th: ExprKind::If {
-                cond: ExprKind::Ident(parser.get_ident("b").unwrap())
+                cond: ExprKind::ident(parser.get_interned("b"))
                     .span(13..14)
                     .into(),
-                th: ExprKind::Ident(parser.get_ident("x").unwrap())
+                th: ExprKind::ident(parser.get_interned("x"))
                     .span(20..21)
                     .into(),
                 el: Some(
-                    ExprKind::Ident(parser.get_ident("y").unwrap())
+                    ExprKind::ident(parser.get_interned("y"))
                         .span(27..28)
                         .into()
                 )
@@ -324,84 +331,88 @@ fn compound_expressions() {
         .span(0..28))
     );
 
-    let mut parser = Parser::new("(fn(a, b: Int) -> a + b)(1, 2)", &mut interner);
+    let mut parser = Parser::new("{fn(mut a, b: Int) -> a + b}(mut 1, .b = 2)", &mut interner);
     assert_eq!(
         parser.expr(),
-        Ok(ExprKind::App {
-            func: ExprKind::Lambda {
-                params: vec![
-                    Binding {
-                        pat: Pat::Var {
-                            mutable: false,
-                            ident: parser.get_ident("a").unwrap(),
+        Ok(ExprKind::CallExpr {
+            func: ExprKind::Block(vec![
+                ExprKind::LambdaExpr {
+                    params: vec![
+                        Binding {
+                            mutable: true,
+                            pat: Pat::Ident {
+                                ident: parser.get_interned("a"),
+                                subpat: None
+                            },
+                            ty: None
                         },
-                        ty: None
-                    },
-                    Binding {
-                        pat: Pat::Var {
+                        Binding {
                             mutable: false,
-                            ident: parser.get_ident("b").unwrap(),
-                        },
-                        ty: Some(Ty {
-                            kind: TyKind::Int,
-                            span: Span::from(10..13)
-                        })
+                            pat: Pat::Ident {
+                                ident: parser.get_interned("b"),
+                                subpat: None
+                            },
+                            ty: Some(Ty {
+                                kind: TyKind::Int,
+                                span: Span::from(14..17)
+                            })
+                        }
+                    ],
+                    return_ty: None,
+                    body: ExprKind::InfixExpr {
+                        op: InfixOp::Add,
+                        lhs: ExprKind::ident(parser.get_interned("a"))
+                            .span(22..23)
+                            .into(),
+                        rhs: ExprKind::ident(parser.get_interned("b"))
+                            .span(26..27)
+                            .into()
                     }
-                ],
-                return_ty: None,
-                body: ExprKind::BinOp {
-                    op: Bop::Add,
-                    lhs: ExprKind::Ident(parser.get_ident("a").unwrap())
-                        .span(18..19)
-                        .into(),
-                    rhs: ExprKind::Ident(parser.get_ident("b").unwrap())
-                        .span(22..23)
-                        .into()
+                    .span(22..27)
+                    .into()
                 }
-                .span(18..23)
-                .into()
-            }
-            .span(0..24)
+                .span(1..27)
+            ])
+            .span(0..28)
             .into(),
             args: vec![
-                ExprKind::Int(1).span(25..26).into(),
-                ExprKind::Int(2).span(28..29).into()
+                Arg {
+                    mutable: true,
+                    label: None,
+                    val: ExprKind::int(1).span(33..34)
+                },
+                Arg {
+                    mutable: false,
+                    label: Some(Pat::Ident {
+                        ident: parser.get_interned("b"),
+                        subpat: None
+                    }),
+                    val: ExprKind::int(2).span(41..42).into()
+                },
             ]
         }
-        .span(0..30))
+        .span(0..43))
     );
 
     assert_eq!(
-        parse_expr("[1, 2, 3][1-1]"),
-        Ok(ExprKind::Index {
+        parse_expr("[1, 2, 3].[1-1]"),
+        Ok(ExprKind::IndexExpr {
             arr: ExprKind::Array(vec![
-                ExprKind::Int(1).span(1..2),
-                ExprKind::Int(2).span(4..5),
-                ExprKind::Int(3).span(7..8)
+                ExprKind::int(1).span(1..2),
+                ExprKind::int(2).span(4..5),
+                ExprKind::int(3).span(7..8)
             ])
             .span(0..9)
             .into(),
-            idx: ExprKind::BinOp {
-                op: Bop::Sub,
-                lhs: ExprKind::Int(1).span(10..11).into(),
-                rhs: ExprKind::Int(1).span(12..13).into()
+            idx: ExprKind::InfixExpr {
+                op: InfixOp::Sub,
+                lhs: ExprKind::int(1).span(11..12).into(),
+                rhs: ExprKind::int(1).span(13..14).into()
             }
-            .span(10..13)
+            .span(11..14)
             .into()
         }
-        .span(0..14))
-    );
-
-    let mut parser = Parser::new("self._0", &mut interner);
-    assert_eq!(
-        parser.expr(),
-        Ok(ExprKind::FieldAccess {
-            base: ExprKind::Ident(parser.get_ident("self").unwrap())
-                .span(0..4)
-                .into(),
-            field: Spnd(parser.get_ident("_0").unwrap(), (5..7).into())
-        }
-        .span(0..7))
+        .span(0..15))
     );
 }
 
@@ -409,33 +420,38 @@ fn compound_expressions() {
 fn var_expressions() {
     let mut interner = Default::default();
 
-    let mut parser = Parser::new("let x = 7 + sin(3.)", &mut interner);
+    let mut parser = Parser::new("let x = 7 + sin(3.0)", &mut interner);
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::Let {
             binding: Binding {
-                pat: Pat::Var {
-                    mutable: false,
-                    ident: parser.get_ident("x").unwrap(),
+                mutable: false,
+                pat: Pat::Ident {
+                    ident: parser.get_interned("x"),
+                    subpat: None
                 },
                 ty: None
             },
-            val: ExprKind::BinOp {
-                op: Bop::Add,
-                lhs: ExprKind::Int(7).span(8..9).into(),
-                rhs: ExprKind::App {
-                    func: ExprKind::Ident(parser.get_ident("sin").unwrap())
+            val: ExprKind::InfixExpr {
+                op: InfixOp::Add,
+                lhs: ExprKind::int(7).span(8..9).into(),
+                rhs: ExprKind::CallExpr {
+                    func: ExprKind::ident(parser.get_interned("sin"))
                         .span(12..15)
                         .into(),
-                    args: vec![ExprKind::Float(3.0).span(16..18)]
+                    args: vec![Arg {
+                        mutable: false,
+                        label: None,
+                        val: ExprKind::float(3.0).span(16..19)
+                    }]
                 }
-                .span(12..19)
+                .span(12..20)
                 .into()
             }
-            .span(8..19)
+            .span(8..20)
             .into()
         }
-        .span(0..19))
+        .span(0..20))
     );
 
     let mut parser = Parser::new("let mut y: UInt = 7", &mut interner);
@@ -443,16 +459,17 @@ fn var_expressions() {
         parser.expr(),
         Ok(ExprKind::Let {
             binding: Binding {
-                pat: Pat::Var {
-                    mutable: true,
-                    ident: parser.get_ident("y").unwrap(),
+                mutable: true,
+                pat: Pat::Ident {
+                    ident: parser.get_interned("y"),
+                    subpat: None
                 },
                 ty: Some(Ty {
                     kind: TyKind::UInt,
                     span: Span::from(11..15)
                 })
             },
-            val: ExprKind::Int(7).span(18..19).into()
+            val: ExprKind::int(7).span(18..19).into()
         }
         .span(0..19))
     );
@@ -461,14 +478,14 @@ fn var_expressions() {
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::Assign {
-            ident: Spnd(parser.get_ident("y").unwrap(), (0..1).into()),
-            val: ExprKind::BinOp {
-                op: Bop::Add,
-                lhs: ExprKind::Int(3).span(4..5).into(),
-                rhs: ExprKind::BinOp {
-                    op: Bop::Mul,
-                    lhs: ExprKind::Int(7).span(8..9).into(),
-                    rhs: ExprKind::Float(0.5).span(12..15).into()
+            place: Box::new(ExprKind::ident(parser.get_interned("y")).span(0..1)),
+            val: ExprKind::InfixExpr {
+                op: InfixOp::Add,
+                lhs: ExprKind::int(3).span(4..5).into(),
+                rhs: ExprKind::InfixExpr {
+                    op: InfixOp::Mul,
+                    lhs: ExprKind::int(7).span(8..9).into(),
+                    rhs: ExprKind::float(0.5).span(12..15).into()
                 }
                 .span(8..15)
                 .into()
@@ -484,74 +501,76 @@ fn var_expressions() {
 fn block_expressions() {
     let mut interner = Default::default();
 
-    let input = "
-    let mut y = 5
-    3 + 1 - 2
-    y = 1
-    if y < 3 then
-        let a = 5
-        a
-    else 32
-";
+    let input = "{\
+let mut y = 5
+3 + 1 - 2
+y = 1
+if y < 3 then {
+    let a = 5
+    a
+} else 32
+}";
     let mut parser = Parser::new(input, &mut interner);
     assert_eq!(
         parser.expr(),
         Ok(ExprKind::Block(vec![
             ExprKind::Let {
                 binding: Binding {
-                    pat: Pat::Var {
-                        mutable: true,
-                        ident: parser.get_ident("y").unwrap(),
+                    mutable: true,
+                    pat: Pat::Ident {
+                        ident: parser.get_interned("y"),
+                        subpat: None
                     },
                     ty: None
                 },
-                val: ExprKind::Int(5).span(17..18).into()
+                val: ExprKind::int(5).span(13..14).into()
             }
-            .span(5..18),
-            ExprKind::BinOp {
-                op: Bop::Sub,
-                lhs: ExprKind::BinOp {
-                    op: Bop::Add,
-                    lhs: ExprKind::Int(3).span(23..24).into(),
-                    rhs: ExprKind::Int(1).span(27..28).into()
+            .span(1..14),
+            ExprKind::InfixExpr {
+                op: InfixOp::Sub,
+                lhs: ExprKind::InfixExpr {
+                    op: InfixOp::Add,
+                    lhs: ExprKind::int(3).span(15..16).into(),
+                    rhs: ExprKind::int(1).span(19..20).into()
                 }
-                .span(23..28)
+                .span(15..20)
                 .into(),
-                rhs: ExprKind::Int(2).span(31..32).into()
+                rhs: ExprKind::int(2).span(23..24).into()
             }
-            .span(23..32),
+            .span(15..24),
             ExprKind::Assign {
-                ident: Spnd(parser.get_ident("y").unwrap(), (37..38).into()),
-                val: ExprKind::Int(1).span(41..42).into()
+                place: Box::new(ExprKind::ident(parser.get_interned("y")).span(25..26)),
+                val: ExprKind::int(1).span(29..30).into()
             }
-            .span(37..42),
+            .span(25..30),
             ExprKind::If {
-                cond: ExprKind::BinOp {
-                    op: Bop::Lt,
-                    lhs: ExprKind::Ident(parser.get_ident("y").unwrap())
+                cond: ExprKind::InfixExpr {
+                    op: InfixOp::Lt,
+                    lhs: ExprKind::ident(parser.get_interned("y"))
                         .span(50..51)
                         .into(),
-                    rhs: ExprKind::Int(3).span(54..55).into()
+                    rhs: ExprKind::int(3).span(54..55).into()
                 }
                 .span(50..55)
                 .into(),
                 th: ExprKind::Block(vec![
                     ExprKind::Let {
                         binding: Binding {
-                            pat: Pat::Var {
-                                mutable: false,
-                                ident: parser.get_ident("a").unwrap(),
+                            mutable: false,
+                            pat: Pat::Ident {
+                                ident: parser.get_interned("a"),
+                                subpat: None
                             },
                             ty: None
                         },
-                        val: ExprKind::Int(5).span(77..78).into()
+                        val: ExprKind::int(5).span(77..78).into()
                     }
                     .span(69..78),
-                    ExprKind::Ident(parser.get_ident("a").unwrap()).span(87..88)
+                    ExprKind::ident(parser.get_interned("a")).span(87..88)
                 ])
                 .span(61..93)
                 .into(),
-                el: Some(ExprKind::Int(32).span(98..100).into())
+                el: Some(ExprKind::int(32).span(98..100).into())
             }
             .span(47..100)
         ])
@@ -561,14 +580,7 @@ fn block_expressions() {
 
 #[test]
 fn malformed_expressions() {
-    assert_eq!(
-        parse_expr("[1, 3, 4, 5"),
-        Err(ParseError::Mismatched {
-            expected: TokKind::RBracket,
-            found: TokKind::Eof
-        }
-        .span(11..11))
-    );
+    assert_eq!(parse_expr("[1, 3, 4, 5"), Err(ParseError::Eof.span(11..11)));
     assert_eq!(
         parse_expr("*5"),
         Err(ParseError::Unexpected(TokKind::Times, "start of expression").span(0..1))

@@ -41,24 +41,24 @@ impl TypeChecker<'_> {
             | ExprKind::Bool(_) => expr.kind,
             ExprKind::Array(exprs) => ExprKind::Array(self.sub_ast_all(exprs)?),
             ExprKind::Tuple(exprs) => ExprKind::Tuple(self.sub_ast_all(exprs)?),
-            ExprKind::App { func, args } => ExprKind::App {
+            ExprKind::CallExpr { func, args } => ExprKind::CallExpr {
                 func: self.sub_ast_box(func)?,
                 args: self.sub_ast_all(args)?,
             },
-            ExprKind::BinOp { op, lhs, rhs } => ExprKind::BinOp {
+            ExprKind::InfixExpr { op, lhs, rhs } => ExprKind::InfixExpr {
                 op,
                 lhs: self.sub_ast_box(lhs)?,
                 rhs: self.sub_ast_box(rhs)?,
             },
-            ExprKind::UnaryOp { op, expr } => ExprKind::UnaryOp {
+            ExprKind::UnaryExpr { op, expr } => ExprKind::UnaryExpr {
                 op,
                 expr: self.sub_ast_box(expr)?,
             },
-            ExprKind::Index { arr, idx } => ExprKind::Index {
+            ExprKind::IndexExpr { arr, idx } => ExprKind::IndexExpr {
                 arr: self.sub_ast_box(arr)?,
                 idx: self.sub_ast_box(idx)?,
             },
-            ExprKind::FieldAccess { base, field } => ExprKind::FieldAccess {
+            ExprKind::FieldExpr { base, field } => ExprKind::FieldExpr {
                 base: self.sub_ast_box(base)?,
                 field,
             },
@@ -113,11 +113,11 @@ impl TypeChecker<'_> {
                 ident,
                 val: self.sub_ast_box(val)?,
             },
-            ExprKind::Lambda {
+            ExprKind::LambdaExpr {
                 params,
                 return_ty,
                 body,
-            } => ExprKind::Lambda {
+            } => ExprKind::LambdaExpr {
                 params,
                 return_ty,
                 body: self.sub_ast_box(body)?,

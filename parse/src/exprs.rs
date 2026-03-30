@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ast::{Bop, Expr as _Expr, ExprKind, MatchArm, Unop};
+use ast::{Arg, Expr as _Expr, ExprKind, InfixOp, LitExpr, LoopKind, MatchArm, PlaceExpr, UnaryOp};
 use lex::{Tok, TokKind};
 use span::Span;
 
@@ -25,40 +25,43 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn expr_inner(&mut self, binding_power: u8) -> ParseResult<Expr> {
-        let mut lhs = match self.peek() {
-            TokKind::Ident => self.ident_exprs(),
-            TokKind::IntLit => self.int_lit_expr(),
-            TokKind::FloatLit => self.float_lit_expr(),
-            TokKind::CharLit => self.char_lit_expr(),
-            TokKind::StringLit => self.string_lit_expr(),
-            TokKind::True => {
-                Ok(ExprKind::Bool(true).span(self.consume(TokKind::True).unwrap().span))
-            }
-            TokKind::False => {
-                Ok(ExprKind::Bool(false).span(self.consume(TokKind::False).unwrap().span))
-            }
-            TokKind::LBracket => self.array_lit_expr(),
-            TokKind::LParen => self.paren_exprs(),
-            TokKind::If => self.if_expr(),
-            TokKind::For => self.for_expr(),
-            TokKind::While => self.while_expr(),
-            TokKind::Match => self.match_expr(),
-            TokKind::Minus | TokKind::Bang => self.unop_expr(),
-            TokKind::Let => self.let_expr(),
-            TokKind::Fn => self.lambda_expr(),
-            TokKind::LBrace => self.block_expr(),
-            _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of expression"))),
-        }?;
+        let mut lhs =
+            match self.peek()? {
+                TokKind::Ident => self.place_exprs(),
+                TokKind::IntLit => self.int_lit_expr(),
+                TokKind::FloatLit => self.float_lit_expr(),
+                TokKind::CharLit => self.char_lit_expr(),
+                TokKind::StringLit => self.string_lit_expr(),
+                TokKind::True => Ok(ExprKind::Lit(LitExpr::Bool(true))
+                    .span(self.consume(TokKind::True).unwrap().span)),
+                TokKind::False => Ok(ExprKind::Lit(LitExpr::Bool(false))
+                    .span(self.consume(TokKind::False).unwrap().span)),
+                TokKind::LBracket => self.array_lit_expr(),
+                TokKind::LBrace => self.brace_exprs(),
+                TokKind::Minus | TokKind::Bang => self.unop_expr(),
+                TokKind::Fn => self.lambda_expr(),
+                TokKind::Let => self.let_expr(),
+                TokKind::If => self.if_expr(),
+                TokKind::Match => self.match_expr(),
+                TokKind::For => self.for_expr(),
+                TokKind::While => self.while_expr(),
+                TokKind::Break => self.break_expr(),
+                TokKind::Continue => self.continue_expr(),
+                TokKind::Return => self.return_expr(),
+                _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of expression"))),
+            }?;
 
         loop {
-            let op = match self.peek() {
+            let Ok(peeked) = self.peek() else { break };
+            let op = match peeked {
                 // Attach suffix to current lhs and re-loop
-                TokKind::LBracket => {
-                    lhs = self.index_suffix(lhs)?;
+                TokKind::Eq => {
+                    lhs = self.assign_suffix(lhs)?;
                     continue;
                 }
                 TokKind::Dot => {
-                    lhs = self.field_suffix(lhs)?;
+                    lhs = self.dot_suffixes(lhs)?;
+
                     continue;
                 }
                 TokKind::LParen => {
@@ -66,80 +69,86 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                     continue;
                 }
                 // Continue current iteration with given binop
-                TokKind::Plus => Bop::Add,
-                TokKind::Minus => Bop::Sub,
-                TokKind::Times => Bop::Mul,
-                TokKind::FSlash => Bop::Div,
-                TokKind::Xor => Bop::Xor,
-                TokKind::Ampersand => Bop::BAnd,
-                TokKind::Pipe => Bop::BOr,
-                TokKind::Exponent => Bop::Exp,
-                TokKind::Eqq => Bop::Eqq,
-                TokKind::Neq => Bop::Neq,
-                TokKind::And => Bop::And,
-                TokKind::Or => Bop::Or,
-                TokKind::Lt => Bop::Lt,
-                TokKind::Leq => Bop::Leq,
-                TokKind::Gt => Bop::Gt,
-                TokKind::Geq => Bop::Geq,
-                // Stmt seperator, consume then terminate + return
-                TokKind::Semicolon => {
-                    self.next();
-                    return Ok(lhs);
-                }
-                _ => return Ok(lhs),
+                TokKind::Plus => InfixOp::Add,
+                TokKind::Minus => InfixOp::Sub,
+                TokKind::Times => InfixOp::Mul,
+                TokKind::FSlash => InfixOp::Div,
+                TokKind::Xor => InfixOp::Xor,
+                TokKind::Exponent => InfixOp::Exp,
+                TokKind::Eqq => InfixOp::Eqq,
+                TokKind::Neq => InfixOp::Neq,
+                TokKind::And => InfixOp::And,
+                TokKind::Or => InfixOp::Or,
+                TokKind::Lt => InfixOp::Lt,
+                TokKind::Leq => InfixOp::Leq,
+                TokKind::Gt => InfixOp::Gt,
+                TokKind::Geq => InfixOp::Geq,
+                _ => break,
             };
 
             let (left_binding_power, right_binding_power) = op.binding_power();
 
             if left_binding_power < binding_power {
-                return Ok(lhs);
+                break;
             }
 
-            self.next(); // Skip over the already-parsed bop token
+            self.next()?; // Skip over the already-parsed bop token
 
             let rhs = self.expr_inner(right_binding_power)?;
 
             let span = lhs.span.start..rhs.span.end;
 
-            lhs = ExprKind::BinOp {
+            lhs = ExprKind::InfixExpr {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             }
             .span(span);
         }
+        Ok(lhs)
     }
 
-    fn ident_exprs(&mut self) -> ParseResult<Expr> {
-        let ident = self.ident()?;
-        let ident_span = ident.1;
+    fn place_exprs(&mut self) -> ParseResult<Expr> {
+        let (ident, ident_span) = self.ident()?;
+        let (place, end) = self.place_exprs_inner(PlaceExpr::Ident(ident), ident_span.end)?;
 
-        if self.consume_at(TokKind::Eq) {
-            let val = self.expr()?;
+        Ok(ExprKind::Place(place).span(ident_span.start..end))
+    }
 
-            let span = ident_span.start..val.span.end;
-
-            Ok(ExprKind::Assign {
-                ident,
-                val: Box::new(val),
+    fn place_exprs_inner(
+        &mut self,
+        place: PlaceExpr<()>,
+        end: usize,
+    ) -> ParseResult<(PlaceExpr<()>, usize)> {
+        if self.consume_at(TokKind::Dot) {
+            match self.peek()? {
+                TokKind::Ident => {
+                    let (ident, ident_span) = self.ident()?;
+                    self.place_exprs_inner(PlaceExpr::Field(Box::new(place), ident), ident_span.end)
+                }
+                TokKind::LBracket => {
+                    self.consume(TokKind::LBracket)?;
+                    let index = Box::new(self.expr()?);
+                    let end = self.consume(TokKind::RBrace)?;
+                    self.place_exprs_inner(PlaceExpr::Index(Box::new(place), index), end.span.end)
+                }
+                _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "following dot in place"))),
             }
-            .span(span))
         } else {
-            Ok(ExprKind::Ident(ident.0).span(ident_span))
+            Ok((place, end))
         }
     }
 
     fn int_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::IntLit)?.span;
         let val = u64::from_str(self.str_at(span)).unwrap();
-        Ok(ExprKind::Int(val).span(span))
+        Ok(ExprKind::Lit(LitExpr::Int(val)).span(span))
     }
 
     fn float_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::FloatLit)?.span;
         let val = f64::from_str(self.str_at(span)).unwrap();
-        Ok(ExprKind::Float(val).span(span))
+        Ok(ExprKind::Lit(LitExpr::Float(val)).span(span))
     }
 
     fn char_lit_expr(&mut self) -> ParseResult<Expr> {
@@ -148,41 +157,45 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             .chars()
             .next()
             .unwrap();
-        Ok(ExprKind::Char(val).span(span))
+        Ok(ExprKind::Lit(LitExpr::Char(val)).span(span))
     }
 
     fn string_lit_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::StringLit)?.span;
         let val = process_escapes(self.str_at(span.start + 1..span.end - 1));
-        Ok(ExprKind::String(val).span(span))
+        Ok(ExprKind::Lit(LitExpr::String(val)).span(span))
     }
 
     fn array_lit_expr(&mut self) -> ParseResult<Expr> {
-        let (arr, span) = self.delimited_list(Self::expr, TokKind::LBracket, TokKind::RBracket)?;
-        Ok(ExprKind::Array(arr).span(span))
+        self.delimited_list(Self::expr, TokKind::LBracket, TokKind::RBracket)
+            .map(|(arr, span)| ExprKind::Array(arr).span(span))
     }
 
-    fn paren_exprs(&mut self) -> ParseResult<Expr> {
-        let start = self.consume(TokKind::LParen)?.span.start;
-        let expr = self.expr()?;
+    fn brace_exprs(&mut self) -> ParseResult<Expr> {
+        let start = self.consume(TokKind::LBrace)?.span.start;
 
-        let expr = if self.consume_at(TokKind::Comma) {
-            let mut exprs = vec![expr];
-            while !self.at(TokKind::RParen) {
-                exprs.push(self.expr()?);
+        if let Some(brace) = self.consume_get_at(TokKind::RBrace) {
+            return Ok(ExprKind::Tuple(vec![]).span(start..brace.span.end));
+        }
 
-                if !self.consume_at(TokKind::Comma) {
-                    break;
-                }
+        let mut exprs = vec![self.expr()?];
+        let tuple = self.consume_at(TokKind::Comma);
+
+        while !self.at(TokKind::RBrace) {
+            exprs.push(self.expr()?);
+
+            if tuple && !self.consume_at(TokKind::Comma) {
+                break;
             }
+        }
 
+        let end = self.consume(TokKind::RBrace)?.span.end;
+
+        let expr = if tuple {
             ExprKind::Tuple(exprs)
         } else {
-            expr.kind
+            ExprKind::Block(exprs)
         };
-
-        let end = self.consume(TokKind::RParen)?.span.end;
-
         Ok(expr.span(start..end))
     }
 
@@ -226,10 +239,13 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let span = start..body.span.end;
 
-        Ok(ExprKind::For {
-            pattern,
-            iter: Box::new(iter),
-            body: Box::new(body),
+        Ok(ExprKind::Loop {
+            label: None,
+            kind: LoopKind::For {
+                pattern,
+                iter: Box::new(iter),
+                body: Box::new(body),
+            },
         }
         .span(span))
     }
@@ -245,9 +261,12 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let span = start..body.span.end;
 
-        Ok(ExprKind::While {
-            cond: Box::new(cond),
-            body: Box::new(body),
+        Ok(ExprKind::Loop {
+            label: None,
+            kind: LoopKind::While {
+                cond: Box::new(cond),
+                body: Box::new(body),
+            },
         }
         .span(span))
     }
@@ -300,20 +319,19 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn unop_expr(&mut self) -> ParseResult<Expr> {
-        let op_token = self.next().unwrap();
+        let op_token = self.next()?;
 
         let op = match op_token.kind {
-            TokKind::Minus => Unop::Neg,
-            TokKind::Bang => Unop::Not,
+            TokKind::Minus => UnaryOp::Neg,
+            TokKind::Bang => UnaryOp::Not,
             _ => unreachable!("should only be called when next token is Minus or Bang"),
         };
 
-        let right_binding_power = op.binding_power();
-        let expr = self.expr_inner(right_binding_power)?;
+        let expr = self.expr_inner(op.binding_power())?;
 
         let span = op_token.span.start..expr.span.end;
 
-        Ok(ExprKind::UnaryOp {
+        Ok(ExprKind::UnaryExpr {
             op,
             expr: Box::new(expr),
         }
@@ -324,15 +342,13 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let start = self.consume(TokKind::Let)?.span.start;
 
         let binding = self.binding()?;
-
         self.consume(TokKind::Eq)?;
-        let value = self.expr()?;
+        let val = self.expr()?;
 
-        let span = start..value.span.end;
-
+        let span = start..val.span.end;
         Ok(ExprKind::Let {
             binding,
-            val: Box::new(value),
+            val: Box::new(val),
         }
         .span(span))
     }
@@ -342,72 +358,111 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let (params, _) = self.delimited_list(Self::binding, TokKind::LParen, TokKind::RParen)?;
 
-        let return_type = self.ty_annot()?;
+        let return_ty = self.ty_annot()?;
 
         self.consume(TokKind::Arrow)?;
 
         let body = Box::new(self.expr()?);
-        let span = start..body.span.end;
 
-        Ok(ExprKind::Lambda {
+        let span = start..body.span.end;
+        Ok(ExprKind::LambdaExpr {
             params,
-            return_ty: return_type,
+            return_ty,
             body,
         }
         .span(span))
     }
 
-    fn block_expr(&mut self) -> ParseResult<Expr> {
-        let start = self.consume(TokKind::LBrace)?.span.start;
-
-        let mut exprs = Vec::new();
-        while !self.at(TokKind::RBrace) {
-            exprs.push(self.expr()?);
-        }
-
-        let end = self.consume(TokKind::RBrace)?.span.end;
-
-        Ok(ExprKind::Block(exprs).span(start..end))
+    fn return_expr(&mut self) -> ParseResult<Expr> {
+        let start = self.consume(TokKind::Return)?.span.start;
+        let expr = self.expr()?;
+        let span = start..expr.span.end;
+        Ok(ExprKind::Return(Box::new(expr)).span(span))
     }
 
-    fn index_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
-        self.consume(TokKind::LBracket)?;
-
-        let index = Box::new(self.expr()?);
-
-        let start = lhs.span.start;
-        let end = self.consume(TokKind::RBracket)?.span.end;
-
-        Ok(ExprKind::Index {
-            arr: Box::new(lhs),
-            idx: index,
-        }
-        .span(start..end))
+    fn break_expr(&mut self) -> ParseResult<Expr> {
+        let span = self.consume(TokKind::Break)?.span;
+        Ok(ExprKind::Break(None).span(span))
     }
 
-    fn field_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
-        self.consume(TokKind::Dot)?;
+    fn continue_expr(&mut self) -> ParseResult<Expr> {
+        let span = self.consume(TokKind::Continue)?.span;
+        Ok(ExprKind::Continue(None).span(span))
+    }
 
-        let field = self.ident()?;
-        let span = lhs.span.start..field.1.end;
+    fn assign_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
+        self.consume(TokKind::Eq)?;
 
-        Ok(ExprKind::FieldAccess {
-            base: Box::new(lhs),
-            field,
+        let val = self.expr()?;
+
+        let span = lhs.span.start..val.span.end;
+        Ok(ExprKind::Assign {
+            place: Box::new(lhs),
+            val: Box::new(val),
         }
         .span(span))
+    }
+
+    fn dot_suffixes(&mut self, lhs: Expr) -> ParseResult<Expr> {
+        self.consume(TokKind::Dot)?;
+
+        match self.peek()? {
+            TokKind::Ident => {
+                let (field, field_span) = self.ident()?;
+                let span = lhs.span.start..field_span.end;
+
+                Ok(ExprKind::FieldExpr {
+                    base: Box::new(lhs),
+                    field,
+                }
+                .span(span))
+            }
+            TokKind::LBracket => {
+                self.consume(TokKind::LBracket)?;
+                let idx = Box::new(self.expr()?);
+
+                let span = lhs.span.start..self.consume(TokKind::RBracket)?.span.end;
+                Ok(ExprKind::IndexExpr {
+                    arr: Box::new(lhs),
+                    idx,
+                }
+                .span(span))
+            }
+            _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "following dot in place"))),
+        }
     }
 
     fn call_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
         let start = lhs.span.start;
 
         let (args, Span { end, .. }) =
-            self.delimited_list(Self::expr, TokKind::LParen, TokKind::RParen)?;
+            self.delimited_list(Self::arg, TokKind::LParen, TokKind::RParen)?;
 
-        Ok(ExprKind::App {
+        Ok(ExprKind::CallExpr {
             func: Box::new(lhs),
             args,
         }
         .span(start..end))
+    }
+
+    fn arg(&mut self) -> ParseResult<Arg<()>> {
+        let mutable = self.consume_at(TokKind::Mut);
+
+        let label = self
+            .consume_at(TokKind::Dot)
+            .then(|| {
+                let label = self.pattern()?;
+                self.consume(TokKind::Eq)?;
+                Ok(label)
+            })
+            .transpose()?;
+
+        let val = self.expr()?;
+
+        Ok(Arg {
+            mutable,
+            label,
+            val,
+        })
     }
 }

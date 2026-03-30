@@ -26,9 +26,6 @@ impl<'input> Lexer<'input> {
             pos = token.span.end;
             self.output.push(token);
         }
-
-        let end = self.input.len();
-        self.output.push(TokKind::Eof.span(end..end));
     }
 
     fn next_token(&self, pos: usize) -> Option<Tok> {

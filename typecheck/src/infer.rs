@@ -1,4 +1,4 @@
-use ast::{Binding, Bop, Expr, ExprKind, Ident, Pat, Unop};
+use ast::{Binding, Expr, ExprKind, Ident, InfixOp, Pat, UnaryOp};
 use span::{Span, Spannable};
 
 use super::{BindingInfo, Ty, TypeChecker, TypeError, TypeErrorS};
@@ -18,11 +18,11 @@ impl TypeChecker<'_> {
             ExprKind::Bool(b) => Ok(ExprKind::Bool(b).span_ty(span, Ty::Bool)),
             ExprKind::Array(exprs) => self.infer_array(env, span, exprs),
             ExprKind::Tuple(exprs) => self.infer_tuple(env, span, exprs),
-            ExprKind::App { func, args } => self.infer_app(env, span, *func, args),
-            ExprKind::BinOp { op, lhs, rhs } => self.infer_binop(env, span, op, *lhs, *rhs),
-            ExprKind::UnaryOp { op, expr } => self.infer_unop(env, span, op, *expr),
-            ExprKind::Index { arr, idx } => self.infer_indexing(env, span, *arr, *idx),
-            ExprKind::FieldAccess { base, field } => todo!(),
+            ExprKind::CallExpr { func, args } => self.infer_app(env, span, *func, args),
+            ExprKind::InfixExpr { op, lhs, rhs } => self.infer_binop(env, span, op, *lhs, *rhs),
+            ExprKind::UnaryExpr { op, expr } => self.infer_unop(env, span, op, *expr),
+            ExprKind::IndexExpr { arr, idx } => self.infer_indexing(env, span, *arr, *idx),
+            ExprKind::FieldExpr { base, field } => todo!(),
             ExprKind::If { cond, th, el } => self.infer_if(env, span, *cond, *th, el.map(|v| *v)),
             ExprKind::For {
                 pattern,
@@ -33,7 +33,7 @@ impl TypeChecker<'_> {
             ExprKind::Match { scrutinee, arms } => todo!(),
             ExprKind::Let { binding, val } => self.infer_let(env, span, binding, *val),
             ExprKind::Assign { ident, val } => self.infer_assign(env, span, ident, *val),
-            ExprKind::Lambda {
+            ExprKind::LambdaExpr {
                 params,
                 return_ty,
                 body,
@@ -117,7 +117,7 @@ impl TypeChecker<'_> {
             func.span,
         );
 
-        Ok(ExprKind::App {
+        Ok(ExprKind::CallExpr {
             func: Box::new(func),
             args,
         }
@@ -128,7 +128,7 @@ impl TypeChecker<'_> {
         &mut self,
         env: &mut Env,
         span: Span,
-        op: Bop,
+        op: InfixOp,
         lhs: Expr<()>,
         rhs: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
@@ -136,21 +136,21 @@ impl TypeChecker<'_> {
         let rhs = self.infer(env, rhs)?;
 
         let ty = match op {
-            Bop::Add | Bop::Sub | Bop::Mul | Bop::Div => {
+            InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div => {
                 let int_var = self.fresh_int_var();
                 self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
                 self.constrain_eq(rhs.ty.clone(), lhs.ty.clone(), rhs.span);
 
                 lhs.ty.clone()
             }
-            Bop::Exp => {
+            InfixOp::Exp => {
                 let int_var = self.fresh_int_var();
                 self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var.clone()), lhs.span);
                 self.constrain_eq(rhs.ty.clone(), int_var, rhs.span);
 
                 lhs.ty.clone()
             }
-            Bop::BOr | Bop::BAnd => {
+            InfixOp::BOr | InfixOp::BAnd => {
                 let int_var = self.fresh_int_var();
 
                 self.constrain_eq(lhs.ty.clone(), int_var.clone(), lhs.span);
@@ -158,18 +158,18 @@ impl TypeChecker<'_> {
 
                 int_var
             }
-            Bop::And | Bop::Or | Bop::Xor => {
+            InfixOp::And | InfixOp::Or | InfixOp::Xor => {
                 self.constrain_eq(lhs.ty.clone(), Ty::Bool, lhs.span);
                 self.constrain_eq(rhs.ty.clone(), Ty::Bool, rhs.span);
 
                 Ty::Bool
             }
-            Bop::Eqq | Bop::Neq => {
+            InfixOp::Eqq | InfixOp::Neq => {
                 self.constrain_eq(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 Ty::Bool
             }
-            Bop::Gt | Bop::Lt | Bop::Geq | Bop::Leq => {
+            InfixOp::Gt | InfixOp::Lt | InfixOp::Geq | InfixOp::Leq => {
                 let int_var = self.fresh_int_var();
                 self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
                 self.constrain_eq(rhs.ty.clone(), lhs.ty.clone(), rhs.span);
@@ -178,7 +178,7 @@ impl TypeChecker<'_> {
             }
         };
 
-        Ok(ExprKind::BinOp {
+        Ok(ExprKind::InfixExpr {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -190,25 +190,25 @@ impl TypeChecker<'_> {
         &mut self,
         env: &mut Env,
         span: Span,
-        op: Unop,
+        op: UnaryOp,
         expr: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
         let expr = self.infer(env, expr)?;
 
         let ty = match op {
-            Unop::Not => {
+            UnaryOp::Not => {
                 self.constrain_eq(expr.ty.clone(), Ty::Bool, expr.span);
 
                 Ty::Bool
             }
-            Unop::Neg => {
+            UnaryOp::Neg => {
                 self.constrain_either_eq(expr.ty.clone(), (Ty::Int, Ty::Float), expr.span); //TODO any int
 
                 expr.ty.clone()
             }
         };
 
-        Ok(ExprKind::UnaryOp {
+        Ok(ExprKind::UnaryExpr {
             op,
             expr: Box::new(expr),
         }
@@ -234,7 +234,7 @@ impl TypeChecker<'_> {
         let idx = self.infer(env, index)?;
         self.constrain_eq(idx.ty.clone(), Ty::UInt, idx.span);
 
-        Ok(ExprKind::Index {
+        Ok(ExprKind::IndexExpr {
             arr: Box::new(arr),
             idx: Box::new(idx),
         }
@@ -290,7 +290,7 @@ impl TypeChecker<'_> {
             Pat::Tuple(_) => {
                 todo!("tuple patterns are unimplemented")
             }
-            Pat::Var { mutable, ident } => {
+            Pat::Ident { mutable, ident } => {
                 env.insert(*ident, BindingInfo::new(val.ty.clone(), *mutable));
             }
             Pat::Discard => {}
@@ -351,7 +351,7 @@ impl TypeChecker<'_> {
                 Pat::Tuple(_) => {
                     todo!("tuple patterns are unimplemented")
                 }
-                Pat::Var { mutable, ident } => {
+                Pat::Ident { mutable, ident } => {
                     env.insert(ident, BindingInfo::new(param_ty.clone(), mutable));
                 }
                 Pat::Discard => {}
@@ -368,7 +368,7 @@ impl TypeChecker<'_> {
 
         let body_ty = body.ty.clone();
 
-        Ok(ExprKind::Lambda {
+        Ok(ExprKind::LambdaExpr {
             params,
             return_ty,
             body: Box::new(body),

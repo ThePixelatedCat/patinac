@@ -7,9 +7,10 @@ pub use exprs::*;
 pub use items::*;
 use string_interner::DefaultSymbol;
 
+#[derive(Default)]
 pub struct Ast<T> {
-    adts: Vec<AdtItem>,
-    execs: Vec<ExecItem<T>>,
+    pub adts: Vec<AdtItem>,
+    pub execs: Vec<ExecItem<T>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,17 +22,32 @@ impl From<DefaultSymbol> for Ident {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Binding {
+    pub mutable: bool,
     pub pat: Pat,
     pub ty: Option<Ty>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Pat {
+    Literal {
+        negate: bool,
+        literal: LitExpr,
+    },
+    Wildcard,
+    Ident {
+        ident: Ident,
+        subpat: Option<Box<Pat>>,
+    },
     Tuple(Vec<Pat>),
-    Var { mutable: bool, ident: Ident },
+    Array(Vec<Pat>, Option<ArrayRestPat>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArrayRestPat {
     Discard,
+    Name(Ident),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,10 +62,10 @@ pub enum TyKind {
     UInt,
     Byte,
     Float,
-    Bool,
     Char,
+    Bool,
     Array(Box<Ty>),
     Tuple(Vec<Ty>),
-    Fn(Vec<Ty>, Box<Ty>),
+    Fn(Vec<(bool, Ty)>, Box<Ty>),
     Adt(Ident, Vec<Ty>),
 }

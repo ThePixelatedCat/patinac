@@ -69,12 +69,14 @@ pub enum TokKind {
     Do,
     Match,
     With,
+    Return,
+    Break,
+    Continue,
     True,
     False,
     // Misc
     Ident,
     Error,
-    Eof,
 }
 
 impl Display for TokKind {
@@ -89,8 +91,8 @@ impl Display for TokKind {
                 Self::CharLit => "char literal",
                 Self::LParen => "(",
                 Self::RParen => ")",
-                Self::LBrace => "INDENT",
-                Self::RBrace => "DEDENT",
+                Self::LBrace => "{",
+                Self::RBrace => "}",
                 Self::LBracket => "[",
                 Self::RBracket => "]",
                 Self::Eq => "=",
@@ -139,11 +141,13 @@ impl Display for TokKind {
                 Self::Do => "do",
                 Self::Match => "match",
                 Self::With => "with",
+                Self::Return => "return",
+                Self::Break => "break",
+                Self::Continue => "continue",
                 Self::True => "true",
                 Self::False => "false",
                 Self::Ident => "identifier",
                 Self::Error => "ERROR",
-                Self::Eof => "eof",
             }
         )
     }

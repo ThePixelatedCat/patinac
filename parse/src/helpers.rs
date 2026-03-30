@@ -1,20 +1,22 @@
-use std::ops::Range;
-
 use ast::{Binding, Ident, Pat};
 use lex::{Tok, TokKind};
-use span::{Span, Spannable, Spnd};
+use span::{Span, Spannable};
 
-use crate::{ParseError, ParseResult, Parser};
+use crate::{ParseError, ParseResult, Parser, error::ParseErrorS};
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
-    pub fn err_next(&mut self, f: impl Fn(TokKind) -> ParseError) -> Spnd<ParseError> {
-        let token = self.next().unwrap();
+    pub fn err_next(&mut self, f: impl Fn(TokKind) -> ParseError) -> ParseErrorS {
+        let token = match self.next() {
+            Ok(token) => token,
+            Err(err) => return err,
+        };
 
         f(token.kind).span(token.span)
     }
 
     pub fn binding(&mut self) -> ParseResult<Binding> {
         Ok(Binding {
+            mutable: self.consume_at(TokKind::Mut),
             pat: self.pattern()?,
             ty: self.ty_annot()?,
         })
@@ -23,31 +25,15 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn pattern(&mut self) -> ParseResult<Pat> {
         // TODO add other patterns
 
-        let mutable = self.consume_at(TokKind::Mut);
-
-        let Spnd(ident, _) = self.ident()?;
-
-        Ok(Pat::Var { mutable, ident })
+        Ok(Pat::Ident {
+            ident: self.ident()?.0,
+            subpat: None,
+        })
     }
 
-    pub fn ident(&mut self) -> ParseResult<Spnd<Ident>> {
-        let next = self.next().unwrap();
-
-        match next.kind {
-            TokKind::Ident => {
-                let string = self.input[Range::from(next.span)].to_string();
-
-                Ok(Spnd::span(
-                    self.interner.get_or_intern(string).into(),
-                    next.span,
-                ))
-            }
-            other => Err(ParseError::Mismatched {
-                expected: TokKind::Ident,
-                found: other,
-            }
-            .span(next.span)),
-        }
+    pub fn ident(&mut self) -> ParseResult<(Ident, Span)> {
+        self.consume(TokKind::Ident)
+            .map(|ident| (self.get_interned(self.str_at(ident.span)), ident.span))
     }
 
     pub fn delimited_list<T, F>(
@@ -60,7 +46,6 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         F: FnMut(&mut Self) -> ParseResult<T>,
     {
         let start = self.consume(start)?.span.start;
-        self.strip(TokKind::LBrace);
 
         let mut items = Vec::new();
         while !self.at(end) {
@@ -70,7 +55,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                 break;
             }
         }
-        self.strip(TokKind::RBrace);
+
         let end = self.consume(end)?.span.end;
 
         Ok((items, Span::from(start..end)))

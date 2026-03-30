@@ -13,7 +13,6 @@ fn single_char_tokens() {
             T::Dot.span(3..4),
             T::RParen.span(4..5),
             T::Colon.span(5..6),
-            T::Eof.span(6..6),
         ],
     );
 }
@@ -22,7 +21,7 @@ fn single_char_tokens() {
 fn unknown_input() {
     assert_equal(
         Lexer::lex("$$$$$$$+"),
-        [T::Error.span(0..7), T::Plus.span(7..8), T::Eof.span(8..8)],
+        [T::Error.span(0..7), T::Plus.span(7..8)],
     );
 }
 
@@ -37,7 +36,6 @@ fn single_char_tokens_with_whitespace() {
             T::Dot.span(9..10),
             T::RParen.span(10..11),
             T::Colon.span(11..12),
-            T::Eof.span(13..13),
         ],
     );
 }
@@ -55,7 +53,6 @@ fn maybe_multiple_char_tokens() {
             T::Or.span(8..10),
             T::Exponent.span(10..12),
             T::Arrow.span(12..14),
-            T::Eof.span(14..14),
         ],
     );
 }
@@ -80,7 +77,6 @@ fn keywords() {
             T::Else.span(56..60),
             T::Char.span(61..65),
             T::Fn.span(66..68),
-            T::Eof.span(68..68),
         ],
     );
 }
@@ -89,7 +85,7 @@ fn keywords() {
 fn comment() {
     assert_equal(
         Lexer::lex("//hello, world!\nif let"),
-        [T::If.span(16..18), T::Let.span(19..22), T::Eof.span(22..22)],
+        [T::If.span(16..18), T::Let.span(19..22)],
     );
 }
 
@@ -105,7 +101,6 @@ fn literals() {
             T::StringLit.span(19..25),
             T::CharLit.span(25..29),
             T::CharLit.span(29..33),
-            T::Eof.span(33..33),
         ],
     );
 }
@@ -201,7 +196,6 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Plus.span(258..259),
             T::StringLit.span(260..263),
             T::RBrace.span(264..265),
-            T::Eof.span(266..266),
         ],
     );
 }

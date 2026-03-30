@@ -1,14 +1,30 @@
-use ast::{AdtDef, Field, GenericParam, Item as _Item, Variant};
+use ast::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param, Variant};
 use lex::{Tok, TokKind};
-use span::{Span, Spnd};
+use span::Span;
 
 use crate::{ParseError, ParseResult, Parser};
 
-type Item = _Item<()>;
+#[derive(PartialEq)]
+pub enum Item {
+    ExecItem(ExecItem<()>),
+    AdtItem(AdtItem),
+}
+
+impl From<ExecItem<()>> for Item {
+    fn from(value: ExecItem<()>) -> Self {
+        Self::ExecItem(value)
+    }
+}
+
+impl From<AdtItem> for Item {
+    fn from(value: AdtItem) -> Self {
+        Self::AdtItem(value)
+    }
+}
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     pub fn item(&mut self) -> ParseResult<Item> {
-        match self.peek() {
+        match self.peek()? {
             TokKind::Const => self.const_item(),
             TokKind::Fn => self.func_item(),
             TokKind::Record => self.record_item(),
@@ -20,7 +36,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn const_item(&mut self) -> ParseResult<Item> {
         self.consume(TokKind::Const)?;
 
-        let name = self.ident()?.0;
+        let (ident, _) = self.ident()?;
 
         let ty = self.ty_annot()?;
 
@@ -28,41 +44,51 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let value = self.expr()?;
 
-        Ok(Item::Const {
-            ident: name,
-            ty,
-            value,
-        })
+        Ok(ExecItem::Const { ident, ty, value }.into())
     }
 
     fn func_item(&mut self) -> ParseResult<Item> {
         self.consume(TokKind::Fn)?;
 
-        let name = self.ident()?.0;
+        let (ident, _) = self.ident()?;
 
-        let (params, _) = self.delimited_list(Self::binding, TokKind::LParen, TokKind::RParen)?;
+        let (params, _) = self.delimited_list(Self::param, TokKind::LParen, TokKind::RParen)?;
 
-        let return_ty = self.ty_annot()?;
+        self.consume(TokKind::Colon)?;
+
+        let return_ty = self.ty()?;
 
         self.consume(TokKind::Arrow)?;
 
         let body = self.expr()?;
 
-        Ok(Item::Func {
-            ident: name,
+        Ok(ExecItem::Func {
+            ident,
+            generic_params: vec![],
             params,
             return_ty,
             body,
-        })
+        }
+        .into())
+    }
+
+    fn param(&mut self) -> ParseResult<Param> {
+        let mutable = self.consume_at(TokKind::Mut);
+        let pat = self.pattern()?;
+        self.consume(TokKind::Colon)?;
+        let ty = self.ty()?;
+
+        Ok(Param { mutable, pat, ty })
     }
 
     fn record_item(&mut self) -> ParseResult<Item> {
         self.consume(TokKind::Record)?;
 
-        Ok(Item::Record {
+        Ok(AdtItem::Record {
             def: self.adt_def()?,
             fields: self.fields()?,
-        })
+        }
+        .into())
     }
 
     fn enum_item(&mut self) -> ParseResult<Item> {
@@ -71,38 +97,27 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let def = self.adt_def()?;
 
         let mut variants = Vec::new();
-
-        while {
-            self.strip_identation();
-            self.consume_at(TokKind::Pipe)
-        } {
+        while self.consume_at(TokKind::Pipe) {
             variants.push(Variant {
                 ident: self.ident()?.0,
                 fields: self.fields()?,
             });
         }
 
-        Ok(Item::Enum { def, variants })
+        Ok(AdtItem::Enum { def, variants }.into())
     }
 
     fn adt_def(&mut self) -> ParseResult<AdtDef> {
-        let Spnd(ident, _) = self.ident()?;
-
-        let generics = if self.at(TokKind::Lt) {
-            let (idents, _) = self.delimited_list(Self::ident, TokKind::Lt, TokKind::Gt)?;
-
-            idents.into_iter().map(GenericParam).collect()
-        } else {
-            vec![]
-        };
-
-        Ok(AdtDef { ident, generics })
+        Ok(AdtDef {
+            ident: self.ident()?.0,
+            generics: self.generic_params()?,
+        })
     }
 
     fn fields(&mut self) -> ParseResult<Vec<Field>> {
         self.delimited_list(
             |this| {
-                let Spnd(ident, ident_span) = this.ident()?;
+                let (ident, ident_span) = this.ident()?;
 
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
@@ -115,5 +130,18 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             TokKind::RParen,
         )
         .map(|(fields, _)| fields)
+    }
+
+    fn generic_params(&mut self) -> ParseResult<Vec<GenericParam>> {
+        if self.at(TokKind::LBracket) {
+            let (idents, _) = self.delimited_list(Self::ident, TokKind::Lt, TokKind::Gt)?;
+
+            Ok(idents
+                .into_iter()
+                .map(|(ident, _)| GenericParam(ident))
+                .collect())
+        } else {
+            Ok(vec![])
+        }
     }
 }

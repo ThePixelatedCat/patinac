@@ -11,21 +11,30 @@ pub enum ExecItem<T> {
     },
     Func {
         ident: Ident,
+        generic_params: Vec<GenericParam>,
         params: Vec<Param>,
         return_ty: Ty,
         body: Expr<T>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
+    pub mutable: bool,
     pub pat: Pat,
     pub ty: Ty,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdtItem {
     Record { def: AdtDef, fields: Vec<Field> },
     Enum { def: AdtDef, variants: Vec<Variant> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdtDef {
+    pub ident: Ident,
+    pub generics: Vec<GenericParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +51,4 @@ pub struct Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdtDef {
-    pub ident: Ident,
-    pub generics: Vec<Ident>,
-}
+pub struct GenericParam(pub Ident);
