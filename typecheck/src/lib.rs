@@ -6,7 +6,7 @@ mod test;
 pub mod types;
 mod unify;
 
-use ast::Expr;
+use ast::{Ast, Expr};
 use ena::unify::{InPlaceUnificationTable, UnificationTable};
 
 use error::{TypeError, TypeErrorS};
@@ -53,6 +53,10 @@ impl<'a> TypeChecker<'a> {
 }
 
 impl TypeChecker<'_> {
+    pub fn type_program(&mut self, ast: Ast<()>) -> Result<Ast<Ty>, TypeErrorS> {
+        todo!()
+    }
+
     pub fn type_infer(&mut self, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
         // Constraint generation
         let typed_expr = self.infer(&mut im::HashMap::default(), expr)?;

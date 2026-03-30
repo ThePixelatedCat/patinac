@@ -100,11 +100,11 @@ impl<'input> Lexer<'input> {
             self.indentation(&input[new_level + 1..]);
         } else if new_level > last_level {
             self.indent_levels.push(new_level);
-            self.output.push(TokKind::Indent.span(start..self.pos));
+            self.output.push(TokKind::LBrace.span(start..self.pos));
         } else if new_level < last_level {
             while new_level < self.indent_levels.last().copied().unwrap() {
                 self.indent_levels.pop();
-                self.output.push(TokKind::Dedent.span(start..self.pos));
+                self.output.push(TokKind::RBrace.span(start..self.pos));
             }
         }
     }

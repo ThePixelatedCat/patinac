@@ -46,7 +46,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             TokKind::Minus | TokKind::Bang => self.unop_expr(),
             TokKind::Let => self.let_expr(),
             TokKind::Fn => self.lambda_expr(),
-            TokKind::Indent => self.block_expr(),
+            TokKind::LBrace => self.block_expr(),
             _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of expression"))),
         }?;
 
@@ -358,14 +358,14 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn block_expr(&mut self) -> ParseResult<Expr> {
-        let start = self.consume(TokKind::Indent)?.span.start;
+        let start = self.consume(TokKind::LBrace)?.span.start;
 
         let mut exprs = Vec::new();
-        while !self.at(TokKind::Dedent) {
+        while !self.at(TokKind::RBrace) {
             exprs.push(self.expr()?);
         }
 
-        let end = self.consume(TokKind::Dedent)?.span.end;
+        let end = self.consume(TokKind::RBrace)?.span.end;
 
         Ok(ExprKind::Block(exprs).span(start..end))
     }

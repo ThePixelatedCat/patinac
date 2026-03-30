@@ -16,8 +16,8 @@ pub enum TokKind {
     // Delimiters
     LParen,
     RParen,
-    Indent,
-    Dedent,
+    LBrace,
+    RBrace,
     LBracket,
     RBracket,
     // Symbols
@@ -89,8 +89,8 @@ impl Display for TokKind {
                 Self::CharLit => "char literal",
                 Self::LParen => "(",
                 Self::RParen => ")",
-                Self::Indent => "INDENT",
-                Self::Dedent => "DEDENT",
+                Self::LBrace => "INDENT",
+                Self::RBrace => "DEDENT",
                 Self::LBracket => "[",
                 Self::RBracket => "]",
                 Self::Eq => "=",

@@ -1,10 +1,22 @@
 use std::sync::LazyLock;
 
+use const_format::formatcp;
 use regex::Regex;
 
 use super::TokKind;
 
-type Rule = fn(&str) -> Option<(TokKind, usize)>;
+macro_rules! rule {
+    ($str:literal => $tok:ident) => {
+        |i| match_phrase(i, $str, $crate::TokKind::$tok)
+    };
+}
+
+macro_rules! reg_rule {
+    ($regex:expr => $tok:ident) => {{
+        static REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new($regex).unwrap());
+        |i| match_regex(i, &REGEX, $crate::TokKind::$tok)
+    }};
+}
 
 fn match_phrase(i: &str, p: &str, t: TokKind) -> Option<(TokKind, usize)> {
     i.starts_with(p).then_some((t, p.len()))
@@ -14,76 +26,82 @@ fn match_regex(i: &str, r: &Regex, t: TokKind) -> Option<(TokKind, usize)> {
     r.find(i).map(|regex_match| (t, regex_match.end()))
 }
 
-static INT_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d+").unwrap());
-static FLOAT_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^((\d+\.(\d+)?)|(\.\d+))([Ee][\+-]?\d+)?").unwrap());
-static STRING_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"^"((\\"|\\\\|\\n)|[^\\"])*""#).unwrap());
-static CHAR_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^'((\\'|\\\\|\\n)|[^\\'])'").unwrap());
-static IDENT_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[A-Za-z_]([A-Za-z_]|\d)*").unwrap());
+const DEC_INT: &str = "([0-9][0-9_]*)";
+const BIN_INT: &str = "(0b[0-1][0-1_]*)";
+const OCT_INT: &str = "(0o[0-7][0-7_]*)";
+const HEX_INT: &str = "(0x[0-9a-fA-F][0-9a-fA-F_]*)";
+const INT: &str = formatcp!("^{DEC_INT}|{BIN_INT}|{OCT_INT}|{HEX_INT}");
 
-const RULES: [Rule; 57] = {
-    use TokKind as T;
+const EXPONENT: &str = "([Ee]-?DEC_INT)";
+const FLOAT: &str = formatcp!(r"^{DEC_INT}\.{DEC_INT}{EXPONENT}?");
+
+const ESCAPE: &str = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#;
+const CHAR: &str = formatcp!(r"^'([^\t\n\r'\\]|{ESCAPE})'");
+const STRING: &str = formatcp!(r##"^("([^"\\]|{ESCAPE})*")|((?s)#".*"#)"##);
+
+const IDENT: &str = "^[A-Za-z_][A-Za-z_0-9]*";
+
+const RULES: [fn(&str) -> Option<(TokKind, usize)>; 59] = {
     [
-        |i| match_regex(i, &INT_REGEX, T::IntLit),
-        |i| match_regex(i, &FLOAT_REGEX, T::FloatLit),
-        |i| match_regex(i, &STRING_REGEX, T::StringLit),
-        |i| match_regex(i, &CHAR_REGEX, T::CharLit),
-        |i| match_phrase(i, "[", T::LBracket),
-        |i| match_phrase(i, "]", T::RBracket),
-        |i| match_phrase(i, "(", T::LParen),
-        |i| match_phrase(i, ")", T::RParen),
-        |i| match_phrase(i, "=", T::Eq),
-        |i| match_phrase(i, "&", T::Ampersand),
-        |i| match_phrase(i, "|", T::Pipe),
-        |i| match_phrase(i, "!", T::Bang),
-        |i| match_phrase(i, "^", T::Xor),
-        |i| match_phrase(i, "<", T::LAngle),
-        |i| match_phrase(i, ">", T::RAngle),
-        |i| match_phrase(i, "+", T::Plus),
-        |i| match_phrase(i, "-", T::Minus),
-        |i| match_phrase(i, "*", T::Times),
-        |i| match_phrase(i, "/", T::FSlash),
-        |i| match_phrase(i, "\\", T::BSlash),
-        |i| match_phrase(i, ".", T::Dot),
-        |i| match_phrase(i, ",", T::Comma),
-        |i| match_phrase(i, ":", T::Colon),
-        |i| match_phrase(i, ";", T::Semicolon),
-        |i| match_phrase(i, "_", T::Underscore),
-        |i| match_phrase(i, "->", T::Arrow),
-        |i| match_phrase(i, "==", T::Eqq),
-        |i| match_phrase(i, "!=", T::Neq),
-        |i| match_phrase(i, "**", T::Exponent),
-        |i| match_phrase(i, "&&", T::And),
-        |i| match_phrase(i, "||", T::Or),
-        |i| match_phrase(i, "<=", T::Leq),
-        |i| match_phrase(i, ">=", T::Geq),
-        |i| match_phrase(i, "Int", T::Int),
-        |i| match_phrase(i, "UInt", T::UInt),
-        |i| match_phrase(i, "Byte", T::Byte),
-        |i| match_phrase(i, "Float", T::Float),
-        |i| match_phrase(i, "Bool", T::Bool),
-        |i| match_phrase(i, "Char", T::Char),
-        |i| match_phrase(i, "let", T::Let),
-        |i| match_phrase(i, "mut", T::Mut),
-        |i| match_phrase(i, "const", T::Const),
-        |i| match_phrase(i, "fn", T::Fn),
-        |i| match_phrase(i, "record", T::Record),
-        |i| match_phrase(i, "enum", T::Enum),
-        |i| match_phrase(i, "if", T::If),
-        |i| match_phrase(i, "then", T::Then),
-        |i| match_phrase(i, "else", T::Else),
-        |i| match_phrase(i, "for", T::For),
-        |i| match_phrase(i, "in", T::In),
-        |i| match_phrase(i, "while", T::While),
-        |i| match_phrase(i, "do", T::Do),
-        |i| match_phrase(i, "match", T::Match),
-        |i| match_phrase(i, "with", T::With),
-        |i| match_phrase(i, "true", T::True),
-        |i| match_phrase(i, "false", T::False),
-        |i| match_regex(i, &IDENT_REGEX, T::Ident),
+        reg_rule!(INT => IntLit),
+        reg_rule!(FLOAT => FloatLit),
+        reg_rule!(CHAR => CharLit),
+        reg_rule!(STRING => StringLit),
+        rule!("(" => LParen),
+        rule!(")" => RParen),
+        rule!("{" => LBrace),
+        rule!("}" => RBrace),
+        rule!("[" => LBracket),
+        rule!("]" => RBracket),
+        rule!("=" => Eq),
+        rule!("&" => Ampersand),
+        rule!("|" => Pipe),
+        rule!("!" => Bang),
+        rule!("^" => Xor),
+        rule!("<" => LAngle),
+        rule!(">" => RAngle),
+        rule!("+" => Plus),
+        rule!("-" => Minus),
+        rule!("*" => Times),
+        rule!("/" => FSlash),
+        rule!("\\" => BSlash),
+        rule!("." => Dot),
+        rule!("," => Comma),
+        rule!(":" => Colon),
+        rule!(";" => Semicolon),
+        rule!("_" => Underscore),
+        rule!("->" => Arrow),
+        rule!("==" => Eqq),
+        rule!("!=" => Neq),
+        rule!("**" => Exponent),
+        rule!("&&" => And),
+        rule!("||" => Or),
+        rule!("<=" => Leq),
+        rule!(">=" => Geq),
+        rule!("Int" => Int),
+        rule!("UInt" => UInt),
+        rule!("Byte" => Byte),
+        rule!("Float" => Float),
+        rule!("Bool" => Bool),
+        rule!("Char" => Char),
+        rule!("let" => Let),
+        rule!("mut" => Mut),
+        rule!("const" => Const),
+        rule!("fn" => Fn),
+        rule!("record" => Record),
+        rule!("enum" => Enum),
+        rule!("if" => If),
+        rule!("then" => Then),
+        rule!("else" => Else),
+        rule!("for" => For),
+        rule!("in" => In),
+        rule!("while" => While),
+        rule!("do" => Do),
+        rule!("match" => Match),
+        rule!("with" => With),
+        rule!("true" => True),
+        rule!("false" => False),
+        reg_rule!(IDENT => Ident),
     ]
 };
 
@@ -92,5 +110,5 @@ pub fn matches(input: &str) -> Option<(TokKind, usize)> {
         .iter()
         .filter_map(|rule| rule(input))
         .rev() // reverse so that the first-listed element is returned in case of ambiguity (e.g. "match" as ident vs keyword)
-        .max_by_key(|&(_, len)| len)
+        .max_by_key(|&(_, len)| len) // maximal munch
 }

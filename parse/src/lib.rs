@@ -94,8 +94,8 @@ impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
     }
 
     fn strip_identation(&mut self) {
-        self.strip(TokKind::Indent);
-        self.strip(TokKind::Dedent);
+        self.strip(TokKind::LBrace);
+        self.strip(TokKind::RBrace);
     }
 
     fn str_at(&self, span: impl Into<Range<usize>>) -> &'input str {

@@ -60,7 +60,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         F: FnMut(&mut Self) -> ParseResult<T>,
     {
         let start = self.consume(start)?.span.start;
-        self.strip(TokKind::Indent);
+        self.strip(TokKind::LBrace);
 
         let mut items = Vec::new();
         while !self.at(end) {
@@ -70,7 +70,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                 break;
             }
         }
-        self.strip(TokKind::Dedent);
+        self.strip(TokKind::RBrace);
         let end = self.consume(end)?.span.end;
 
         Ok((items, Span::from(start..end)))

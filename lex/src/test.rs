@@ -142,7 +142,7 @@ fn test(var: Type, var2_: Bool) ->
             T::Bool.span(49..53),
             T::RParen.span(53..54),
             T::Arrow.span(55..57),
-            T::Indent.span(60..64),
+            T::LBrace.span(60..64),
             // `x` assignment
             T::Let.span(64..67),
             T::Ident.span(68..69),
@@ -180,7 +180,7 @@ fn test(var: Type, var2_: Bool) ->
             T::LParen.span(186..187),
             T::RParen.span(187..188),
             T::Then.span(189..193),
-            T::Indent.span(194..202),
+            T::LBrace.span(194..202),
             // `x` re-assignment
             T::Ident.span(202..203),
             T::Eq.span(204..205),
@@ -188,21 +188,21 @@ fn test(var: Type, var2_: Bool) ->
             T::Plus.span(208..209),
             T::Ident.span(210..211),
             // else if
-            T::Dedent.span(212..216),
+            T::RBrace.span(212..216),
             T::Else.span(216..220),
             T::If.span(221..223),
             T::Bang.span(224..225),
             T::Ident.span(225..230),
             T::Then.span(231..235),
-            T::Indent.span(237..245),
+            T::LBrace.span(237..245),
             // `x` re-assignment
             T::Ident.span(245..246),
             T::Eq.span(247..248),
             T::Ident.span(249..250),
             T::Plus.span(251..252),
             T::StringLit.span(253..256),
-            T::Dedent.span(257..257), // end if
-            T::Dedent.span(257..257), // end fn
+            T::RBrace.span(257..257), // end if
+            T::RBrace.span(257..257), // end fn
             T::Eof.span(257..257),
         ],
     );
