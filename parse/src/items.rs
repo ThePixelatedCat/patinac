@@ -4,7 +4,7 @@ use span::Span;
 
 use crate::{ParseError, ParseResult, Parser};
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Item {
     ExecItem(ExecItem<()>),
     AdtItem(AdtItem),
@@ -134,7 +134,8 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
     fn generic_params(&mut self) -> ParseResult<Vec<GenericParam>> {
         if self.at(TokKind::LBracket) {
-            let (idents, _) = self.delimited_list(Self::ident, TokKind::Lt, TokKind::Gt)?;
+            let (idents, _) =
+                self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;
 
             Ok(idents
                 .into_iter()

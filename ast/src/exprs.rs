@@ -87,19 +87,19 @@ impl<T> ExprKind<T> {
         }
     }
 
-    pub fn ident(ident: Ident) -> Self {
+    pub const fn ident(ident: Ident) -> Self {
         Self::Place(PlaceExpr::Ident(ident))
     }
 
-    pub fn int(i: u64) -> Self {
+    pub const fn int(i: u64) -> Self {
         Self::Lit(LitExpr::Int(i))
     }
 
-    pub fn float(f: f64) -> Self {
+    pub const fn float(f: f64) -> Self {
         Self::Lit(LitExpr::Float(f))
     }
 
-    pub fn char(c: char) -> Self {
+    pub const fn char(c: char) -> Self {
         Self::Lit(LitExpr::Char(c))
     }
 
@@ -107,7 +107,7 @@ impl<T> ExprKind<T> {
         Self::Lit(LitExpr::String(String::from(s)))
     }
 
-    pub fn bool(b: bool) -> Self {
+    pub const fn bool(b: bool) -> Self {
         Self::Lit(LitExpr::Bool(b))
     }
 }

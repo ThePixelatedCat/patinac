@@ -547,11 +547,11 @@ if y < 3 then {
                 cond: ExprKind::InfixExpr {
                     op: InfixOp::Lt,
                     lhs: ExprKind::ident(parser.get_interned("y"))
-                        .span(50..51)
+                        .span(34..35)
                         .into(),
-                    rhs: ExprKind::int(3).span(54..55).into()
+                    rhs: ExprKind::int(3).span(38..39).into()
                 }
-                .span(50..55)
+                .span(34..39)
                 .into(),
                 th: ExprKind::Block(vec![
                     ExprKind::Let {
@@ -563,18 +563,18 @@ if y < 3 then {
                             },
                             ty: None
                         },
-                        val: ExprKind::int(5).span(77..78).into()
+                        val: ExprKind::int(5).span(59..60).into()
                     }
-                    .span(69..78),
-                    ExprKind::ident(parser.get_interned("a")).span(87..88)
+                    .span(51..60),
+                    ExprKind::ident(parser.get_interned("a")).span(65..66)
                 ])
-                .span(61..93)
+                .span(45..68)
                 .into(),
-                el: Some(ExprKind::int(32).span(98..100).into())
+                el: Some(ExprKind::int(32).span(74..76).into())
             }
-            .span(47..100)
+            .span(31..76)
         ])
-        .span(1..101))
+        .span(0..78))
     );
 }
 

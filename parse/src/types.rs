@@ -23,9 +23,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             TokKind::Bool => primitive!(self, Bool),
             TokKind::Char => primitive!(self, Char),
             TokKind::LBracket => self.array_ty(),
-            TokKind::LParen => self.tuple_ty(),
+            TokKind::LBrace => self.tuple_ty(),
             TokKind::Fn => self.fn_ty(),
-            TokKind::Ident => self.ast_ty(),
+            TokKind::Ident => self.adt_ty(),
             _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of type name"))),
         }
     }
@@ -71,14 +71,14 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    fn ast_ty(&mut self) -> ParseResult<Ty> {
+    fn adt_ty(&mut self) -> ParseResult<Ty> {
         let (ident, span) = self.ident()?;
 
         let start = span.start;
 
-        let (generics, end) = if self.at(TokKind::Lt) {
+        let (generics, end) = if self.at(TokKind::LBracket) {
             let (generics, generics_span) =
-                self.delimited_list(Self::ty, TokKind::Lt, TokKind::Gt)?;
+                self.delimited_list(Self::ty, TokKind::LBracket, TokKind::RBracket)?;
             (generics, generics_span.end)
         } else {
             (Vec::new(), span.end)

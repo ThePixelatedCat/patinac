@@ -69,3 +69,12 @@ pub enum TyKind {
     Fn(Vec<(bool, Ty)>, Box<Ty>),
     Adt(Ident, Vec<Ty>),
 }
+
+impl TyKind {
+    pub fn span(self, span: impl Into<Span>) -> Ty {
+        Ty {
+            kind: self,
+            span: span.into(),
+        }
+    }
+}
