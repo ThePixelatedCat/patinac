@@ -1,4 +1,4 @@
-use std::{env, fs};
+use std::{env, fmt::Display, fs};
 
 use anyhow::anyhow;
 use yansi::Paint;
@@ -8,6 +8,20 @@ use parse::Parser;
 use span::Span;
 
 //use typecheck::TypeChecker;
+
+enum DiagnosticKind {
+    Error,
+    Warning,
+}
+
+impl Display for DiagnosticKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DiagnosticKind::Error => "error".bright_red().fmt(f),
+            DiagnosticKind::Warning => "warning".yellow().fmt(f),
+        }
+    }
+}
 
 fn main() {
     let src_path = env::args()
@@ -20,7 +34,7 @@ fn main() {
         Ok(tokens) => tokens,
         Err(spans) => {
             for span in spans {
-                print_diagnostic("invalid token", span, &src);
+                print_diagnostic(DiagnosticKind::Error, "invalid token", span, &src);
             }
             return;
         }
@@ -32,7 +46,7 @@ fn main() {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
-                print_diagnostic(&err.0.to_string(), err.1, &src);
+                print_diagnostic(DiagnosticKind::Error, &err.0.to_string(), err.1, &src);
             }
             return;
         }
@@ -41,7 +55,7 @@ fn main() {
     //TypeChecker::new().check(&ast)?;
 }
 
-fn print_diagnostic(msg: &str, span: Span, src: &str) {
+fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
     let line_start = src[..=span.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let line_end = src[span.end..]
         .find(['\n', '\r'])
@@ -52,11 +66,13 @@ fn print_diagnostic(msg: &str, span: Span, src: &str) {
     let span_start = span.start - line_start;
     let span_end = span.end - line_start;
 
-    let header = format!("{}: {msg} ({}:{span_start})", "error".bright_red(), 0);
-    println!("{}", header.bold());
-    println!("{line}");
+    let line_num = src[..=span.start].matches("\r\n").count();
+
+    let header = format!("{kind}: {msg} ({}:{})", line_num + 1, span_start + 1);
+    println!("{}", header.white().wrap().bold());
+    println!("{}   {line}", ">".white().bold());
     println!(
-        "{:>span_end$} {}",
+        "    {:>span_end$} {}",
         str::repeat("^", span_end - span_start).bright_red(),
         ""
     );

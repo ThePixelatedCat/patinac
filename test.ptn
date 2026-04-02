@@ -1,6 +1,6 @@
 const true = false
 
-fn fib(n: UInt): UInt -> 
+fn fib(n: UInt) -> 
     if n <= 1 then
         n
     else 
