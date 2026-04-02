@@ -1,3 +1,4 @@
+use ident::Ident;
 use span::Span;
 
 mod exprs;
@@ -5,21 +6,11 @@ mod items;
 
 pub use exprs::*;
 pub use items::*;
-use string_interner::DefaultSymbol;
 
 #[derive(Default)]
 pub struct Ast<T> {
     pub adts: Vec<AdtItem>,
     pub execs: Vec<ExecItem<T>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ident(DefaultSymbol);
-
-impl From<DefaultSymbol> for Ident {
-    fn from(value: DefaultSymbol) -> Self {
-        Self(value)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

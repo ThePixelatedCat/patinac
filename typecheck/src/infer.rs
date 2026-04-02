@@ -1,21 +1,22 @@
-use ast::{Binding, Expr, ExprKind, Ident, InfixOp, Pat, UnaryOp};
+use ast::{Binding, Expr, ExprKind, InfixOp, LitExpr, Pat, PlaceExpr, UnaryOp};
+use fnv::FnvHashMap;
+use ident::Ident;
 use span::{Span, Spannable};
 
-use super::{BindingInfo, Ty, TypeChecker, TypeError, TypeErrorS};
+use super::{AdtEnv, AdtInfo, BindingInfo, Env, Ty, TypeChecker, TypeError, TypeErrorS};
 
-type Env = im::HashMap<Ident, BindingInfo>;
-
-impl TypeChecker<'_> {
+impl TypeChecker {
     #[expect(unused)]
-    pub(super) fn infer(&mut self, env: &mut Env, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
+    pub(super) fn infer(
+        &mut self,
+        ty_env: &AdtEnv,
+        env: &mut Env,
+        expr: Expr<()>,
+    ) -> Result<Expr<Ty>, TypeErrorS> {
         let span = expr.span;
         match expr.kind {
-            ExprKind::Ident(ident) => self.infer_ident(env, span, ident),
-            ExprKind::Int(i) => Ok(ExprKind::Int(i).span_ty(span, self.fresh_int_var())),
-            ExprKind::Float(f) => Ok(ExprKind::Float(f).span_ty(span, Ty::Float)),
-            ExprKind::String(s) => Ok(ExprKind::String(s).span_ty(span, Ty::string(self.interner))),
-            ExprKind::Char(c) => Ok(ExprKind::Char(c).span_ty(span, Ty::Char)),
-            ExprKind::Bool(b) => Ok(ExprKind::Bool(b).span_ty(span, Ty::Bool)),
+            ExprKind::Place(place) => self.infer_place(env, span, place).map(|(expr, _)| expr),
+            ExprKind::Lit(lit) => self.infer_lit(span, lit),
             ExprKind::Array(exprs) => self.infer_array(env, span, exprs),
             ExprKind::Tuple(exprs) => self.infer_tuple(env, span, exprs),
             ExprKind::CallExpr { func, args } => self.infer_app(env, span, *func, args),
@@ -32,7 +33,7 @@ impl TypeChecker<'_> {
             ExprKind::While { cond, body } => todo!(),
             ExprKind::Match { scrutinee, arms } => todo!(),
             ExprKind::Let { binding, val } => self.infer_let(env, span, binding, *val),
-            ExprKind::Assign { ident, val } => self.infer_assign(env, span, ident, *val),
+            ExprKind::Assign { place, val } => self.infer_assign(env, *place, *val),
             ExprKind::LambdaExpr {
                 params,
                 return_ty,
@@ -65,11 +66,69 @@ impl TypeChecker<'_> {
             .unzip())
     }
 
-    fn infer_ident(&self, env: &Env, span: Span, ident: Ident) -> Result<Expr<Ty>, TypeErrorS> {
-        let info = env
-            .get(&ident)
-            .ok_or_else(|| TypeError::UnboundIdent.span(span))?;
-        Ok(ExprKind::Ident(ident).span_ty(span, info.ty.clone()))
+    fn ident_info(env: &Env, span: Span, ident: Ident) -> Result<BindingInfo, TypeErrorS> {
+        env.get(&ident)
+            .cloned()
+            .ok_or_else(|| TypeError::UnboundIdent.span(span))
+    }
+
+    fn infer_place(
+        &mut self,
+        env: &mut Env,
+        span: Span,
+        place: PlaceExpr<()>,
+    ) -> Result<(Expr<Ty>, bool), TypeErrorS> {
+        let (place, ty, mutable) = self.infer_place_inner(env, span, place)?;
+
+        Ok((ExprKind::Place(place).span_ty(span, ty), mutable))
+    }
+
+    fn infer_place_inner(
+        &mut self,
+        env: &mut Env,
+        span: Span,
+        place: PlaceExpr<()>,
+    ) -> Result<(PlaceExpr<Ty>, Ty, bool), TypeErrorS> {
+        match place {
+            PlaceExpr::Ident(ident) => {
+                let info = Self::ident_info(env, span, ident)?;
+                Ok((PlaceExpr::Ident(ident), info.ty, info.mutable))
+            }
+            PlaceExpr::Field(base, ident) => {
+                let (base, base_ty, mutable) = self.infer_place_inner(env, span, *base)?;
+
+                let field_ty = self.get_field_ty(base_ty, ident, span)?;
+
+                Ok((PlaceExpr::Field(Box::new(base), ident), field_ty, mutable))
+            }
+            PlaceExpr::Index(base, idx) => {
+                let (base, base_ty, mutable) = self.infer_place_inner(env, span, *base)?;
+
+                let inner_ty = self.fresh_var();
+                self.constrain_eq(base_ty, Ty::Array(Box::new(inner_ty.clone())), span);
+
+                let idx = self.infer(env, *idx)?;
+                self.constrain_eq(idx.ty.clone(), Ty::UInt, idx.span);
+
+                Ok((
+                    PlaceExpr::Index(Box::new(base), Box::new(idx)),
+                    inner_ty,
+                    mutable,
+                ))
+            }
+        }
+    }
+
+    fn infer_lit(&mut self, span: Span, lit: LitExpr) -> Result<Expr<Ty>, TypeErrorS> {
+        let ty = match lit {
+            LitExpr::Int(_) => self.fresh_int_var(),
+            LitExpr::Float(_) => Ty::Float,
+            LitExpr::String(_) => Ty::string(self.interner),
+            LitExpr::Char(_) => Ty::Char,
+            LitExpr::Bool(_) => Ty::Bool,
+        };
+
+        Ok(ExprKind::Lit(lit).span_ty(span, ty))
     }
 
     fn infer_array(
@@ -307,24 +366,26 @@ impl TypeChecker<'_> {
     fn infer_assign(
         &mut self,
         env: &mut Env,
-        span: Span,
-        ident: Ident,
+        place: Expr<()>,
         val: Expr<()>,
     ) -> Result<Expr<Ty>, TypeErrorS> {
         let val = self.infer(env, val)?;
 
-        let info = env
-            .get(&ident)
-            .ok_or_else(|| TypeError::UnboundIdent.span(span))?;
+        let span = place.span;
+        let ExprKind::Place(place) = place.kind else {
+            return Err(TypeError::NotPlaceExpr.span(place.span));
+        };
 
-        if !info.mutable {
+        let (place, place_mutable) = self.infer_place(env, span, place)?;
+
+        if !place_mutable {
             return Err(TypeError::Mutation.span(span));
         }
 
-        self.constrain_eq(val.ty.clone(), info.ty.clone(), val.span);
+        self.constrain_eq(val.ty.clone(), place.ty.clone(), val.span);
 
         Ok(ExprKind::Assign {
-            ident,
+            place: Box::new(place),
             val: Box::new(val),
         }
         .span_ty(span, Ty::unit()))

@@ -7,12 +7,12 @@ edition = "2024"
 # Internal
 ast = { path = "../ast" }
 span = { path = "../span" }
+ident = { path = "../ident" }
 # External
 ego-tree = "0.11.0"
 ena = "0.14.3"
 fnv = "1.0.7"
 itertools = "0.14.0"
-string-interner = "0.19.0"
 im = "15.1.0"
 
 [lints]

@@ -6,51 +6,49 @@ mod items;
 mod test;
 mod types;
 
-use std::{iter::Peekable, ops::Range, vec::IntoIter};
+use std::{iter::Peekable, ops::Range};
 
-use string_interner::DefaultStringInterner;
-
-use ast::{Ast, Ident};
-use lex::{Lexer, Tok, TokKind};
+use ast::Ast;
+use lex::{Tok, TokKind};
 use span::Spannable;
 
 pub use error::{ParseError, ParseResult};
 
-use crate::items::Item;
+use crate::{error::ParseErrorS, items::Item};
 
 pub struct Parser<'input, I>
 where
     I: Iterator<Item = Tok>,
 {
     input: &'input str,
-    interner: &'input mut DefaultStringInterner,
     tokens: Peekable<I>,
 }
 
-impl<'input> Parser<'input, IntoIter<Tok>> {
-    pub fn new(input: &'input str, interner: &'input mut DefaultStringInterner) -> Self {
-        Parser {
-            input,
-            interner,
-            tokens: Lexer::lex(input).into_iter().peekable(),
-        }
+impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
+    pub fn new(input: &'input str, tokens: Peekable<I>) -> Self {
+        Self { input, tokens }
     }
 }
 
 impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
-    pub fn parse(&mut self) -> ParseResult<Ast<()>> {
+    pub fn parse(&mut self) -> Result<Ast<()>, Vec<ParseErrorS>> {
         let mut ast = Ast::default();
+        let mut errs = Vec::new();
+
         while self.peek().is_ok() {
-            match self.item()? {
-                Item::ExecItem(exec_item) => ast.execs.push(exec_item),
-                Item::AdtItem(adt_item) => ast.adts.push(adt_item),
+            match self.item() {
+                Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
+                Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
+                Err(err) => {
+                    errs.push(err);
+                    self.skip_until(|tok| {
+                        [TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum].contains(&tok)
+                    });
+                }
             }
         }
-        Ok(ast)
-    }
 
-    pub fn get_interned(&mut self, name: &str) -> Ident {
-        self.interner.get_or_intern(name).into()
+        if errs.is_empty() { Ok(ast) } else { Err(errs) }
     }
 
     /// Get the next token.
@@ -99,6 +97,14 @@ impl<'input, I: Iterator<Item = Tok>> Parser<'input, I> {
             self.next().unwrap();
         }
         at
+    }
+
+    fn skip_until(&mut self, pred: impl Fn(TokKind) -> bool) {
+        while let Ok(tok) = self.peek()
+            && !pred(tok)
+        {
+            let _ = self.next();
+        }
     }
 
     fn str_at(&self, span: impl Into<Range<usize>>) -> &'input str {

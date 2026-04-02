@@ -7,7 +7,7 @@ pub enum ExecItem<T> {
     Const {
         ident: Ident,
         ty: Option<Ty>,
-        value: Expr<T>,
+        val: Expr<T>,
     },
     Func {
         ident: Ident,

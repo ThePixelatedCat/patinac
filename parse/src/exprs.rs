@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ast::{Arg, Expr as _Expr, ExprKind, InfixOp, LitExpr, LoopKind, MatchArm, PlaceExpr, UnaryOp};
+use ast::{Arg, Expr as _Expr, ExprKind, InfixOp, LitExpr, LoopKind, MatchArm, UnaryOp};
 use lex::{Tok, TokKind};
 use span::Span;
 
@@ -27,7 +27,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn expr_inner(&mut self, binding_power: u8) -> ParseResult<Expr> {
         let mut lhs =
             match self.peek()? {
-                TokKind::Ident => self.place_exprs(),
+                TokKind::Ident => self.ident_expr(),
                 TokKind::IntLit => self.int_lit_expr(),
                 TokKind::FloatLit => self.float_lit_expr(),
                 TokKind::CharLit => self.char_lit_expr(),
@@ -55,13 +55,8 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             let Ok(peeked) = self.peek() else { break };
             let op = match peeked {
                 // Attach suffix to current lhs and re-loop
-                TokKind::Eq => {
-                    lhs = self.assign_suffix(lhs)?;
-                    continue;
-                }
                 TokKind::Dot => {
                     lhs = self.dot_suffixes(lhs)?;
-
                     continue;
                 }
                 TokKind::LParen => {
@@ -69,6 +64,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
                     continue;
                 }
                 // Continue current iteration with given binop
+                TokKind::Eq => InfixOp::Assign,
                 TokKind::Plus => InfixOp::Add,
                 TokKind::Minus => InfixOp::Sub,
                 TokKind::Times => InfixOp::Mul,
@@ -108,35 +104,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         Ok(lhs)
     }
 
-    fn place_exprs(&mut self) -> ParseResult<Expr> {
-        let (ident, ident_span) = self.ident()?;
-        let (place, end) = self.place_exprs_inner(PlaceExpr::Ident(ident), ident_span.end)?;
-
-        Ok(ExprKind::Place(place).span(ident_span.start..end))
-    }
-
-    fn place_exprs_inner(
-        &mut self,
-        place: PlaceExpr<()>,
-        end: usize,
-    ) -> ParseResult<(PlaceExpr<()>, usize)> {
-        if self.consume_at(TokKind::Dot) {
-            match self.peek()? {
-                TokKind::Ident => {
-                    let (ident, ident_span) = self.ident()?;
-                    self.place_exprs_inner(PlaceExpr::Field(Box::new(place), ident), ident_span.end)
-                }
-                TokKind::LBracket => {
-                    self.consume(TokKind::LBracket)?;
-                    let index = Box::new(self.expr()?);
-                    let end = self.consume(TokKind::RBrace)?;
-                    self.place_exprs_inner(PlaceExpr::Index(Box::new(place), index), end.span.end)
-                }
-                _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "following dot in place"))),
-            }
-        } else {
-            Ok((place, end))
-        }
+    fn ident_expr(&mut self) -> ParseResult<Expr> {
+        self.ident()
+            .map(|(ident, ident_span)| ExprKind::Ident(ident).span(ident_span))
     }
 
     fn int_lit_expr(&mut self) -> ParseResult<Expr> {
@@ -388,19 +358,6 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn continue_expr(&mut self) -> ParseResult<Expr> {
         let span = self.consume(TokKind::Continue)?.span;
         Ok(ExprKind::Continue(None).span(span))
-    }
-
-    fn assign_suffix(&mut self, lhs: Expr) -> ParseResult<Expr> {
-        self.consume(TokKind::Eq)?;
-
-        let val = self.expr()?;
-
-        let span = lhs.span.start..val.span.end;
-        Ok(ExprKind::Assign {
-            place: Box::new(lhs),
-            val: Box::new(val),
-        }
-        .span(span))
     }
 
     fn dot_suffixes(&mut self, lhs: Expr) -> ParseResult<Expr> {

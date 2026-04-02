@@ -21,7 +21,7 @@ impl Display for ParseError {
                 write!(f, "expected {expected}, found {found}")
             }
             Self::Unexpected(token, desc) => {
-                write!(f, "unexpected token `{token}` at {desc}")
+                write!(f, "unexpected token {token} at {desc}")
             }
             Self::Eof => "unexpected end of file".fmt(f),
         }

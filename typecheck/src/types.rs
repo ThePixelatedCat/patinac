@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use ast::Ident;
 use ena::unify::{EqUnifyValue, UnifyKey};
-use string_interner::DefaultStringInterner;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use ident::Ident;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     Int,
     UInt,
@@ -22,8 +22,8 @@ pub enum Ty {
 
 impl EqUnifyValue for Ty {}
 
-impl From<ast::Ty> for Ty {
-    fn from(value: ast::Ty) -> Self {
+impl From<&ast::Ty> for Ty {
+    fn from(value: &ast::Ty) -> Self {
         match value.kind {
             ast::TyKind::Int => Self::Int,
             ast::TyKind::UInt => Self::UInt,
@@ -31,14 +31,12 @@ impl From<ast::Ty> for Ty {
             ast::TyKind::Float => Self::Float,
             ast::TyKind::Bool => Self::Bool,
             ast::TyKind::Char => Self::Char,
-            ast::TyKind::Adt(ident, args) => {
-                Self::Adt(ident, args.into_iter().map(ast::Ty::into).collect())
-            }
-            ast::TyKind::Array(ty) => Self::Array(Box::new(Self::from(*ty))),
-            ast::TyKind::Tuple(tys) => Self::Tuple(tys.into_iter().map(ast::Ty::into).collect()),
+            ast::TyKind::Adt(ident, args) => Self::Adt(ident, args.iter().map(Ty::from).collect()),
+            ast::TyKind::Array(ty) => Self::Array(Box::new(Self::from(ty.as_ref()))),
+            ast::TyKind::Tuple(tys) => Self::Tuple(tys.iter().map(Ty::from).collect()),
             ast::TyKind::Fn(param_tys, return_ty) => Self::Func(
-                param_tys.into_iter().map(ast::Ty::into).collect(),
-                Box::new(Self::from(*return_ty)),
+                param_tys.iter().map(Ty::from).collect(),
+                Box::new(Self::from(return_ty.as_ref())),
             ),
         }
     }
@@ -50,8 +48,8 @@ impl Ty {
         Self::Tuple(vec![])
     }
 
-    pub fn string(interner: &mut DefaultStringInterner) -> Self {
-        Self::Adt(interner.get_or_intern("String").into(), vec![])
+    pub fn string() -> Self {
+        Self::Adt(Ident::new("String"), vec![])
     }
 }
 

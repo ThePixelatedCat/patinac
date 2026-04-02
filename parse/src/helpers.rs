@@ -1,4 +1,5 @@
-use ast::{Binding, Ident, Pat};
+use ast::{Binding, Pat};
+use ident::Ident;
 use lex::{Tok, TokKind};
 use span::{Span, Spannable};
 
@@ -33,7 +34,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
     pub fn ident(&mut self) -> ParseResult<(Ident, Span)> {
         self.consume(TokKind::Ident)
-            .map(|ident| (self.get_interned(self.str_at(ident.span)), ident.span))
+            .map(|ident| (Ident::new(self.str_at(ident.span)), ident.span))
     }
 
     pub fn delimited_list<T, F>(

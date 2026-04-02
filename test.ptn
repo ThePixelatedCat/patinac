@@ -1,5 +1,7 @@
-fn fib(n) ->
-    if n == 0 || n == 1 then
+const true = false
+
+fn fib(n: UInt): UInt -> 
+    if n <= 1 then
         n
     else 
         fib(n - 1) + fib(n - 2)

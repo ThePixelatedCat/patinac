@@ -5,7 +5,7 @@ use crate::error::{TypeError, TypeErrorS};
 
 use super::{Ty, TypeChecker};
 
-impl TypeChecker<'_> {
+impl TypeChecker {
     fn sub_ty(&mut self, ty: Ty) -> Result<Ty, TypeError> {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Char => Ok(ty),

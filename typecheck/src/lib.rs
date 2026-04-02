@@ -6,13 +6,24 @@ mod test;
 pub mod types;
 mod unify;
 
-use ast::{Ast, Expr};
-use ena::unify::{InPlaceUnificationTable, UnificationTable};
+use ena::unify::InPlaceUnificationTable;
+use fnv::FnvHashMap;
 
-use error::{TypeError, TypeErrorS};
-use span::Span;
-use string_interner::DefaultStringInterner;
-use types::{Ty, TyVar};
+use ast::{AdtItem, Ast, ExecItem, Expr, GenericParam};
+use ident::Ident;
+use span::{Span, Spannable};
+
+use crate::error::{TypeError, TypeErrorS};
+use crate::types::{Ty, TyVar};
+
+#[derive(Default)]
+struct AdtInfo {
+    //generic_params: Vec<GenericParam>,
+    fields: FnvHashMap<Ident, Ty>,
+}
+
+type AdtEnv = FnvHashMap<Ident, AdtInfo>;
+type Env = im::HashMap<Ident, BindingInfo>;
 
 #[derive(Clone)]
 struct BindingInfo {
@@ -36,30 +47,76 @@ enum ConstraintKind {
     EitherTypeEqual(Ty, (Ty, Ty)),
 }
 
-pub struct TypeChecker<'a> {
+#[derive(Default)]
+pub struct TypeChecker {
     table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
-    interner: &'a mut DefaultStringInterner,
 }
 
-impl<'a> TypeChecker<'a> {
-    pub fn new(interner: &'a mut DefaultStringInterner) -> Self {
-        Self {
-            table: UnificationTable::default(),
-            constraints: Vec::default(),
-            interner,
+impl TypeChecker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl TypeChecker {
+    pub fn type_program(&mut self, Ast { adts, execs }: Ast<()>) -> Result<Ast<Ty>, TypeErrorS> {
+        let mut ty_env = AdtEnv::default();
+
+        ty_env.insert(Ident::new("String"), AdtInfo::default());
+
+        for adt in &adts {
+            match adt {
+                AdtItem::Record { def, fields } => {
+                    let fields = fields
+                        .iter()
+                        .map(|field| (field.ident, Ty::from(&field.ty)))
+                        .collect();
+                    ty_env.insert(
+                        def.ident,
+                        AdtInfo {
+                            //generic_params: def.generics,
+                            fields,
+                        },
+                    );
+                }
+                AdtItem::Enum { def, variants } => todo!(),
+            }
         }
-    }
-}
 
-impl TypeChecker<'_> {
-    pub fn type_program(&mut self, ast: Ast<()>) -> Result<Ast<Ty>, TypeErrorS> {
-        todo!()
+        let mut new_execs = Vec::new();
+        for exec in execs {
+            let new_exec = match exec {
+                ExecItem::Const { ident, ty, val } => ExecItem::Const {
+                    ident,
+                    ty,
+                    val: self.type_infer(&ty_env, val)?,
+                },
+                ExecItem::Func {
+                    ident,
+                    generic_params,
+                    params,
+                    return_ty,
+                    body,
+                } => todo!(),
+            };
+            new_execs.push(new_exec);
+        }
+
+        Ok(Ast {
+            adts,
+            execs: new_execs,
+        })
     }
 
-    pub fn type_infer(&mut self, expr: Expr<()>) -> Result<Expr<Ty>, TypeErrorS> {
+    pub fn type_infer(
+        &mut self,
+        ty_env: &AdtEnv,
+        mut env: Env,
+        expr: Expr<()>,
+    ) -> Result<Expr<Ty>, TypeErrorS> {
         // Constraint generation
-        let typed_expr = self.infer(&mut im::HashMap::default(), expr)?;
+        let typed_expr = self.infer(ty_env, &mut env, expr)?;
 
         // Constraint solving
         self.unify()?;
@@ -90,6 +147,16 @@ impl TypeChecker<'_> {
             kind: ConstraintKind::EitherTypeEqual(a, tys),
             span,
         });
+    }
+
+    fn get_field_ty(&self, base: Ty, field: Ident, span: Span) -> Result<Ty, TypeErrorS> {
+        self.tys
+            .get(&base)
+            .ok_or_else(|| TypeError::UnknownType.span(span))?
+            .fields
+            .get(&field)
+            .cloned()
+            .ok_or_else(|| TypeError::MissingField.span(span))
     }
 
     // #[allow(

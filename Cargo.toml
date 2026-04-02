@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["compile", "span", "lex", "ast", "parse", "typecheck"]
+members = ["compile", "span", "lex", "ast", "parse", "typecheck", "ident"]
 
 [workspace.lints.clippy]
 missing_errors_doc = "allow"

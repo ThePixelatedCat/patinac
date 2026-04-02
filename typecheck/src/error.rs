@@ -12,6 +12,9 @@ pub enum TypeError {
     Mutation,
     Infinite(TyVar, Ty),
     UninferredType,
+    NotPlaceExpr,
+    UnknownType,
+    MissingField,
 }
 
 impl Display for TypeError {
@@ -22,6 +25,11 @@ impl Display for TypeError {
             Self::Mutation => "attempted mutation of immutable variable".fmt(f),
             Self::Infinite(var, ty) => todo!(),
             Self::UninferredType => "could not infer the type of this expression".fmt(f),
+            Self::NotPlaceExpr => {
+                "left hand side of an assignment must be a place expression".fmt(f)
+            }
+            Self::UnknownType => "unknown type".fmt(f),
+            Self::MissingField => "field not found".fmt(f),
         }
     }
 }

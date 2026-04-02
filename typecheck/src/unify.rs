@@ -26,7 +26,7 @@ impl Ty {
     }
 }
 
-impl TypeChecker<'_> {
+impl TypeChecker {
     pub(super) fn unify(&mut self) -> Result<(), TypeErrorS> {
         for constr in mem::take(&mut self.constraints) {
             match constr.kind {

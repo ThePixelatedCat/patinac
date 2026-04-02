@@ -1,50 +1,51 @@
-use itertools::assert_equal;
+use itertools::Itertools;
+use proptest::{collection::vec, prelude::*};
+use span::Span;
+
+use crate::Tok;
 
 use super::{Lexer, TokKind as T};
 
 #[test]
 fn single_char_tokens() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex("+-(.):"),
-        [
+        Ok(vec![
             T::Plus.span(0..1),
             T::Minus.span(1..2),
             T::LParen.span(2..3),
             T::Dot.span(3..4),
             T::RParen.span(4..5),
             T::Colon.span(5..6),
-        ],
+        ]),
     );
 }
 
 #[test]
 fn unknown_input() {
-    assert_equal(
-        Lexer::lex("$$$$$$$+"),
-        [T::Error.span(0..7), T::Plus.span(7..8)],
-    );
+    assert_eq!(Lexer::lex("$$$$$$$+"), Err(vec![Span::from(0..7)]));
 }
 
 #[test]
 fn single_char_tokens_with_whitespace() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex("   + -  (.): "),
-        [
+        Ok(vec![
             T::Plus.span(3..4),
             T::Minus.span(5..6),
             T::LParen.span(8..9),
             T::Dot.span(9..10),
             T::RParen.span(10..11),
             T::Colon.span(11..12),
-        ],
+        ]),
     );
 }
 
 #[test]
 fn maybe_multiple_char_tokens() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex("&&=<=_!=||**->"),
-        [
+        Ok(vec![
             T::And.span(0..2),
             T::Eq.span(2..3),
             T::Leq.span(3..5),
@@ -53,15 +54,15 @@ fn maybe_multiple_char_tokens() {
             T::Or.span(8..10),
             T::Exponent.span(10..12),
             T::Arrow.span(12..14),
-        ],
+        ]),
     );
 }
 
 #[test]
 fn keywords() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex("if Int record Byte let mut UInt enum Float = match Bool else Char fn"),
-        [
+        Ok(vec![
             T::If.span(0..2),
             T::Int.span(3..6),
             T::Record.span(7..13),
@@ -77,23 +78,23 @@ fn keywords() {
             T::Else.span(56..60),
             T::Char.span(61..65),
             T::Fn.span(66..68),
-        ],
+        ]),
     );
 }
 
 #[test]
 fn comment() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex("//hello, world!\nif let"),
-        [T::If.span(16..18), T::Let.span(19..22)],
+        Ok(vec![T::If.span(16..18), T::Let.span(19..22)]),
     );
 }
 
 #[test]
 fn literals() {
-    assert_equal(
+    assert_eq!(
         Lexer::lex(r#"1 0.21 1.5E-2 true "test"'\n''\''"#),
-        [
+        Ok(vec![
             T::IntLit.span(0..1),
             T::FloatLit.span(2..6),
             T::FloatLit.span(7..13),
@@ -101,7 +102,7 @@ fn literals() {
             T::StringLit.span(19..25),
             T::CharLit.span(25..29),
             T::CharLit.span(29..33),
-        ],
+        ]),
     );
 }
 
@@ -121,9 +122,9 @@ fn test(var: Type, var2_: Bool): Int -> {
 "#;
 
     let tokens = Lexer::lex(&input);
-    assert_equal(
+    assert_eq!(
         tokens,
-        [
+        Ok(vec![
             // function signature
             T::Fn.span(23..25),
             T::Ident.span(26..30),
@@ -196,6 +197,38 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Plus.span(258..259),
             T::StringLit.span(260..263),
             T::RBrace.span(264..265),
-        ],
+        ]),
     );
 }
+
+#[test]
+fn unicode_gibberish() {
+    assert_eq!(Lexer::lex("®"), Err(vec![Span::from(0..1)]));
+}
+
+#[test]
+fn eof_comment() {
+    assert_eq!(Lexer::lex("//"), Ok(Vec::<Tok>::new()));
+}
+
+proptest! {
+    #[test]
+    fn doesnt_crash(s in r"\PC*") {
+        let _ = Lexer::lex(&s);
+    }
+
+    #[test]
+    fn reverse(in_toks in vec(T::arb(), 8..=512)) {
+        let raw = in_toks.iter().map(T::reverse).join(" ");
+
+        let out_toks: Vec<_> = Lexer::lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();
+
+        prop_assert_eq!(in_toks, out_toks)
+    }
+}
+
+// #[test]
+// fn rand_regexes() {
+//     let ints = rand_regex::Regex::compile(rules::INT, 20).unwrap();
+//     ints.
+// }

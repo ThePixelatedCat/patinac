@@ -9,10 +9,10 @@ span = { path = "../span" }
 lex = { path = "../lex" }
 ast = { path = "../ast" }
 parse = { path = "../parse" }
-typecheck = { path = "../typecheck" }
+#typecheck = { path = "../typecheck" }
 # External
 anyhow = "1.0.100"
-string-interner = "0.19.0"
+yansi = "1.0.1"
 
 [lints]
 workspace = true

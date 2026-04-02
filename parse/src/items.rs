@@ -44,7 +44,12 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let value = self.expr()?;
 
-        Ok(ExecItem::Const { ident, ty, value }.into())
+        Ok(ExecItem::Const {
+            ident,
+            ty,
+            val: value,
+        }
+        .into())
     }
 
     fn func_item(&mut self) -> ParseResult<Item> {

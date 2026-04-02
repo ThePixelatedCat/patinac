@@ -3,39 +3,51 @@ mod rules;
 mod test;
 mod token;
 
+use span::Span;
 pub use token::{Tok, TokKind};
 
 pub struct Lexer<'input> {
     input: &'input str,
     output: Vec<Tok>,
+    errors: Vec<Span>,
 }
 
 impl<'input> Lexer<'input> {
-    pub fn lex(input: &'input str) -> Vec<Tok> {
+    pub fn lex(input: &'input str) -> Result<Vec<Tok>, Vec<Span>> {
         let mut lexer = Self {
             input,
             output: Vec::with_capacity(input.len() / 4),
+            errors: Vec::new(),
         };
         lexer.all_tokens();
-        lexer.output
-    }
-
-    pub fn all_tokens(&mut self) {
-        let mut pos = 0;
-        while let Some(token) = self.next_token(pos) {
-            pos = token.span.end;
-            self.output.push(token);
+        if lexer.errors.is_empty() {
+            Ok(lexer.output)
+        } else {
+            Err(lexer.errors)
         }
     }
 
-    fn next_token(&self, pos: usize) -> Option<Tok> {
+    fn all_tokens(&mut self) {
+        let mut pos = 0;
+        while let Some(token) = self.next_token(pos) {
+            match token {
+                Ok(token) => {
+                    pos = token.span.end;
+                    self.output.push(token);
+                }
+                Err(span) => {
+                    pos = span.end;
+                    self.errors.push(span);
+                }
+            }
+        }
+    }
+
+    fn next_token(&self, pos: usize) -> Option<Result<Tok, Span>> {
         let input = self.get_rest(pos)?;
 
         if input.starts_with("//") {
-            let comment_length = input
-                .find(['\n', '\r'])
-                .expect("expected newline to terminate comment");
-            self.next_token(pos + comment_length)
+            self.next_token(pos + input.find(['\n', '\r'])?)
         } else if input.starts_with(char::is_whitespace) {
             let whitespace_length = input
                 .char_indices()
@@ -46,13 +58,13 @@ impl<'input> Lexer<'input> {
             self.next_token(pos + whitespace_length + 1)
         } else {
             Some(rules::matches(input).map_or_else(
-                || self.err_token(pos),
-                |(token, len)| token.span(pos..pos + len),
+                || Err(self.find_err(pos)),
+                |(token, len)| Ok(token.span(pos..pos + len)),
             ))
         }
     }
 
-    fn err_token(&self, pos: usize) -> Tok {
+    fn find_err(&self, pos: usize) -> Span {
         let start = pos;
         let mut end = start;
 
@@ -62,10 +74,12 @@ impl<'input> Lexer<'input> {
             end += 1;
         }
 
-        TokKind::Error.span(start..end)
+        Span::from(start..end)
     }
 
     fn get_rest(&self, pos: usize) -> Option<&str> {
-        (pos < self.input.len()).then(|| &self.input[pos..])
+        (pos < self.input.len())
+            .then(|| self.input.get(pos..))
+            .flatten()
     }
 }

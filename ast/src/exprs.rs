@@ -11,7 +11,7 @@ pub struct Expr<T> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprKind<T> {
-    Place(PlaceExpr<T>),
+    Ident(Ident),
     Lit(LitExpr),
     Array(Vec<Expr<T>>),
     Tuple(Vec<Expr<T>>),
@@ -43,10 +43,6 @@ pub enum ExprKind<T> {
     },
     Let {
         binding: Binding,
-        val: Box<Expr<T>>,
-    },
-    Assign {
-        place: Box<Expr<T>>,
         val: Box<Expr<T>>,
     },
     If {
@@ -87,8 +83,8 @@ impl<T> ExprKind<T> {
         }
     }
 
-    pub const fn ident(ident: Ident) -> Self {
-        Self::Place(PlaceExpr::Ident(ident))
+    pub fn ident(string: &str) -> Self {
+        Self::Ident(Ident::new(string))
     }
 
     pub const fn int(i: u64) -> Self {
@@ -110,13 +106,6 @@ impl<T> ExprKind<T> {
     pub const fn bool(b: bool) -> Self {
         Self::Lit(LitExpr::Bool(b))
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PlaceExpr<T> {
-    Ident(Ident),
-    Field(Box<PlaceExpr<T>>, Ident),
-    Index(Box<PlaceExpr<T>>, Box<Expr<T>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,6 +150,7 @@ pub enum LoopKind<T> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
+    Assign,
     Add,
     Sub,
     Mul,
@@ -181,6 +171,7 @@ pub enum InfixOp {
 impl InfixOp {
     pub const fn binding_power(self) -> (u8, u8) {
         match self {
+            Self::Assign => (1, 0),
             Self::Or => (3, 4),
             Self::And => (5, 6),
             Self::Eqq | Self::Neq => (7, 8),
