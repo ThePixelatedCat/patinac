@@ -167,12 +167,12 @@ impl TokKind {
     #[cfg(any(test, feature = "test"))]
     pub fn reverse(&self) -> String {
         match self {
-            Self::IntLit => String::from("`1`"),
+            Self::IntLit => String::from("1"),
             Self::FloatLit => String::from("1.1"),
             Self::StringLit => String::from(r#""Hello, World!""#),
             Self::CharLit => String::from("'a'"),
             Self::Ident => String::from("foo"),
-            _ => self.to_string(),
+            _ => self.to_string().trim_matches('`').to_string(),
         }
     }
 

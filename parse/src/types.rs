@@ -1,20 +1,17 @@
-use ast::{Ty, TyKind};
+use ast::types::{Param, Ty, TyKind};
 use lex::{Tok, TokKind};
 use span::Span;
 
-use crate::{ParseError, ParseResult, Parser};
+use crate::{ErrorKind, Parser, Result};
 
 macro_rules! primitive {
     ($self:ident, $ty:ident) => {
-        Ok(Ty {
-            kind: ast::TyKind::$ty,
-            span: $self.consume(lex::TokKind::$ty).unwrap().span,
-        })
+        Ok(ast::types::TyKind::$ty.span($self.consume(lex::TokKind::$ty)?.span))
     };
 }
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
-    pub fn ty(&mut self) -> ParseResult<Ty> {
+    pub fn ty(&mut self) -> Result<Ty> {
         match self.peek()? {
             TokKind::Int => primitive!(self, Int),
             TokKind::UInt => primitive!(self, UInt),
@@ -26,11 +23,11 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
             TokKind::LBrace => self.tuple_ty(),
             TokKind::Fn => self.fn_ty(),
             TokKind::Ident => self.adt_ty(),
-            _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of type name"))),
+            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of type name"))),
         }
     }
 
-    fn array_ty(&mut self) -> ParseResult<Ty> {
+    fn array_ty(&mut self) -> Result<Ty> {
         let start = self.consume(TokKind::LBracket)?.span.start;
 
         let inner_type = self.ty()?;
@@ -43,7 +40,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    fn tuple_ty(&mut self) -> ParseResult<Ty> {
+    fn tuple_ty(&mut self) -> Result<Ty> {
         let (types, span) = self.delimited_list(Self::ty, TokKind::LBrace, TokKind::RBrace)?;
 
         Ok(Ty {
@@ -52,11 +49,16 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    fn fn_ty(&mut self) -> ParseResult<Ty> {
+    fn fn_ty(&mut self) -> Result<Ty> {
         let start = self.consume(TokKind::Fn)?.span.start;
 
         let (params, _) = self.delimited_list(
-            |this| Ok((this.consume_at(TokKind::Mut), this.ty()?)),
+            |this| {
+                Ok(Param {
+                    mutable: this.consume_at(TokKind::Mut),
+                    ty: this.ty()?,
+                })
+            },
             TokKind::LParen,
             TokKind::RParen,
         )?;
@@ -71,7 +73,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    fn adt_ty(&mut self) -> ParseResult<Ty> {
+    fn adt_ty(&mut self) -> Result<Ty> {
         let (ident, span) = self.ident()?;
 
         let start = span.start;
@@ -90,7 +92,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    pub fn ty_annot(&mut self) -> ParseResult<Option<Ty>> {
+    pub fn ty_annot(&mut self) -> Result<Option<Ty>> {
         self.consume_at(TokKind::Colon)
             .then(|| self.ty())
             .transpose()

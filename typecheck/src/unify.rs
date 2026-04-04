@@ -1,23 +1,23 @@
 use std::{iter, mem};
 
-use span::Spannable;
-
-use crate::{ConstraintKind, Ty, TyVar, TypeChecker, TypeError, error::TypeErrorS};
+use crate::{ConstraintKind, ErrorKind, Ty, TyVar, TypeChecker, error::Error, types::Param};
 
 impl Ty {
-    fn occurs_check(&self, var: TyVar) -> Result<(), TypeError> {
+    fn occurs_check(&self, var: TyVar) -> Result<(), ErrorKind> {
         match self {
             Self::Int | Self::UInt | Self::Byte | Self::Float | Self::Bool | Self::Char => Ok(()),
             Self::Array(ty) => ty.occurs_check(var),
             Self::Tuple(tys) => tys.iter().try_for_each(|ty| ty.occurs_check(var)),
-            Self::Func(param_tys, return_ty) => {
-                param_tys.iter().try_for_each(|ty| ty.occurs_check(var))?;
+            Self::Func(params, return_ty) => {
+                params
+                    .iter()
+                    .try_for_each(|param| param.ty.occurs_check(var))?;
                 return_ty.occurs_check(var)
             }
             Self::Adt(_, args) => args.iter().try_for_each(|ty| ty.occurs_check(var)),
             Self::Var(this_var) | Self::IntVar(this_var) => {
                 if *this_var == var {
-                    Err(TypeError::Infinite(var, Self::Var(*this_var)))
+                    Err(ErrorKind::Infinite(var, Self::Var(*this_var)))
                 } else {
                     Ok(())
                 }
@@ -27,11 +27,11 @@ impl Ty {
 }
 
 impl TypeChecker {
-    pub(super) fn unify(&mut self) -> Result<(), TypeErrorS> {
+    pub(super) fn unify(&mut self) -> Result<(), Error> {
         for constr in mem::take(&mut self.constraints) {
             match constr.kind {
                 ConstraintKind::TypeEqual(left, right) => self.unify_ty_ty(left, right),
-                ConstraintKind::EitherTypeEqual(_, _) => todo!(),
+                ConstraintKind::EitherTypeEqual(ty, options) => todo!(),
             }
             .map_err(|kind| kind.span(constr.span))?;
         }
@@ -42,7 +42,7 @@ impl TypeChecker {
     /// at which point we unify them in the table,
     /// or until we can no longer traverse them or we know they're mismatched,
     /// at which point we error
-    pub(super) fn unify_ty_ty(&mut self, unnorm_lhs: Ty, unnorm_rhs: Ty) -> Result<(), TypeError> {
+    pub(super) fn unify_ty_ty(&mut self, unnorm_lhs: Ty, unnorm_rhs: Ty) -> Result<(), ErrorKind> {
         let lhs = self.normalize_ty(unnorm_lhs);
         let rhs = self.normalize_ty(unnorm_rhs);
 
@@ -72,18 +72,23 @@ impl TypeChecker {
                 self.unify_all(lhs_inners, rhs_inners)
             }
             (Ty::Func(lhs_params, lhs_return), Ty::Func(rhs_params, rhs_return)) => {
-                self.unify_all(lhs_params, rhs_params)?;
+                iter::zip(lhs_params, rhs_params).try_for_each(|(l, r)| {
+                    if l.mutable != r.mutable {
+                        return Err(ErrorKind::ParamMutability(l, r));
+                    }
+                    self.unify_ty_ty(l.ty, r.ty)
+                })?;
                 self.unify_ty_ty(*lhs_return, *rhs_return)
             }
 
             (Ty::Adt(name_a, args_a), Ty::Adt(name_b, args_b)) if name_a == name_b => {
                 self.unify_all(args_a, args_b)
             }
-            (lhs, rhs) => Err(TypeError::TypesNotEqual(lhs, rhs)),
+            (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs)),
         }
     }
 
-    fn unify_all(&mut self, left_tys: Vec<Ty>, right_tys: Vec<Ty>) -> Result<(), TypeError> {
+    fn unify_all(&mut self, left_tys: Vec<Ty>, right_tys: Vec<Ty>) -> Result<(), ErrorKind> {
         iter::zip(left_tys, right_tys).try_for_each(|(l, r)| self.unify_ty_ty(l, r))
     }
 
@@ -92,13 +97,16 @@ impl TypeChecker {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Char => ty,
             Ty::Array(ty) => Ty::Array(Box::new(self.normalize_ty(*ty))),
             Ty::Tuple(tys) => Ty::Tuple(tys.into_iter().map(|ty| self.normalize_ty(ty)).collect()),
-            Ty::Func(param_tys, return_ty) => {
-                let param_tys = param_tys
+            Ty::Func(params, return_ty) => {
+                let params = params
                     .into_iter()
-                    .map(|ty| self.normalize_ty(ty))
+                    .map(|param| Param {
+                        ty: self.normalize_ty(param.ty),
+                        ..param
+                    })
                     .collect();
                 let return_ty = Box::new(self.normalize_ty(*return_ty));
-                Ty::Func(param_tys, return_ty)
+                Ty::Func(params, return_ty)
             }
             Ty::Var(v) => match self.table.probe_value(v) {
                 Some(ty) => self.normalize_ty(ty),
@@ -118,16 +126,16 @@ impl TypeChecker {
         }
     }
 
-    fn unify_var_var(&mut self, lhs: TyVar, rhs: TyVar) -> Result<(), TypeError> {
+    fn unify_var_var(&mut self, lhs: TyVar, rhs: TyVar) -> Result<(), ErrorKind> {
         self.table
             .unify_var_var(lhs, rhs)
-            .map_err(|(l, r)| TypeError::TypesNotEqual(l, r))
+            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r))
     }
 
-    fn unify_var_value(&mut self, var: TyVar, ty: Ty) -> Result<(), TypeError> {
+    fn unify_var_value(&mut self, var: TyVar, ty: Ty) -> Result<(), ErrorKind> {
         self.table
             .unify_var_value(var, Some(ty))
-            .map_err(|(l, r)| TypeError::TypesNotEqual(l, r))
+            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r))
     }
 
     // pub(super) fn unify_either(&self, ty: &Ty, opt_a: &Ty, opt_b: &Ty) -> Result<(), TypeError> {

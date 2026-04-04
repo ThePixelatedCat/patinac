@@ -1,71 +1,18 @@
 use ident::Ident;
-use span::Span;
 
-mod exprs;
-mod items;
+pub mod exprs;
+pub mod items;
+pub mod patterns;
+pub mod types;
 
-pub use exprs::*;
-pub use items::*;
+use crate::{
+    items::{AdtItem, ExecItem},
+    patterns::Pat,
+    types::Ty,
+};
 
 #[derive(Default)]
 pub struct Ast<T> {
     pub adts: Vec<AdtItem>,
     pub execs: Vec<ExecItem<T>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Binding {
-    pub mutable: bool,
-    pub pat: Pat,
-    pub ty: Option<Ty>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Pat {
-    Literal {
-        negate: bool,
-        literal: LitExpr,
-    },
-    Wildcard,
-    Ident {
-        ident: Ident,
-        subpat: Option<Box<Pat>>,
-    },
-    Tuple(Vec<Pat>),
-    Array(Vec<Pat>, Option<ArrayRestPat>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArrayRestPat {
-    Discard,
-    Name(Ident),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ty {
-    pub kind: TyKind,
-    pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TyKind {
-    Int,
-    UInt,
-    Byte,
-    Float,
-    Char,
-    Bool,
-    Array(Box<Ty>),
-    Tuple(Vec<Ty>),
-    Fn(Vec<(bool, Ty)>, Box<Ty>),
-    Adt(Ident, Vec<Ty>),
-}
-
-impl TyKind {
-    pub fn span(self, span: impl Into<Span>) -> Ty {
-        Ty {
-            kind: self,
-            span: span.into(),
-        }
-    }
 }

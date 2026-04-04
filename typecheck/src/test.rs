@@ -1,144 +1,139 @@
-use crate::types::TyVar;
+use std::sync::LazyLock;
 
-use super::{Ty, TypeChecker, TypeError, TypeErrorS};
-use ast::Expr;
 use ena::unify::UnifyKey;
-use parse::{Parser, ast::Expr};
-use span::{Span, Spannable, Spnd};
-use string_interner::DefaultStringInterner;
+use ident::Ident;
+use lex::Lexer;
+use parse::Parser;
 
-fn parse_expr(input: &str) -> Expr<()> {
-    Parser::new(input).expr().unwrap()
+use crate::{
+    ConcreteTy, ErrorKind, Result, Ty, TypeChecker,
+    env::{Ctx, TyEnv, TyInfo},
+    types::{Param, TyVar},
+};
+
+static TY_ENV: LazyLock<TyEnv> = LazyLock::new(|| {
+    let mut ty_env = TyEnv::default();
+    ty_env.insert(Ident::new("String"), TyInfo::default());
+    ty_env
+});
+
+fn check_expr(input: &str) -> Result<ConcreteTy> {
+    TypeChecker::new()
+        .type_infer(&TY_ENV, Ctx::default(), Parser::parse_expr(input).unwrap())
+        .map(|expr| expr.ty)
 }
 
-fn check_expr(input: &str) -> Result<Ty, TypeErrorS> {
-    let mut interner = DefaultStringInterner::new();
-    let mut checker = TypeChecker::new(&mut interner);
-    checker.type_infer(parse_expr(input)).map(|expr| expr.ty)
+fn check_full(input: &str) -> Result<()> {
+    let toks = Lexer::lex(input).unwrap();
+    let ast = Parser::parse(input, toks).unwrap();
+    TypeChecker::new().type_program(ast)?;
 }
-
-// fn check_full(input: &str) -> Result<(), TypeErrorS> {
-//     TypeChecker::default().check(&Parser::new(input).file().unwrap())
-// }
 
 #[test]
 fn type_of_if_single_branch() {
-    let input = "if true then 
-    5;
-";
-    assert_eq!(check_expr(input), Ok(Ty::unit()))
+    let input = "if true then {5 {}}";
+    assert_eq!(check_expr(input), Ok(ConcreteTy::unit()))
 }
 
 #[test]
 fn type_of_if_single_branch_err() {
     assert_eq!(
         check_expr("if true then 5.0"),
-        Err(TypeError::TypesNotEqual(Ty::unit(), Ty::Float).span(13..16))
+        Err(ErrorKind::TypesNotEqual(Ty::unit(), Ty::Float).span(13..16))
     )
 }
 
 #[test]
 fn type_of_if() {
-    assert_eq!(check_expr("if true then 5.0 else -3.0"), Ok(Ty::Float))
+    assert_eq!(
+        check_expr("if true then 5.0 else -3.0"),
+        Ok(ConcreteTy::Float)
+    )
 }
 
 #[test]
 fn type_of_if_err() {
     assert_eq!(
         check_expr(r#"if true then "true" else false"#),
-        Err(TypeError::TypesNotEqual(Ty::string(), Ty::Bool).span(25..30))
+        Err(ErrorKind::TypesNotEqual(Ty::string(), Ty::Bool).span(25..30))
     )
 }
 
 #[test]
 fn arrays() {
-    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5][0]"), Ok(Ty::Int));
+    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5].[0]"), Ok(ConcreteTy::Int));
 }
 
 #[test]
 fn vars() {
-    let mut checker = TypeChecker::default();
-
-    let ty = checker.infer(&parse_expr("let mut a: Byte = 1")).unwrap();
-    assert_eq!(checker.normalise(ty), Ty::unit());
-
-    let ty = checker.infer(&parse_expr("a = 2")).unwrap();
-    assert_eq!(checker.normalise(ty), Ty::unit());
+    assert_eq!(
+        check_expr("{let mut a: Byte = 1 a = 2}"),
+        Ok(ConcreteTy::unit())
+    );
 }
 
 #[test]
 fn lambdas() {
-    let input = "fn(a, b): UInt -> a + b";
-
-    let mut checker = TypeChecker::default();
-
-    let ty_unbound = checker.infer(&parse_expr(input)).unwrap();
-
-    let Ty::Func(param_tys, return_ty) = checker.normalise(ty_unbound) else {
-        panic!()
-    };
-
-    assert_eq!(*return_ty, Ty::UInt);
-    for ty in param_tys {
-        assert_eq!(ty, Ty::UInt)
-    }
+    assert_eq!(
+        check_expr("fn(mut a, b): UInt -> {a = a + b a}"),
+        Ok(ConcreteTy::Func(
+            vec![
+                Param {
+                    mutable: true,
+                    ty: ConcreteTy::UInt
+                },
+                Param {
+                    mutable: false,
+                    ty: ConcreteTy::UInt
+                }
+            ],
+            Box::new(ConcreteTy::UInt)
+        ))
+    );
 }
 
 #[test]
 fn maths() {
     assert_eq!(
         check_expr("1 + 1.0"),
-        Err(TypeError::TypesNotEqual(Ty::IntVar(TyVar::from_index(0)), Ty::Float).span(4..7))
+        Err(ErrorKind::TypesNotEqual(Ty::IntVar(TyVar::from_index(0)), Ty::Float).span(4..7))
     );
-    assert_eq!(check_expr("1.0 + 1.0"), Ok(Ty::Float))
+    assert_eq!(check_expr("1.0 + 1.0"), Ok(ConcreteTy::Float))
 }
 
 #[test]
 fn type_of_int() {
-    let inputs = ["let a = 5", "a", "let b: Int = 1", "a + b"];
-
-    let mut checker = TypeChecker::default();
-
-    checker.infer(&parse_expr(inputs[0])).unwrap();
-    let ty_unbound = checker.infer(&parse_expr(inputs[1])).unwrap();
-
-    assert!(matches!(ty_unbound, Ty::IntVar(_)));
-
-    checker.infer(&parse_expr(inputs[2])).unwrap();
-    let ty_bound = checker.infer(&parse_expr(inputs[3])).unwrap();
-
-    assert_eq!(checker.normalise(ty_bound), Ty::Int);
+    assert_eq!(
+        check_expr("{let a = 5 let b: Int = 1 a + b}"),
+        Ok(ConcreteTy::Int)
+    );
 }
 
 #[test]
 fn type_of_block() {
-    let input = "
+    let input = "{
     let mut y: UInt = 5
     3 + 1 - 2
     y = 256
-    if y < 3 then
+    if y < 3 then {
         let a = -5
         a
-    else 32
-";
+    } else 32
+}";
 
-    assert_eq!(check_expr(input), Ok(Ty::Int));
+    assert_eq!(check_expr(input), Ok(ConcreteTy::Int));
 }
 
 #[test]
 fn shadowing() {
-    let input = r#"
+    let input = r#"{
     let a = 5
-    let a: String = "Hello, World"
-        let a = 2
+    let a = "Hello, World"
+    {let a = 2}
     a
-"#;
+}"#;
 
-    let expr = parse_expr(input);
-    let mut checker = TypeChecker::default();
-    let ty = checker.infer(&expr).unwrap();
-
-    assert_eq!(checker.normalise(ty), Ty::string());
+    assert_eq!(check_expr(input), Ok(ConcreteTy::string()));
 }
 
 #[test]

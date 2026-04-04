@@ -1,6 +1,6 @@
 use span::Span;
 
-use super::{Binding, Ident, Pat, Ty};
+use crate::{Ident, Pat, Ty};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expr<T> {
@@ -54,12 +54,17 @@ pub enum ExprKind<T> {
         scrutinee: Box<Expr<T>>,
         arms: Vec<MatchArm<T>>,
     },
-    Loop {
-        label: Option<LoopLabel>,
-        kind: LoopKind<T>,
+    For {
+        pattern: Pat,
+        iter: Box<Expr<T>>,
+        body: Box<Expr<T>>,
     },
-    Break(Option<LoopLabel>),
-    Continue(Option<LoopLabel>),
+    While {
+        cond: Box<Expr<T>>,
+        body: Box<Expr<T>>,
+    },
+    Break,
+    Continue,
     Return(Box<Expr<T>>),
     Block(Vec<Expr<T>>),
 }
@@ -118,6 +123,13 @@ pub enum LitExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Binding {
+    pub mutable: bool,
+    pub pat: Pat,
+    pub ty: Option<Ty>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Arg<T> {
     pub mutable: bool,
     pub label: Option<Pat>,
@@ -130,22 +142,6 @@ pub struct MatchArm<T> {
     pub guard: Option<Box<Expr<T>>>,
     pub body: Box<Expr<T>>,
     pub span: Span,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoopLabel(Ident);
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoopKind<T> {
-    For {
-        pattern: Pat,
-        iter: Box<Expr<T>>,
-        body: Box<Expr<T>>,
-    },
-    While {
-        cond: Box<Expr<T>>,
-        body: Box<Expr<T>>,
-    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

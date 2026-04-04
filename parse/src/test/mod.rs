@@ -2,19 +2,19 @@ mod exprs;
 mod items;
 mod prop;
 
+use pretty_assertions::assert_eq;
+
 use ast::{
-    AdtDef, AdtItem, Arg, Binding, ExecItem, Expr, ExprKind, Field, GenericParam, InfixOp, Param,
-    Pat, TyKind,
+    exprs::{Arg, Binding, ExprKind, InfixOp},
+    items::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param},
+    patterns::Pat,
+    types::{Param as TyParam, TyKind},
 };
 use ident::Ident;
 use lex::Lexer;
 use span::Span;
 
-use crate::{ParseResult, Parser};
-
-fn parse_expr(src: &str) -> ParseResult<Expr<()>> {
-    Parser::new(src, Lexer::lex(src).unwrap().into_iter().peekable()).expr()
-}
+use crate::Parser;
 
 #[test]
 fn file() {
@@ -32,9 +32,7 @@ fn wow_we_did_it(mut x: Bool, bar: Bar[Baz[T], U]): fn(mut Int) -> {} -> {
 record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
 "#;
 
-    let mut parser = Parser::new(input, Lexer::lex(input).unwrap().into_iter().peekable());
-
-    let items = parser.parse().unwrap();
+    let items = Parser::parse(input, Lexer::lex(input).unwrap()).unwrap();
 
     assert_eq!(
         items.execs[0],
@@ -71,7 +69,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                 }
             ],
             return_ty: TyKind::Fn(
-                vec![(true, TyKind::Int.span(60..63))],
+                vec![TyParam {
+                    mutable: true,
+                    ty: TyKind::Int.span(60..63)
+                }],
                 Box::new(TyKind::Tuple(vec![]).span(68..70))
             )
             .span(53..70),

@@ -30,7 +30,7 @@ fn main() {
         .unwrap();
     let src = fs::read_to_string(src_path).unwrap();
 
-    let tokens = match Lexer::lex(&src) {
+    let toks = match Lexer::lex(&src) {
         Ok(tokens) => tokens,
         Err(spans) => {
             for span in spans {
@@ -40,13 +40,16 @@ fn main() {
         }
     };
 
-    let mut parser = Parser::new(&src, tokens.into_iter().peekable());
-
-    let ast = match parser.parse() {
+    let ast = match Parser::parse(&src, toks) {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
-                print_diagnostic(DiagnosticKind::Error, &err.0.to_string(), err.1, &src);
+                print_diagnostic(
+                    DiagnosticKind::Error,
+                    &err.kind().to_string(),
+                    err.span(),
+                    &src,
+                );
             }
             return;
         }

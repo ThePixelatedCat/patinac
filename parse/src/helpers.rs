@@ -1,12 +1,12 @@
-use ast::{Binding, Pat};
+use ast::{exprs::Binding, patterns::Pat};
 use ident::Ident;
 use lex::{Tok, TokKind};
-use span::{Span, Spannable};
+use span::Span;
 
-use crate::{ParseError, ParseResult, Parser, error::ParseErrorS};
+use crate::{ErrorKind, Parser, Result, error::Error};
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
-    pub fn err_next(&mut self, f: impl Fn(TokKind) -> ParseError) -> ParseErrorS {
+    pub fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
         let token = match self.next() {
             Ok(token) => token,
             Err(err) => return err,
@@ -15,7 +15,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         f(token.kind).span(token.span)
     }
 
-    pub fn binding(&mut self) -> ParseResult<Binding> {
+    pub fn binding(&mut self) -> Result<Binding> {
         Ok(Binding {
             mutable: self.consume_at(TokKind::Mut),
             pat: self.pattern()?,
@@ -23,7 +23,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    pub fn pattern(&mut self) -> ParseResult<Pat> {
+    pub fn pattern(&mut self) -> Result<Pat> {
         // TODO add other patterns
 
         Ok(Pat::Ident {
@@ -32,7 +32,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         })
     }
 
-    pub fn ident(&mut self) -> ParseResult<(Ident, Span)> {
+    pub fn ident(&mut self) -> Result<(Ident, Span)> {
         self.consume(TokKind::Ident)
             .map(|ident| (Ident::new(self.str_at(ident.span)), ident.span))
     }
@@ -42,9 +42,9 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         mut f: F,
         start: TokKind,
         end: TokKind,
-    ) -> ParseResult<(Vec<T>, Span)>
+    ) -> Result<(Vec<T>, Span)>
     where
-        F: FnMut(&mut Self) -> ParseResult<T>,
+        F: FnMut(&mut Self) -> Result<T>,
     {
         let start = self.consume(start)?.span.start;
 

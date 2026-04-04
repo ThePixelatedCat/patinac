@@ -1,10 +1,10 @@
 use itertools::Itertools;
+use pretty_assertions::assert_eq;
 use proptest::{collection::vec, prelude::*};
+
 use span::Span;
 
-use crate::Tok;
-
-use super::{Lexer, TokKind as T};
+use crate::{Lexer, Tok, TokKind as T};
 
 #[test]
 fn single_char_tokens() {
@@ -221,14 +221,9 @@ proptest! {
     fn reverse(in_toks in vec(T::arb(), 8..=512)) {
         let raw = in_toks.iter().map(T::reverse).join(" ");
 
-        let out_toks: Vec<_> = Lexer::lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();
+        let Ok(toks) = Lexer::lex(&raw) else {return Err(TestCaseError::Fail("lexer errored".into()))};
+        let out_toks: Vec<_> = toks.into_iter().map(|tok| tok.kind).collect();
 
         prop_assert_eq!(in_toks, out_toks)
     }
 }
-
-// #[test]
-// fn rand_regexes() {
-//     let ints = rand_regex::Regex::compile(rules::INT, 20).unwrap();
-//     ints.
-// }

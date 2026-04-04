@@ -6,14 +6,14 @@ mod token;
 use span::Span;
 pub use token::{Tok, TokKind};
 
-pub struct Lexer<'input> {
-    input: &'input str,
+pub struct Lexer<'src> {
+    input: &'src str,
     output: Vec<Tok>,
     errors: Vec<Span>,
 }
 
-impl<'input> Lexer<'input> {
-    pub fn lex(input: &'input str) -> Result<Vec<Tok>, Vec<Span>> {
+impl<'src> Lexer<'src> {
+    pub fn lex(input: &'src str) -> Result<Vec<Tok>, Vec<Span>> {
         let mut lexer = Self {
             input,
             output: Vec::with_capacity(input.len() / 4),

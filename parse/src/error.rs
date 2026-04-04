@@ -1,31 +1,34 @@
-use std::{error::Error, fmt::Display};
+use thiserror::Error as ThisError;
 
 use lex::TokKind;
-use span::{Spannable, Spnd};
+use span::{Span, impl_span};
 
-pub type ParseResult<T> = Result<T, ParseErrorS>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-pub type ParseErrorS = Spnd<ParseError>;
-impl Spannable for ParseError {}
-#[derive(Debug, PartialEq, Eq)]
-pub enum ParseError {
-    Mismatched { expected: TokKind, found: TokKind },
-    Unexpected(TokKind, &'static str),
-    Eof,
+#[derive(Debug, PartialEq)]
+pub struct Error {
+    kind: ErrorKind,
+    span: Span,
 }
 
-impl Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Mismatched { expected, found } => {
-                write!(f, "expected {expected}, found {found}")
-            }
-            Self::Unexpected(token, desc) => {
-                write!(f, "unexpected token {token} at {desc}")
-            }
-            Self::Eof => "unexpected end of file".fmt(f),
-        }
+impl Error {
+    pub fn kind(&self) -> &ErrorKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 }
 
-impl Error for ParseError {}
+#[derive(ThisError, Debug, PartialEq, Eq)]
+pub enum ErrorKind {
+    #[error("expected {expected}, found {found}")]
+    Mismatched { expected: TokKind, found: TokKind },
+    #[error("unexpected token {0} at {1}")]
+    Unexpected(TokKind, &'static str),
+    #[error("unexpected end of file")]
+    Eof,
+}
+
+impl_span!(ErrorKind as Error);

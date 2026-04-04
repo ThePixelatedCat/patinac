@@ -1,29 +1,37 @@
-use ast::{Arg, Binding, ExprKind, InfixOp, Pat, Ty, TyKind, UnaryOp};
+use pretty_assertions::assert_eq;
+
+use ast::{
+    exprs::{Arg, Binding, ExprKind, InfixOp, UnaryOp},
+    patterns::Pat,
+    types::{Ty, TyKind},
+};
 use ident::Ident;
 use lex::TokKind;
-use span::{Span, Spannable};
+use span::Span;
 
-use super::parse_expr;
-use crate::ParseError;
+use crate::{ErrorKind, Parser};
 
 #[test]
 fn lit_expressions() {
-    assert_eq!(parse_expr("42"), Ok(ExprKind::int(42).span(0..2)));
+    assert_eq!(Parser::parse_expr("42"), Ok(ExprKind::int(42).span(0..2)));
 
     assert_eq!(
-        parse_expr("  2.7768"),
+        Parser::parse_expr("  2.7768"),
         Ok(ExprKind::float(2.7768).span(2..8))
     );
 
     assert_eq!(
-        parse_expr(r#""I am a Str!""#),
+        Parser::parse_expr(r#""I am a Str!""#),
         Ok(ExprKind::string("I am a Str!").span(0..13))
     );
 
-    assert_eq!(parse_expr(r"'\''"), Ok(ExprKind::char('\'').span(0..4)));
+    assert_eq!(
+        Parser::parse_expr(r"'\''"),
+        Ok(ExprKind::char('\'').span(0..4))
+    );
 
     assert_eq!(
-        parse_expr(r#"{42,{2,},"end"}"#),
+        Parser::parse_expr(r#"{42,{2,},"end"}"#),
         Ok(ExprKind::Tuple(vec![
             ExprKind::int(42).span(1..3),
             ExprKind::Tuple(vec![ExprKind::int(2).span(5..6)]).span(4..8),
@@ -32,7 +40,7 @@ fn lit_expressions() {
         .span(0..15))
     );
 
-    let array = parse_expr(
+    let array = Parser::parse_expr(
         "
 [
     1,
@@ -54,13 +62,16 @@ fn lit_expressions() {
         .span(1..40))
     );
 
-    assert_eq!(parse_expr("foo"), Ok(ExprKind::ident("foo").span(0..3)));
+    assert_eq!(
+        Parser::parse_expr("foo"),
+        Ok(ExprKind::ident("foo").span(0..3))
+    );
 }
 
 #[test]
 fn unop_expressions() {
     assert_eq!(
-        parse_expr("!  is_visible"),
+        Parser::parse_expr("!  is_visible"),
         Ok(ExprKind::UnaryExpr {
             op: UnaryOp::Not,
             expr: ExprKind::ident("is_visible").span(3..13).into(),
@@ -69,7 +80,7 @@ fn unop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("-{-13}"),
+        Parser::parse_expr("-{-13}"),
         Ok(ExprKind::UnaryExpr {
             op: UnaryOp::Neg,
             expr: ExprKind::Block(vec![
@@ -89,7 +100,7 @@ fn unop_expressions() {
 #[test]
 fn binop_expressions() {
     assert_eq!(
-        parse_expr("4 + 2 * 3"),
+        Parser::parse_expr("4 + 2 * 3"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Add,
             lhs: ExprKind::int(4).span(0..1).into(),
@@ -105,7 +116,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("4 * 2 + 3"),
+        Parser::parse_expr("4 * 2 + 3"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Add,
             lhs: ExprKind::InfixExpr {
@@ -121,7 +132,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("4 - 2 - 3"),
+        Parser::parse_expr("4 - 2 - 3"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Sub,
             lhs: ExprKind::InfixExpr {
@@ -137,7 +148,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("4 ** 2 ** 3"),
+        Parser::parse_expr("4 ** 2 ** 3"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Exp,
             lhs: ExprKind::int(4).span(0..1).into(),
@@ -153,7 +164,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("4 ^ 2 ^ 3"),
+        Parser::parse_expr("4 ^ 2 ^ 3"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Xor,
             lhs: ExprKind::InfixExpr {
@@ -169,7 +180,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("true || false && true"),
+        Parser::parse_expr("true || false && true"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Or,
             lhs: ExprKind::bool(true).span(0..4).into(),
@@ -185,7 +196,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("{3 >= 4} != true"),
+        Parser::parse_expr("{3 >= 4} != true"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Neq,
             lhs: ExprKind::Block(vec![
@@ -204,7 +215,7 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        parse_expr("{4 > 3} == true"),
+        Parser::parse_expr("{4 > 3} == true"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Eqq,
             lhs: ExprKind::Block(vec![
@@ -226,7 +237,7 @@ fn binop_expressions() {
 #[test]
 fn compound_expressions() {
     assert_eq!(
-        parse_expr("bar (  mut x, 2, .foo = bar)"),
+        Parser::parse_expr("bar (  mut x, 2, .foo = bar)"),
         Ok(ExprKind::CallExpr {
             func: ExprKind::ident("bar").span(0..3).into(),
             args: vec![
@@ -254,7 +265,7 @@ fn compound_expressions() {
     );
 
     assert_eq!(
-        parse_expr("if 0.5 then foo()"),
+        Parser::parse_expr("if 0.5 then foo()"),
         Ok(ExprKind::If {
             cond: ExprKind::float(0.5).span(3..6).into(),
             th: ExprKind::CallExpr {
@@ -269,7 +280,7 @@ fn compound_expressions() {
     );
 
     assert_eq!(
-        parse_expr("if 0.5 then foo else bar"),
+        Parser::parse_expr("if 0.5 then foo else bar"),
         Ok(ExprKind::If {
             cond: ExprKind::float(0.5).span(3..6).into(),
             th: ExprKind::ident("foo").span(12..15).into(),
@@ -279,7 +290,7 @@ fn compound_expressions() {
     );
 
     assert_eq!(
-        parse_expr("if a then if b then x else y"),
+        Parser::parse_expr("if a then if b then x else y"),
         Ok(ExprKind::If {
             cond: ExprKind::ident("a").span(3..4).into(),
             th: ExprKind::If {
@@ -295,7 +306,7 @@ fn compound_expressions() {
     );
 
     assert_eq!(
-        parse_expr("{fn(mut a, b: Int) -> a + b}(mut 1, .b = 2)"),
+        Parser::parse_expr("{fn(mut a, b: Int) -> a + b}(mut 1, .b = 2)"),
         Ok(ExprKind::CallExpr {
             func: ExprKind::Block(vec![
                 ExprKind::LambdaExpr {
@@ -353,7 +364,7 @@ fn compound_expressions() {
     );
 
     assert_eq!(
-        parse_expr("[1, 2, 3].[1-1]"),
+        Parser::parse_expr("[1, 2, 3].[1-1]"),
         Ok(ExprKind::IndexExpr {
             arr: ExprKind::Array(vec![
                 ExprKind::int(1).span(1..2),
@@ -377,7 +388,7 @@ fn compound_expressions() {
 #[test]
 fn var_expressions() {
     assert_eq!(
-        parse_expr("let x = 7 + sin(3.0)"),
+        Parser::parse_expr("let x = 7 + sin(3.0)"),
         Ok(ExprKind::Let {
             binding: Binding {
                 mutable: false,
@@ -408,7 +419,7 @@ fn var_expressions() {
     );
 
     assert_eq!(
-        parse_expr("let mut y: UInt = 7"),
+        Parser::parse_expr("let mut y: UInt = 7"),
         Ok(ExprKind::Let {
             binding: Binding {
                 mutable: true,
@@ -427,7 +438,7 @@ fn var_expressions() {
     );
 
     assert_eq!(
-        parse_expr("y = 3 + 7 * 0.5"),
+        Parser::parse_expr("y = 3 + 7 * 0.5"),
         Ok(ExprKind::InfixExpr {
             op: InfixOp::Assign,
             lhs: Box::new(ExprKind::ident("y").span(0..1)),
@@ -462,7 +473,7 @@ if y < 3 then {
 }";
 
     assert_eq!(
-        parse_expr(input),
+        Parser::parse_expr(input),
         Ok(ExprKind::Block(vec![
             ExprKind::Let {
                 binding: Binding {
@@ -529,9 +540,12 @@ if y < 3 then {
 
 #[test]
 fn malformed_expressions() {
-    assert_eq!(parse_expr("[1, 3, 4, 5"), Err(ParseError::Eof.span(11..11)));
     assert_eq!(
-        parse_expr("*5"),
-        Err(ParseError::Unexpected(TokKind::Times, "start of expression").span(0..1))
+        Parser::parse_expr("[1, 3, 4, 5"),
+        Err(ErrorKind::Eof.span(11..11))
+    );
+    assert_eq!(
+        Parser::parse_expr("*5"),
+        Err(ErrorKind::Unexpected(TokKind::Times, "start of expression").span(0..1))
     );
 }

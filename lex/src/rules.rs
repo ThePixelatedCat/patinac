@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use const_format::formatcp;
 use regex::Regex;
 
-use super::TokKind;
+use crate::TokKind;
 
 macro_rules! rule {
     ($str:literal => $tok:ident) => {

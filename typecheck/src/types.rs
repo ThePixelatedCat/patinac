@@ -2,7 +2,57 @@ use std::fmt::Display;
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
+use ast::types::{Ty as AstTy, TyKind as AstTyKind};
 use ident::Ident;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ConcreteTy {
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Bool,
+    Char,
+    Array(Box<Self>),
+    Tuple(Vec<Self>),
+    Func(Vec<Param<Self>>, Box<Self>),
+    Adt(Ident, Vec<Self>),
+}
+
+impl Display for ConcreteTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Self::Adt(name, args) => {
+                write!(f, "{name}")?;
+                if !args.is_empty() {
+                    write!(f, "<{}>", itertools::join(args, ", "))?;
+                }
+                Ok(())
+            }
+            Self::Int => "Int".fmt(f),
+            Self::UInt => "UInt".fmt(f),
+            Self::Byte => "Byte".fmt(f),
+            Self::Float => "Float".fmt(f),
+            Self::Bool => "Bool".fmt(f),
+            Self::Char => "Char".fmt(f),
+            Self::Array(ty) => write!(f, "[{ty}]"),
+            Self::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
+            Self::Func(params, result_ty) => {
+                write!(f, "fn({}): {result_ty}", itertools::join(params, ", "))
+            }
+        }
+    }
+}
+
+impl ConcreteTy {
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
+    }
+
+    pub fn string() -> Self {
+        Self::Adt(Ident::new("String"), vec![])
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -12,38 +62,61 @@ pub enum Ty {
     Float,
     Bool,
     Char,
-    Array(Box<Ty>),
-    Tuple(Vec<Ty>),
-    Func(Vec<Ty>, Box<Ty>),
-    Adt(Ident, Vec<Ty>),
+    Array(Box<Self>),
+    Tuple(Vec<Self>),
+    Func(Vec<Param<Self>>, Box<Self>),
+    Adt(Ident, Vec<Self>),
     Var(TyVar),
     IntVar(TyVar),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Param<T: Display> {
+    pub mutable: bool,
+    pub ty: T,
+}
+
+impl<T: Display> Display for Param<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.mutable, self.ty)
+    }
+}
+
 impl EqUnifyValue for Ty {}
 
-impl From<&ast::Ty> for Ty {
-    fn from(value: &ast::Ty) -> Self {
-        match value.kind {
-            ast::TyKind::Int => Self::Int,
-            ast::TyKind::UInt => Self::UInt,
-            ast::TyKind::Byte => Self::Byte,
-            ast::TyKind::Float => Self::Float,
-            ast::TyKind::Bool => Self::Bool,
-            ast::TyKind::Char => Self::Char,
-            ast::TyKind::Adt(ident, args) => Self::Adt(ident, args.iter().map(Ty::from).collect()),
-            ast::TyKind::Array(ty) => Self::Array(Box::new(Self::from(ty.as_ref()))),
-            ast::TyKind::Tuple(tys) => Self::Tuple(tys.iter().map(Ty::from).collect()),
-            ast::TyKind::Fn(param_tys, return_ty) => Self::Func(
-                param_tys.iter().map(Ty::from).collect(),
+impl From<&AstTyKind> for Ty {
+    fn from(value: &AstTyKind) -> Self {
+        match &value {
+            AstTyKind::Int => Self::Int,
+            AstTyKind::UInt => Self::UInt,
+            AstTyKind::Byte => Self::Byte,
+            AstTyKind::Float => Self::Float,
+            AstTyKind::Bool => Self::Bool,
+            AstTyKind::Char => Self::Char,
+            AstTyKind::Adt(ident, args) => Self::Adt(*ident, args.iter().map(Ty::from).collect()),
+            AstTyKind::Array(ty) => Self::Array(Box::new(Self::from(ty.as_ref()))),
+            AstTyKind::Tuple(tys) => Self::Tuple(tys.iter().map(Ty::from).collect()),
+            AstTyKind::Fn(params, return_ty) => Self::Func(
+                params
+                    .iter()
+                    .map(|param| Param {
+                        mutable: param.mutable,
+                        ty: (&param.ty).into(),
+                    })
+                    .collect(),
                 Box::new(Self::from(return_ty.as_ref())),
             ),
         }
     }
 }
 
+impl From<&AstTy> for Ty {
+    fn from(value: &AstTy) -> Self {
+        Self::from(&value.kind)
+    }
+}
+
 impl Ty {
-    #[must_use]
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
@@ -73,8 +146,8 @@ impl Display for Ty {
             Self::Char => "Char".fmt(f),
             Self::Array(ty) => write!(f, "[{ty}]"),
             Self::Tuple(tys) => write!(f, "({})", itertools::join(tys, ", ")),
-            Self::Func(param_tys, result_ty) => {
-                write!(f, "fn({}): {result_ty}", itertools::join(param_tys, ", "))
+            Self::Func(params, result_ty) => {
+                write!(f, "fn({}): {result_ty}", itertools::join(params, ", "))
             }
         }
     }

@@ -1,37 +1,45 @@
-use crate::types::{Ty, TyVar};
-use span::{Spannable, Spnd};
+use thiserror::Error as ThisError;
 
-use std::{error::Error, fmt::Display};
+use span::{Span, impl_span};
 
-pub type TypeErrorS = Spnd<TypeError>;
-impl Spannable for TypeError {}
-#[derive(Debug, PartialEq, Eq)]
-pub enum TypeError {
+use crate::types::{Param, Ty, TyVar};
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, PartialEq)]
+pub struct Error {
+    kind: ErrorKind,
+    span: Span,
+}
+
+#[derive(ThisError, Debug, PartialEq)]
+pub enum ErrorKind {
+    #[error("unbound identifier")]
     UnboundIdent,
+    #[error("types `{0}` and `{1}` are not equal")]
     TypesNotEqual(Ty, Ty),
+    #[error("attempted mutation of immutable place")]
     Mutation,
+    #[error("infinite (TEMP)")]
     Infinite(TyVar, Ty),
+    #[error("could not infer the type of the expression")]
     UninferredType,
+    #[error("left hand side of an assignment must be a place expression")]
     NotPlaceExpr,
+    #[error("place overlaps with {0}")]
+    OverlappingPlace(Span),
+    #[error("unknown type")]
     UnknownType,
+    #[error("field not found")]
     MissingField,
+    #[error("{0} is a primitive type, therefore has no fields")]
+    PrimitiveTypeNoField(Ty),
+    #[error("{0} is {mut_0}, while {1} is {mut_1}", mut_0 = describe_mutability(.0.mutable), mut_1 = describe_mutability(.1.mutable))]
+    ParamMutability(Param<Ty>, Param<Ty>),
 }
 
-impl Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self {
-            Self::UnboundIdent => "unbound identifier".fmt(f),
-            Self::TypesNotEqual(lhs, rhs) => write!(f, "types `{lhs}` and `{rhs}` are not equal",),
-            Self::Mutation => "attempted mutation of immutable variable".fmt(f),
-            Self::Infinite(var, ty) => todo!(),
-            Self::UninferredType => "could not infer the type of this expression".fmt(f),
-            Self::NotPlaceExpr => {
-                "left hand side of an assignment must be a place expression".fmt(f)
-            }
-            Self::UnknownType => "unknown type".fmt(f),
-            Self::MissingField => "field not found".fmt(f),
-        }
-    }
+fn describe_mutability(mutable: bool) -> &'static str {
+    if mutable { "mutable" } else { "immutable" }
 }
 
-impl Error for TypeError {}
+impl_span!(ErrorKind as Error);

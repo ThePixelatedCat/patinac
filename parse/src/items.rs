@@ -1,8 +1,8 @@
-use ast::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param, Variant};
+use ast::items::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param, Variant};
 use lex::{Tok, TokKind};
 use span::Span;
 
-use crate::{ParseError, ParseResult, Parser};
+use crate::{ErrorKind, Parser, Result};
 
 #[derive(PartialEq, Debug)]
 pub enum Item {
@@ -23,17 +23,17 @@ impl From<AdtItem> for Item {
 }
 
 impl<I: Iterator<Item = Tok>> Parser<'_, I> {
-    pub fn item(&mut self) -> ParseResult<Item> {
+    pub fn item(&mut self) -> Result<Item> {
         match self.peek()? {
             TokKind::Const => self.const_item(),
             TokKind::Fn => self.func_item(),
             TokKind::Record => self.record_item(),
             TokKind::Enum => self.enum_item(),
-            _ => Err(self.err_next(|tk| ParseError::Unexpected(tk, "start of item"))),
+            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of item"))),
         }
     }
 
-    fn const_item(&mut self) -> ParseResult<Item> {
+    fn const_item(&mut self) -> Result<Item> {
         self.consume(TokKind::Const)?;
 
         let (ident, _) = self.ident()?;
@@ -52,7 +52,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         .into())
     }
 
-    fn func_item(&mut self) -> ParseResult<Item> {
+    fn func_item(&mut self) -> Result<Item> {
         self.consume(TokKind::Fn)?;
 
         let (ident, _) = self.ident()?;
@@ -77,7 +77,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         .into())
     }
 
-    fn param(&mut self) -> ParseResult<Param> {
+    fn param(&mut self) -> Result<Param> {
         let mutable = self.consume_at(TokKind::Mut);
         let pat = self.pattern()?;
         self.consume(TokKind::Colon)?;
@@ -86,7 +86,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         Ok(Param { mutable, pat, ty })
     }
 
-    fn record_item(&mut self) -> ParseResult<Item> {
+    fn record_item(&mut self) -> Result<Item> {
         self.consume(TokKind::Record)?;
 
         Ok(AdtItem::Record {
@@ -96,7 +96,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         .into())
     }
 
-    fn enum_item(&mut self) -> ParseResult<Item> {
+    fn enum_item(&mut self) -> Result<Item> {
         self.consume(TokKind::Enum)?;
 
         let def = self.adt_def()?;
@@ -112,14 +112,14 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         Ok(AdtItem::Enum { def, variants }.into())
     }
 
-    fn adt_def(&mut self) -> ParseResult<AdtDef> {
+    fn adt_def(&mut self) -> Result<AdtDef> {
         Ok(AdtDef {
             ident: self.ident()?.0,
             generics: self.generic_params()?,
         })
     }
 
-    fn fields(&mut self) -> ParseResult<Vec<Field>> {
+    fn fields(&mut self) -> Result<Vec<Field>> {
         self.delimited_list(
             |this| {
                 let (ident, ident_span) = this.ident()?;
@@ -137,7 +137,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         .map(|(fields, _)| fields)
     }
 
-    fn generic_params(&mut self) -> ParseResult<Vec<GenericParam>> {
+    fn generic_params(&mut self) -> Result<Vec<GenericParam>> {
         if self.at(TokKind::LBracket) {
             let (idents, _) =
                 self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;

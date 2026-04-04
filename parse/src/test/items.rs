@@ -1,21 +1,21 @@
+use pretty_assertions::assert_eq;
+
 use ast::{
-    AdtDef, AdtItem, Binding, ExecItem, ExprKind, Field, GenericParam, InfixOp, Param, Pat, Ty,
-    TyKind, Variant,
+    exprs::{Binding, ExprKind, InfixOp},
+    items::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param, Variant},
+    patterns::Pat,
+    types::{Ty, TyKind},
 };
 use ident::Ident;
-use lex::{Lexer, TokKind};
-use span::{Span, Spannable};
+use lex::TokKind;
+use span::Span;
 
-use crate::{ParseError, ParseResult, Parser, items::Item};
-
-fn parse_item(src: &str) -> ParseResult<Item> {
-    Parser::new(src, Lexer::lex(src).unwrap().into_iter().peekable()).item()
-}
+use crate::{ErrorKind, Parser, items::Item};
 
 #[test]
 fn const_items() {
     assert_eq!(
-        parse_item(r#"const hello_world: String = "Hello, World!""#),
+        Parser::parse_item(r#"const hello_world: String = "Hello, World!""#),
         Ok(Item::ExecItem(ExecItem::Const {
             ident: Ident::new("hello_world"),
             ty: Some(Ty {
@@ -27,7 +27,7 @@ fn const_items() {
     );
 
     assert_eq!(
-        parse_item(r#"const id = fn(x) -> x"#),
+        Parser::parse_item(r#"const id = fn(x) -> x"#),
         Ok(Item::ExecItem(ExecItem::Const {
             ident: Ident::new("id"),
             ty: None,
@@ -51,7 +51,7 @@ fn const_items() {
 #[test]
 fn struct_items() {
     assert_eq!(
-        parse_item("record Point(x: Int, y: Int)"),
+        Parser::parse_item("record Point(x: Int, y: Int)"),
         Ok(Item::AdtItem(AdtItem::Record {
             def: AdtDef {
                 ident: Ident::new("Point"),
@@ -84,7 +84,7 @@ record Foo[T, U](
     bar: Bar[Baz[T]]
     )";
     assert_eq!(
-        parse_item(input),
+        Parser::parse_item(input),
         Ok(Item::AdtItem(AdtItem::Record {
             def: AdtDef {
                 ident: Ident::new("Foo"),
@@ -134,7 +134,7 @@ enum Foo
 "#;
 
     assert_eq!(
-        parse_item(input),
+        Parser::parse_item(input),
         Ok(Item::AdtItem(AdtItem::Enum {
             def: AdtDef {
                 ident: Ident::new("Foo"),
@@ -185,7 +185,7 @@ enum Foo
 #[test]
 fn function_items() {
     assert_eq!(
-        parse_item("fn sum(mut a: Byte, b: Byte): {} -> a = a + b"),
+        Parser::parse_item("fn sum(mut a: Byte, b: Byte): {} -> a = a + b"),
         Ok(Item::ExecItem(ExecItem::Func {
             ident: Ident::new("sum"),
             generic_params: vec![],
@@ -237,8 +237,8 @@ fn function_items() {
 #[test]
 fn malformed_items() {
     assert_eq!(
-        parse_item("const fn: Int = 5"),
-        Err(ParseError::Mismatched {
+        Parser::parse_item("const fn: Int = 5"),
+        Err(ErrorKind::Mismatched {
             expected: TokKind::Ident,
             found: TokKind::Fn,
         }
@@ -246,8 +246,8 @@ fn malformed_items() {
     );
 
     assert_eq!(
-        parse_item("const NO_DICTS: [String: Int] = 5"),
-        Err(ParseError::Mismatched {
+        Parser::parse_item("const NO_DICTS: [String: Int] = 5"),
+        Err(ErrorKind::Mismatched {
             expected: TokKind::RBracket,
             found: TokKind::Colon
         }
@@ -255,7 +255,7 @@ fn malformed_items() {
     );
 
     assert_eq!(
-        parse_item("let global = false"),
-        Err(ParseError::Unexpected(TokKind::Let, "start of item").span(0..3))
+        Parser::parse_item("let global = false"),
+        Err(ErrorKind::Unexpected(TokKind::Let, "start of item").span(0..3))
     );
 }

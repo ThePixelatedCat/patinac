@@ -1,6 +1,7 @@
 use itertools::Itertools;
-use lex::{Lexer, TokKind};
 use proptest::{collection::vec, prelude::*};
+
+use lex::{Lexer, TokKind};
 
 use crate::Parser;
 
@@ -9,13 +10,15 @@ proptest! {
     fn doesnt_crash_toks(in_toks in vec(TokKind::arb(), 8..=512)) {
         let raw = in_toks.iter().map(TokKind::reverse).join(" ");
 
-        let _ = Parser::new(&raw, Lexer::lex(&raw).unwrap().into_iter().peekable()).parse();
+        if let Ok(toks) = Lexer::lex(&raw) {
+            let _ = Parser::parse(&raw, toks);
+        }
     }
 
     #[test]
     fn doesnt_crash_string(s in r"\PC*") {
         if let Ok(toks) = Lexer::lex(&s) {
-            let _ = Parser::new(&s, toks.into_iter().peekable()).parse();
+            let _ = Parser::parse(&s, toks);
         }
     }
 }
