@@ -22,7 +22,7 @@ impl From<AdtItem> for Item {
     }
 }
 
-impl<I: Iterator<Item = Tok>> Parser<'_, I> {
+impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn item(&mut self) -> Result<Item> {
         match self.peek()? {
             TokKind::Const => self.const_item(),
@@ -78,7 +78,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn param(&mut self) -> Result<Param> {
-        let mutable = self.consume_at(TokKind::Mut);
+        let mutable = self.consume_at(TokKind::Mut).is_some();
         let pat = self.pattern()?;
         self.consume(TokKind::Colon)?;
         let ty = self.ty()?;
@@ -102,7 +102,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let def = self.adt_def()?;
 
         let mut variants = Vec::new();
-        while self.consume_at(TokKind::Pipe) {
+        while self.consume_at(TokKind::Pipe).is_some() {
             variants.push(Variant {
                 ident: self.ident()?.0,
                 fields: self.fields()?,

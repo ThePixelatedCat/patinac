@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use ast::exprs::{Arg, Expr, ExprKind, InfixOp, LitExpr, MatchArm, UnaryOp};
+use itertools::Itertools;
 use lex::{Tok, TokKind};
 use span::Span;
 
@@ -17,7 +18,7 @@ fn process_escapes(input: &str) -> String {
         .replace(r"\0", "\0")
 }
 
-impl<I: Iterator<Item = Tok>> Parser<'_, I> {
+impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn expr(&mut self) -> Result<Expr<()>> {
         self.expr_inner(0)
     }
@@ -108,30 +109,30 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn int_lit_expr(&mut self) -> Result<Expr<()>> {
-        let span = self.consume(TokKind::IntLit)?.span;
-        let val = u64::from_str(self.str_at(span)).unwrap();
-        Ok(ExprKind::Lit(LitExpr::Int(val)).span(span))
+        let tok = self.consume(TokKind::IntLit)?;
+        let val = u64::from_str(tok.src).unwrap();
+        Ok(ExprKind::Lit(LitExpr::Int(val)).span(tok.span))
     }
 
     fn float_lit_expr(&mut self) -> Result<Expr<()>> {
-        let span = self.consume(TokKind::FloatLit)?.span;
-        let val = f64::from_str(self.str_at(span)).unwrap();
-        Ok(ExprKind::Lit(LitExpr::Float(val)).span(span))
+        let tok = self.consume(TokKind::FloatLit)?;
+        let val = f64::from_str(tok.src).unwrap();
+        Ok(ExprKind::Lit(LitExpr::Float(val)).span(tok.span))
     }
 
     fn char_lit_expr(&mut self) -> Result<Expr<()>> {
-        let span = self.consume(TokKind::CharLit)?.span;
-        let val = process_escapes(self.str_at(span.start + 1..span.end - 1))
+        let tok = self.consume(TokKind::CharLit)?;
+        let val = process_escapes(&tok.src[1..tok.src.len() - 1])
             .chars()
-            .next()
-            .unwrap();
-        Ok(ExprKind::Lit(LitExpr::Char(val)).span(span))
+            .exactly_one()
+            .expect("lexer should not have produced char token with multiple characters");
+        Ok(ExprKind::Lit(LitExpr::Char(val)).span(tok.span))
     }
 
     fn string_lit_expr(&mut self) -> Result<Expr<()>> {
-        let span = self.consume(TokKind::StringLit)?.span;
-        let val = process_escapes(self.str_at(span.start + 1..span.end - 1));
-        Ok(ExprKind::Lit(LitExpr::String(val)).span(span))
+        let tok = self.consume(TokKind::StringLit)?;
+        let val = process_escapes(&tok.src[1..tok.src.len() - 1]);
+        Ok(ExprKind::Lit(LitExpr::String(val)).span(tok.span))
     }
 
     fn array_lit_expr(&mut self) -> Result<Expr<()>> {
@@ -142,17 +143,17 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     fn brace_exprs(&mut self) -> Result<Expr<()>> {
         let start = self.consume(TokKind::LBrace)?.span.start;
 
-        if let Some(brace) = self.consume_get_at(TokKind::RBrace) {
+        if let Some(brace) = self.consume_at(TokKind::RBrace) {
             return Ok(ExprKind::Tuple(vec![]).span(start..brace.span.end));
         }
 
         let mut exprs = vec![self.expr()?];
-        let tuple = self.consume_at(TokKind::Comma);
+        let tuple = self.consume_at(TokKind::Comma).is_some();
 
         while !self.at(TokKind::RBrace) {
             exprs.push(self.expr()?);
 
-            if tuple && !self.consume_at(TokKind::Comma) {
+            if tuple && self.consume_at(TokKind::Comma).is_none() {
                 break;
             }
         }
@@ -178,7 +179,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let el = self
             .consume_at(TokKind::Else)
-            .then(|| self.expr())
+            .map(|_| self.expr())
             .transpose()?
             .map(Box::new);
 
@@ -262,7 +263,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
         let guard = self
             .consume_at(TokKind::If)
-            .then(|| self.expr())
+            .map(|_| self.expr())
             .transpose()?
             .map(Box::new);
 
@@ -395,11 +396,11 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
     }
 
     fn arg(&mut self) -> Result<Arg<()>> {
-        let mutable = self.consume_at(TokKind::Mut);
+        let mutable = self.consume_at(TokKind::Mut).is_some();
 
         let label = self
             .consume_at(TokKind::Dot)
-            .then(|| {
+            .map(|_| {
                 let label = self.pattern()?;
                 self.consume(TokKind::Eq)?;
                 Ok(label)

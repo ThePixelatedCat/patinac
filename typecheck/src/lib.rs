@@ -7,6 +7,8 @@ mod test;
 pub mod types;
 mod unify;
 
+use std::iter;
+
 use ena::unify::InPlaceUnificationTable;
 use fnv::FnvHashMap;
 
@@ -14,6 +16,7 @@ use ast::{
     Ast,
     exprs::Expr,
     items::{AdtItem, ExecItem, Field},
+    patterns::Pat,
     types::{Ty as AstTy, TyKind as AstTyKind},
 };
 use ident::Ident;
@@ -56,20 +59,71 @@ impl TypeChecker {
         let execs = execs
             .into_iter()
             .map(|exec| {
-                Ok(match exec {
-                    ExecItem::Const { ident, ty, val } => ExecItem::Const {
-                        ident,
-                        ty,
-                        val: self.type_infer(&ty_env, ctx.clone(), val)?,
-                    },
+                self.clear_constraints();
+
+                match exec {
+                    ExecItem::Const { ident, ty, val } => {
+                        // Constraint generation
+                        let typed_val = self.infer(&ty_env, &mut ctx.clone(), val)?;
+                        self.constrain_eq(
+                            &typed_val,
+                            ctx.get(ident, 0..0)
+                                .expect("all items were previously inserted into ctx")
+                                .ty,
+                        );
+
+                        // Constraint solving
+                        self.unify()?;
+
+                        Ok(ExecItem::Const {
+                            ident,
+                            ty,
+                            val: self.sub_expr(typed_val)?,
+                        })
+                    }
                     ExecItem::Func {
                         ident,
                         generic_params,
                         params,
-                        return_ty,
+                        return_ty: return_ty_ast,
                         body,
-                    } => todo!(),
-                })
+                    } => {
+                        let mut ctx = ctx.clone();
+
+                        let Ok(BindingInfo {
+                            ty: Ty::Func(param_tys, return_ty),
+                            ..
+                        }) = ctx.get(ident, 0..0)
+                        else {
+                            unreachable!("all items were previously inserted into ctx")
+                        };
+
+                        for (pat, ty, mutable) in
+                            iter::zip(&params, param_tys).map(|(p, ty)| (&p.pat, ty.ty, ty.mutable))
+                        {
+                            match pat {
+                                Pat::Ident { ident, subpat } => {
+                                    ctx.insert(*ident, ty, mutable);
+                                }
+                                Pat::Wildcard => {}
+                                _ => todo!("tuple patterns are unimplemented"),
+                            }
+                        }
+
+                        let body = self.infer(&ty_env, &mut ctx, body)?;
+                        self.constrain_eq(&body, *return_ty);
+
+                        self.unify()?;
+
+                        Ok(ExecItem::Func {
+                            ident,
+                            generic_params,
+                            params,
+                            return_ty: return_ty_ast,
+                            body: self.sub_expr(body)?,
+                        })
+                    }
+                }
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -147,26 +201,6 @@ impl TypeChecker {
                 }
             }
         }
-    }
-
-    pub fn type_infer(
-        &mut self,
-        ty_env: &TyEnv,
-        mut ctx: Ctx,
-        expr: Expr<()>,
-    ) -> Result<Expr<ConcreteTy>> {
-        self.clear_constraints();
-
-        // Constraint generation
-        let typed_expr = self.infer(ty_env, &mut ctx, expr)?;
-
-        // Constraint solving
-        self.unify()?;
-
-        // Substitution
-        let substituted_ast = self.sub_expr(typed_expr)?;
-
-        Ok(substituted_ast)
     }
 
     fn fresh_var(&mut self) -> Ty {

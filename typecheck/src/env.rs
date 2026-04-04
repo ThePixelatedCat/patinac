@@ -27,11 +27,11 @@ impl Ctx {
         self.0.insert(ident, BindingInfo { ty, mutable });
     }
 
-    pub fn get(&self, ident: Ident, span: Span) -> Result<BindingInfo> {
+    pub fn get(&self, ident: Ident, span: impl Into<Span>) -> Result<BindingInfo> {
         self.0
             .get(&ident)
             .cloned()
-            .ok_or_else(|| ErrorKind::UnboundIdent.span(span))
+            .ok_or_else(|| ErrorKind::UnboundIdent.span(span.into()))
     }
 }
 

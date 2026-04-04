@@ -18,20 +18,27 @@ static TY_ENV: LazyLock<TyEnv> = LazyLock::new(|| {
 });
 
 fn check_expr(input: &str) -> Result<ConcreteTy> {
-    TypeChecker::new()
-        .type_infer(&TY_ENV, Ctx::default(), Parser::parse_expr(input).unwrap())
-        .map(|expr| expr.ty)
+    let mut checker = TypeChecker::new();
+
+    let typed_expr = checker.infer(
+        &TY_ENV,
+        &mut Ctx::default(),
+        Parser::parse_expr(input).unwrap(),
+    )?;
+    checker.unify()?;
+    checker.sub_expr(typed_expr).map(|e| e.ty)
 }
 
 fn check_full(input: &str) -> Result<()> {
     let toks = Lexer::lex(input).unwrap();
-    let ast = Parser::parse(input, toks).unwrap();
+    let ast = Parser::parse(toks).unwrap();
     TypeChecker::new().type_program(ast)?;
+    Ok(())
 }
 
 #[test]
 fn type_of_if_single_branch() {
-    let input = "if true then {5 {}}";
+    let input = r#"if true then {"Hi" {}}"#;
     assert_eq!(check_expr(input), Ok(ConcreteTy::unit()))
 }
 
@@ -39,7 +46,7 @@ fn type_of_if_single_branch() {
 fn type_of_if_single_branch_err() {
     assert_eq!(
         check_expr("if true then 5.0"),
-        Err(ErrorKind::TypesNotEqual(Ty::unit(), Ty::Float).span(13..16))
+        Err(ErrorKind::TypesNotEqual(Ty::Float, Ty::unit()).span(13..16))
     )
 }
 
@@ -55,7 +62,7 @@ fn type_of_if() {
 fn type_of_if_err() {
     assert_eq!(
         check_expr(r#"if true then "true" else false"#),
-        Err(ErrorKind::TypesNotEqual(Ty::string(), Ty::Bool).span(25..30))
+        Err(ErrorKind::TypesNotEqual(Ty::Bool, Ty::string()).span(25..30))
     )
 }
 
@@ -127,9 +134,9 @@ fn type_of_block() {
 #[test]
 fn shadowing() {
     let input = r#"{
-    let a = 5
+    let a: UInt = 5
     let a = "Hello, World"
-    {let a = 2}
+    {let a = true}
     a
 }"#;
 
@@ -139,7 +146,7 @@ fn shadowing() {
 #[test]
 fn recursion() {
     let input = "
-fn fac(n: UInt) -> 
+fn fac(n: UInt): UInt -> 
     if n == 0 then
         1 
     else 

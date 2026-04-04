@@ -40,7 +40,7 @@ fn main() {
         }
     };
 
-    let ast = match Parser::parse(&src, toks) {
+    let ast = match Parser::parse(toks) {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {

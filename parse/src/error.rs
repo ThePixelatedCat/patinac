@@ -5,18 +5,18 @@ use span::{Span, impl_span};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Error {
     kind: ErrorKind,
     span: Span,
 }
 
 impl Error {
-    pub fn kind(&self) -> &ErrorKind {
+    pub const fn kind(&self) -> &ErrorKind {
         &self.kind
     }
 
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         self.span
     }
 }

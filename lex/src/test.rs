@@ -8,15 +8,16 @@ use crate::{Lexer, Tok, TokKind as T};
 
 #[test]
 fn single_char_tokens() {
+    let src = "+-(.):";
     assert_eq!(
-        Lexer::lex("+-(.):"),
+        Lexer::lex(src),
         Ok(vec![
-            T::Plus.span(0..1),
-            T::Minus.span(1..2),
-            T::LParen.span(2..3),
-            T::Dot.span(3..4),
-            T::RParen.span(4..5),
-            T::Colon.span(5..6),
+            T::Plus.span(src, 0..1),
+            T::Minus.span(src, 1..2),
+            T::LParen.span(src, 2..3),
+            T::Dot.span(src, 3..4),
+            T::RParen.span(src, 4..5),
+            T::Colon.span(src, 5..6),
         ]),
     );
 }
@@ -28,87 +29,92 @@ fn unknown_input() {
 
 #[test]
 fn single_char_tokens_with_whitespace() {
+    let src = "   + -  (.): ";
     assert_eq!(
-        Lexer::lex("   + -  (.): "),
+        Lexer::lex(src),
         Ok(vec![
-            T::Plus.span(3..4),
-            T::Minus.span(5..6),
-            T::LParen.span(8..9),
-            T::Dot.span(9..10),
-            T::RParen.span(10..11),
-            T::Colon.span(11..12),
+            T::Plus.span(src, 3..4),
+            T::Minus.span(src, 5..6),
+            T::LParen.span(src, 8..9),
+            T::Dot.span(src, 9..10),
+            T::RParen.span(src, 10..11),
+            T::Colon.span(src, 11..12),
         ]),
     );
 }
 
 #[test]
 fn maybe_multiple_char_tokens() {
+    let src = "&&=<=_!=||**->";
     assert_eq!(
-        Lexer::lex("&&=<=_!=||**->"),
+        Lexer::lex(src),
         Ok(vec![
-            T::And.span(0..2),
-            T::Eq.span(2..3),
-            T::Leq.span(3..5),
-            T::Underscore.span(5..6),
-            T::Neq.span(6..8),
-            T::Or.span(8..10),
-            T::Exponent.span(10..12),
-            T::Arrow.span(12..14),
+            T::And.span(src, 0..2),
+            T::Eq.span(src, 2..3),
+            T::Leq.span(src, 3..5),
+            T::Underscore.span(src, 5..6),
+            T::Neq.span(src, 6..8),
+            T::Or.span(src, 8..10),
+            T::Exponent.span(src, 10..12),
+            T::Arrow.span(src, 12..14),
         ]),
     );
 }
 
 #[test]
 fn keywords() {
+    let src = "if Int record Byte let mut UInt enum Float = match Bool else Char fn";
     assert_eq!(
-        Lexer::lex("if Int record Byte let mut UInt enum Float = match Bool else Char fn"),
+        Lexer::lex(src),
         Ok(vec![
-            T::If.span(0..2),
-            T::Int.span(3..6),
-            T::Record.span(7..13),
-            T::Byte.span(14..18),
-            T::Let.span(19..22),
-            T::Mut.span(23..26),
-            T::UInt.span(27..31),
-            T::Enum.span(32..36),
-            T::Float.span(37..42),
-            T::Eq.span(43..44),
-            T::Match.span(45..50),
-            T::Bool.span(51..55),
-            T::Else.span(56..60),
-            T::Char.span(61..65),
-            T::Fn.span(66..68),
+            T::If.span(src, 0..2),
+            T::Int.span(src, 3..6),
+            T::Record.span(src, 7..13),
+            T::Byte.span(src, 14..18),
+            T::Let.span(src, 19..22),
+            T::Mut.span(src, 23..26),
+            T::UInt.span(src, 27..31),
+            T::Enum.span(src, 32..36),
+            T::Float.span(src, 37..42),
+            T::Eq.span(src, 43..44),
+            T::Match.span(src, 45..50),
+            T::Bool.span(src, 51..55),
+            T::Else.span(src, 56..60),
+            T::Char.span(src, 61..65),
+            T::Fn.span(src, 66..68),
         ]),
     );
 }
 
 #[test]
 fn comment() {
+    let src = "//hello, world!\nif let";
     assert_eq!(
-        Lexer::lex("//hello, world!\nif let"),
-        Ok(vec![T::If.span(16..18), T::Let.span(19..22)]),
+        Lexer::lex(src),
+        Ok(vec![T::If.span(src, 16..18), T::Let.span(src, 19..22)]),
     );
 }
 
 #[test]
 fn literals() {
+    let src = r#"1 0.21 1.5E-2 true "test"'\n''\''"#;
     assert_eq!(
-        Lexer::lex(r#"1 0.21 1.5E-2 true "test"'\n''\''"#),
+        Lexer::lex(src),
         Ok(vec![
-            T::IntLit.span(0..1),
-            T::FloatLit.span(2..6),
-            T::FloatLit.span(7..13),
-            T::True.span(14..18),
-            T::StringLit.span(19..25),
-            T::CharLit.span(25..29),
-            T::CharLit.span(29..33),
+            T::IntLit.span(src, 0..1),
+            T::FloatLit.span(src, 2..6),
+            T::FloatLit.span(src, 7..13),
+            T::True.span(src, 14..18),
+            T::StringLit.span(src, 19..25),
+            T::CharLit.span(src, 25..29),
+            T::CharLit.span(src, 29..33),
         ]),
     );
 }
 
 #[test]
 fn function() {
-    let input = r#"
+    let src = r#"
 // this is a comment!
 fn test(var: Type, var2_: Bool): Int -> {
  
@@ -121,82 +127,81 @@ fn test(var: Type, var2_: Bool): Int -> {
 }
 "#;
 
-    let tokens = Lexer::lex(&input);
     assert_eq!(
-        tokens,
+        Lexer::lex(src),
         Ok(vec![
             // function signature
-            T::Fn.span(23..25),
-            T::Ident.span(26..30),
-            T::LParen.span(30..31),
-            T::Ident.span(31..34),
-            T::Colon.span(34..35),
-            T::Ident.span(36..40),
-            T::Comma.span(40..41),
-            T::Ident.span(42..47),
-            T::Colon.span(47..48),
-            T::Bool.span(49..53),
-            T::RParen.span(53..54),
-            T::Colon.span(54..55),
-            T::Int.span(56..59),
-            T::Arrow.span(60..62),
-            T::LBrace.span(63..64),
+            T::Fn.span(src, 23..25),
+            T::Ident.span(src, 26..30),
+            T::LParen.span(src, 30..31),
+            T::Ident.span(src, 31..34),
+            T::Colon.span(src, 34..35),
+            T::Ident.span(src, 36..40),
+            T::Comma.span(src, 40..41),
+            T::Ident.span(src, 42..47),
+            T::Colon.span(src, 47..48),
+            T::Bool.span(src, 49..53),
+            T::RParen.span(src, 53..54),
+            T::Colon.span(src, 54..55),
+            T::Int.span(src, 56..59),
+            T::Arrow.span(src, 60..62),
+            T::LBrace.span(src, 63..64),
             // `x` assignment
-            T::Let.span(71..74),
-            T::Ident.span(75..76),
-            T::Eq.span(77..78),
-            T::CharLit.span(79..83),
-            T::Plus.span(84..85),
-            T::StringLit.span(86..112),
-            T::Plus.span(113..114),
-            T::IntLit.span(115..116),
-            T::FSlash.span(117..118),
-            T::FloatLit.span(119..126),
-            T::Exponent.span(127..129),
-            T::IntLit.span(130..131),
+            T::Let.span(src, 71..74),
+            T::Ident.span(src, 75..76),
+            T::Eq.span(src, 77..78),
+            T::CharLit.span(src, 79..83),
+            T::Plus.span(src, 84..85),
+            T::StringLit.span(src, 86..112),
+            T::Plus.span(src, 113..114),
+            T::IntLit.span(src, 115..116),
+            T::FSlash.span(src, 117..118),
+            T::FloatLit.span(src, 119..126),
+            T::Exponent.span(src, 127..129),
+            T::IntLit.span(src, 130..131),
             // `chars` assignment
-            T::Let.span(136..139),
-            T::Mut.span(140..143),
-            T::Ident.span(144..149),
-            T::Eq.span(150..151),
-            T::Ident.span(152..153),
-            T::Dot.span(153..154),
-            T::Ident.span(154..159),
-            T::LParen.span(159..160),
-            T::RParen.span(160..161),
+            T::Let.span(src, 136..139),
+            T::Mut.span(src, 140..143),
+            T::Ident.span(src, 144..149),
+            T::Eq.span(src, 150..151),
+            T::Ident.span(src, 152..153),
+            T::Dot.span(src, 153..154),
+            T::Ident.span(src, 154..159),
+            T::LParen.span(src, 159..160),
+            T::RParen.span(src, 160..161),
             // if
-            T::If.span(166..168),
-            T::Let.span(169..172),
-            T::Ident.span(173..177),
-            T::LParen.span(177..178),
-            T::Ident.span(178..179),
-            T::RParen.span(179..180),
-            T::Eq.span(181..182),
-            T::Ident.span(183..188),
-            T::Dot.span(188..189),
-            T::Ident.span(189..193),
-            T::LParen.span(193..194),
-            T::RParen.span(194..195),
-            T::Then.span(196..200),
+            T::If.span(src, 166..168),
+            T::Let.span(src, 169..172),
+            T::Ident.span(src, 173..177),
+            T::LParen.span(src, 177..178),
+            T::Ident.span(src, 178..179),
+            T::RParen.span(src, 179..180),
+            T::Eq.span(src, 181..182),
+            T::Ident.span(src, 183..188),
+            T::Dot.span(src, 188..189),
+            T::Ident.span(src, 189..193),
+            T::LParen.span(src, 193..194),
+            T::RParen.span(src, 194..195),
+            T::Then.span(src, 196..200),
             // `x` re-assignment
-            T::Ident.span(209..210),
-            T::Eq.span(211..212),
-            T::Ident.span(213..214),
-            T::Plus.span(215..216),
-            T::Ident.span(217..218),
+            T::Ident.span(src, 209..210),
+            T::Eq.span(src, 211..212),
+            T::Ident.span(src, 213..214),
+            T::Plus.span(src, 215..216),
+            T::Ident.span(src, 217..218),
             // else if
-            T::Else.span(223..227),
-            T::If.span(228..230),
-            T::Bang.span(231..232),
-            T::Ident.span(232..237),
-            T::Then.span(238..242),
+            T::Else.span(src, 223..227),
+            T::If.span(src, 228..230),
+            T::Bang.span(src, 231..232),
+            T::Ident.span(src, 232..237),
+            T::Then.span(src, 238..242),
             // `x` re-assignment
-            T::Ident.span(252..253),
-            T::Eq.span(254..255),
-            T::Ident.span(256..257),
-            T::Plus.span(258..259),
-            T::StringLit.span(260..263),
-            T::RBrace.span(264..265),
+            T::Ident.span(src, 252..253),
+            T::Eq.span(src, 254..255),
+            T::Ident.span(src, 256..257),
+            T::Plus.span(src, 258..259),
+            T::StringLit.span(src, 260..263),
+            T::RBrace.span(src, 264..265),
         ]),
     );
 }

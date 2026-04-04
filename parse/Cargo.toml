@@ -12,6 +12,7 @@ ident = { path = "../ident" }
 # External
 string-interner = "0.19.0"
 thiserror = "2.0.18"
+itertools = "0.14.0"
 pretty_assertions = { version = "1.4.1", optional = true }
 
 [dev-dependencies]
@@ -19,7 +20,6 @@ pretty_assertions = { version = "1.4.1", optional = true }
 lex = { path = "../lex", features = ["test"] }
 # External
 pretty_assertions = "1.4.1"
-itertools = "0.14.0"
 proptest = "1.11.0"
 
 [lints]

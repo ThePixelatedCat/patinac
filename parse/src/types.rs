@@ -10,7 +10,7 @@ macro_rules! primitive {
     };
 }
 
-impl<I: Iterator<Item = Tok>> Parser<'_, I> {
+impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn ty(&mut self) -> Result<Ty> {
         match self.peek()? {
             TokKind::Int => primitive!(self, Int),
@@ -55,7 +55,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         let (params, _) = self.delimited_list(
             |this| {
                 Ok(Param {
-                    mutable: this.consume_at(TokKind::Mut),
+                    mutable: this.consume_at(TokKind::Mut).is_some(),
                     ty: this.ty()?,
                 })
             },
@@ -94,7 +94,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
     pub fn ty_annot(&mut self) -> Result<Option<Ty>> {
         self.consume_at(TokKind::Colon)
-            .then(|| self.ty())
+            .map(|_| self.ty())
             .transpose()
     }
 }

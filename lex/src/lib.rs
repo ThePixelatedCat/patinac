@@ -7,15 +7,15 @@ use span::Span;
 pub use token::{Tok, TokKind};
 
 pub struct Lexer<'src> {
-    input: &'src str,
-    output: Vec<Tok>,
+    src: &'src str,
+    output: Vec<Tok<'src>>,
     errors: Vec<Span>,
 }
 
 impl<'src> Lexer<'src> {
-    pub fn lex(input: &'src str) -> Result<Vec<Tok>, Vec<Span>> {
+    pub fn lex(input: &'src str) -> Result<Vec<Tok<'src>>, Vec<Span>> {
         let mut lexer = Self {
-            input,
+            src: input,
             output: Vec::with_capacity(input.len() / 4),
             errors: Vec::new(),
         };
@@ -43,7 +43,7 @@ impl<'src> Lexer<'src> {
         }
     }
 
-    fn next_token(&self, pos: usize) -> Option<Result<Tok, Span>> {
+    fn next_token(&self, pos: usize) -> Option<Result<Tok<'src>, Span>> {
         let input = self.get_rest(pos)?;
 
         if input.starts_with("//") {
@@ -59,7 +59,7 @@ impl<'src> Lexer<'src> {
         } else {
             Some(rules::matches(input).map_or_else(
                 || Err(self.find_err(pos)),
-                |(token, len)| Ok(token.span(pos..pos + len)),
+                |(token, len)| Ok(token.span(self.src, pos..pos + len)),
             ))
         }
     }
@@ -78,8 +78,8 @@ impl<'src> Lexer<'src> {
     }
 
     fn get_rest(&self, pos: usize) -> Option<&str> {
-        (pos < self.input.len())
-            .then(|| self.input.get(pos..))
+        (pos < self.src.len())
+            .then(|| self.src.get(pos..))
             .flatten()
     }
 }

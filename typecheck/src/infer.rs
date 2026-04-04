@@ -33,7 +33,9 @@ impl TypeChecker {
             }
             ExprKind::UnaryExpr { op, expr } => self.infer_unop(ty_env, ctx, span, op, *expr),
             ExprKind::IndexExpr { arr, idx } => self.infer_indexing(ty_env, ctx, span, *arr, *idx),
-            ExprKind::FieldExpr { base, field } => todo!(),
+            ExprKind::FieldExpr { base, field } => {
+                self.infer_field(ty_env, ctx, span, *base, field)
+            }
             ExprKind::Let { binding, val } => self.infer_let(ty_env, ctx, span, binding, *val),
             ExprKind::LambdaExpr {
                 params,
@@ -420,7 +422,7 @@ impl TypeChecker {
         .span_ty(span, ty))
     }
 
-    pub(super) fn infer_lambda(
+    fn infer_lambda(
         &mut self,
         ty_env: &TyEnv,
         ctx: &Ctx,

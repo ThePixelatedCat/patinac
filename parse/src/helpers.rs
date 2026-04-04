@@ -5,7 +5,7 @@ use span::Span;
 
 use crate::{ErrorKind, Parser, Result, error::Error};
 
-impl<I: Iterator<Item = Tok>> Parser<'_, I> {
+impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
         let token = match self.next() {
             Ok(token) => token,
@@ -17,7 +17,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
     pub fn binding(&mut self) -> Result<Binding> {
         Ok(Binding {
-            mutable: self.consume_at(TokKind::Mut),
+            mutable: self.consume_at(TokKind::Mut).is_some(),
             pat: self.pattern()?,
             ty: self.ty_annot()?,
         })
@@ -34,7 +34,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
 
     pub fn ident(&mut self) -> Result<(Ident, Span)> {
         self.consume(TokKind::Ident)
-            .map(|ident| (Ident::new(self.str_at(ident.span)), ident.span))
+            .map(|ident| (Ident::new(ident.src), ident.span))
     }
 
     pub fn delimited_list<T, F>(
@@ -52,7 +52,7 @@ impl<I: Iterator<Item = Tok>> Parser<'_, I> {
         while !self.at(end) {
             items.push(f(self)?);
 
-            if !self.consume_at(TokKind::Comma) {
+            if self.consume_at(TokKind::Comma).is_none() {
                 break;
             }
         }

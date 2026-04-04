@@ -6,7 +6,7 @@ mod items;
 mod test;
 mod types;
 
-use std::{iter::Peekable, ops::Range, result, vec};
+use std::{iter::Peekable, result, vec};
 
 use ast::Ast;
 #[cfg(any(test, feature = "test"))]
@@ -19,15 +19,13 @@ pub use crate::error::{Error, ErrorKind, Result};
 
 use crate::items::Item;
 
-pub struct Parser<'src, I: Iterator<Item = Tok>> {
-    src: &'src str,
+pub struct Parser<'src, I: Iterator<Item = Tok<'src>>> {
     toks: Peekable<I>,
 }
 
-impl<'src> Parser<'src, vec::IntoIter<Tok>> {
-    pub fn parse(src: &'src str, toks: Vec<Tok>) -> result::Result<Ast<()>, Vec<Error>> {
+impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
+    pub fn parse(toks: Vec<Tok<'src>>) -> result::Result<Ast<()>, Vec<Error>> {
         let mut parser = Self {
-            src,
             toks: toks.into_iter().peekable(),
         };
 
@@ -40,9 +38,13 @@ impl<'src> Parser<'src, vec::IntoIter<Tok>> {
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
                 Err(err) => {
                     errs.push(err);
-                    parser.skip_until(|tok| {
-                        [TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum].contains(&tok)
-                    });
+                    // Skip to next item
+                    while let Ok(tok) = parser.peek()
+                        && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
+                            .contains(&tok)
+                    {
+                        let _ = parser.next();
+                    }
                 }
             }
         }
@@ -53,7 +55,6 @@ impl<'src> Parser<'src, vec::IntoIter<Tok>> {
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<Expr<()>> {
         Self {
-            src,
             toks: Lexer::lex(src).unwrap().into_iter().peekable(),
         }
         .expr()
@@ -62,19 +63,16 @@ impl<'src> Parser<'src, vec::IntoIter<Tok>> {
     #[cfg(any(test, feature = "test"))]
     pub fn parse_item(src: &'src str) -> Result<Item> {
         Self {
-            src,
             toks: Lexer::lex(src).unwrap().into_iter().peekable(),
         }
         .item()
     }
 }
 
-impl<'src, I: Iterator<Item = Tok>> Parser<'src, I> {
+impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     /// Get the next token.
-    fn next(&mut self) -> Result<Tok> {
-        self.toks
-            .next()
-            .ok_or_else(|| ErrorKind::Eof.span(self.src.len()..self.src.len()))
+    fn next(&mut self) -> Result<Tok<'src>> {
+        self.toks.next().ok_or_else(|| ErrorKind::Eof.span(0..0))
     }
 
     /// Look-ahead one token and see what kind of token it is.
@@ -82,7 +80,7 @@ impl<'src, I: Iterator<Item = Tok>> Parser<'src, I> {
         self.toks
             .peek()
             .map(|tok| tok.kind)
-            .ok_or_else(|| ErrorKind::Eof.span(self.src.len()..self.src.len()))
+            .ok_or_else(|| ErrorKind::Eof.span(0..0))
     }
 
     /// Check if the next token is the same variant as another token.
@@ -92,7 +90,7 @@ impl<'src, I: Iterator<Item = Tok>> Parser<'src, I> {
 
     /// Move forward one token in the input and check
     /// that we pass the kind of token we expect.
-    fn consume(&mut self, expected: TokKind) -> Result<Tok> {
+    fn consume(&mut self, expected: TokKind) -> Result<Tok<'src>> {
         self.next().and_then(|next| {
             if next.kind == expected {
                 Ok(next)
@@ -106,27 +104,7 @@ impl<'src, I: Iterator<Item = Tok>> Parser<'src, I> {
         })
     }
 
-    fn consume_get_at(&mut self, token: TokKind) -> Option<Tok> {
+    fn consume_at(&mut self, token: TokKind) -> Option<Tok<'src>> {
         self.at(token).then(|| self.next().unwrap())
-    }
-
-    fn consume_at(&mut self, token: TokKind) -> bool {
-        let at = self.at(token);
-        if at {
-            self.next().unwrap();
-        }
-        at
-    }
-
-    fn skip_until(&mut self, pred: impl Fn(TokKind) -> bool) {
-        while let Ok(tok) = self.peek()
-            && !pred(tok)
-        {
-            let _ = self.next();
-        }
-    }
-
-    fn str_at(&self, span: impl Into<Range<usize>>) -> &'src str {
-        &self.src[span.into()]
     }
 }

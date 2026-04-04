@@ -4,9 +4,10 @@ use span::Span;
 use std::fmt::Display;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct Tok {
+pub struct Tok<'src> {
     pub kind: TokKind,
     pub span: Span,
+    pub src: &'src str,
 }
 
 #[cfg_attr(any(test, feature = "test"), derive(proptest_derive::Arbitrary))]
@@ -157,10 +158,12 @@ impl Display for TokKind {
 }
 
 impl TokKind {
-    pub fn span(self, span: impl Into<Span>) -> Tok {
+    pub fn span(self, src: &str, span: impl Into<Span>) -> Tok<'_> {
+        let span = span.into();
         Tok {
             kind: self,
-            span: span.into(),
+            span,
+            src: &src[span.start..span.end],
         }
     }
 
