@@ -24,31 +24,30 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     }
 
     fn expr_inner(&mut self, binding_power: u8) -> Result<Expr<()>> {
-        let mut lhs =
-            match self.peek()? {
-                TokKind::Ident => self.ident_expr(),
-                TokKind::IntLit => self.int_lit_expr(),
-                TokKind::FloatLit => self.float_lit_expr(),
-                TokKind::CharLit => self.char_lit_expr(),
-                TokKind::StringLit => self.string_lit_expr(),
-                TokKind::True => Ok(ExprKind::Lit(LitExpr::Bool(true))
-                    .span(self.consume(TokKind::True).unwrap().span)),
-                TokKind::False => Ok(ExprKind::Lit(LitExpr::Bool(false))
-                    .span(self.consume(TokKind::False).unwrap().span)),
-                TokKind::LBracket => self.array_lit_expr(),
-                TokKind::LBrace => self.brace_exprs(),
-                TokKind::Minus | TokKind::Bang => self.unop_expr(),
-                TokKind::Fn => self.lambda_expr(),
-                TokKind::Let => self.let_expr(),
-                TokKind::If => self.if_expr(),
-                TokKind::Match => self.match_expr(),
-                TokKind::For => self.for_expr(),
-                TokKind::While => self.while_expr(),
-                TokKind::Break => self.break_expr(),
-                TokKind::Continue => self.continue_expr(),
-                TokKind::Return => self.return_expr(),
-                _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of expression"))),
-            }?;
+        let mut lhs = match self.peek()? {
+            TokKind::Ident => self.ident_expr(),
+            TokKind::IntLit
+            | TokKind::FloatLit
+            | TokKind::CharLit
+            | TokKind::StringLit
+            | TokKind::True
+            | TokKind::False => self
+                .lit_expr()
+                .map(|(lit, span)| ExprKind::Lit(lit).span(span)),
+            TokKind::LBracket => self.array_lit_expr(),
+            TokKind::LBrace => self.brace_exprs(),
+            TokKind::Minus | TokKind::Bang => self.unop_expr(),
+            TokKind::Fn => self.lambda_expr(),
+            TokKind::Let => self.let_expr(),
+            TokKind::If => self.if_expr(),
+            TokKind::Match => self.match_expr(),
+            TokKind::For => self.for_expr(),
+            TokKind::While => self.while_expr(),
+            TokKind::Break => self.break_expr(),
+            TokKind::Continue => self.continue_expr(),
+            TokKind::Return => self.return_expr(),
+            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of expression"))),
+        }?;
 
         loop {
             let Ok(peeked) = self.peek() else { break };
@@ -67,7 +66,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 TokKind::Plus => InfixOp::Add,
                 TokKind::Minus => InfixOp::Sub,
                 TokKind::Times => InfixOp::Mul,
-                TokKind::FSlash => InfixOp::Div,
+                TokKind::Divide => InfixOp::Div,
                 TokKind::Xor => InfixOp::Xor,
                 TokKind::Exponent => InfixOp::Exp,
                 TokKind::Eqq => InfixOp::Eqq,
@@ -108,31 +107,44 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             .map(|(ident, ident_span)| ExprKind::Ident(ident).span(ident_span))
     }
 
-    fn int_lit_expr(&mut self) -> Result<Expr<()>> {
+    pub fn lit_expr(&mut self) -> Result<(LitExpr, Span)> {
+        match self.peek()? {
+            TokKind::IntLit => self.int_lit_expr(),
+            TokKind::FloatLit => self.float_lit_expr(),
+            TokKind::CharLit => self.char_lit_expr(),
+            TokKind::StringLit => self.string_lit_expr(),
+            TokKind::True => Ok((LitExpr::Bool(true), self.consume(TokKind::True)?.span)),
+            TokKind::False => Ok((LitExpr::Bool(false), self.consume(TokKind::False)?.span)),
+            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "literal"))),
+        }
+    }
+
+    fn int_lit_expr(&mut self) -> Result<(LitExpr, Span)> {
         let tok = self.consume(TokKind::IntLit)?;
-        let val = u64::from_str(tok.src).unwrap();
-        Ok(ExprKind::Lit(LitExpr::Int(val)).span(tok.span))
+        let val = u64::from_str(tok.src).expect("lexer should not have produced invalid int token");
+        Ok((LitExpr::Int(val), tok.span))
     }
 
-    fn float_lit_expr(&mut self) -> Result<Expr<()>> {
+    fn float_lit_expr(&mut self) -> Result<(LitExpr, Span)> {
         let tok = self.consume(TokKind::FloatLit)?;
-        let val = f64::from_str(tok.src).unwrap();
-        Ok(ExprKind::Lit(LitExpr::Float(val)).span(tok.span))
+        let val =
+            f64::from_str(tok.src).expect("lexer should not have produced invalid float token");
+        Ok((LitExpr::Float(val), tok.span))
     }
 
-    fn char_lit_expr(&mut self) -> Result<Expr<()>> {
+    fn char_lit_expr(&mut self) -> Result<(LitExpr, Span)> {
         let tok = self.consume(TokKind::CharLit)?;
         let val = process_escapes(&tok.src[1..tok.src.len() - 1])
             .chars()
             .exactly_one()
             .expect("lexer should not have produced char token with multiple characters");
-        Ok(ExprKind::Lit(LitExpr::Char(val)).span(tok.span))
+        Ok((LitExpr::Char(val), tok.span))
     }
 
-    fn string_lit_expr(&mut self) -> Result<Expr<()>> {
+    fn string_lit_expr(&mut self) -> Result<(LitExpr, Span)> {
         let tok = self.consume(TokKind::StringLit)?;
         let val = process_escapes(&tok.src[1..tok.src.len() - 1]);
-        Ok(ExprKind::Lit(LitExpr::String(val)).span(tok.span))
+        Ok((LitExpr::String(val), tok.span))
     }
 
     fn array_lit_expr(&mut self) -> Result<Expr<()>> {

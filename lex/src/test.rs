@@ -155,7 +155,7 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::StringLit.span(src, 86..112),
             T::Plus.span(src, 113..114),
             T::IntLit.span(src, 115..116),
-            T::FSlash.span(src, 117..118),
+            T::Divide.span(src, 117..118),
             T::FloatLit.span(src, 119..126),
             T::Exponent.span(src, 127..129),
             T::IntLit.span(src, 130..131),

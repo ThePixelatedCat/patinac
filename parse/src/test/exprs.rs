@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 
 use ast::{
     exprs::{Arg, Binding, ExprKind, InfixOp, UnaryOp},
-    patterns::Pat,
+    patterns::PatKind,
     types::{Ty, TyKind},
 };
 use ident::Ident;
@@ -253,10 +253,13 @@ fn compound_expressions() {
                 },
                 Arg {
                     mutable: false,
-                    label: Some(Pat::Ident {
-                        ident: Ident::new("foo"),
-                        subpat: None
-                    }),
+                    label: Some(
+                        PatKind::Ident {
+                            ident: Ident::new("foo"),
+                            subpat: None
+                        }
+                        .span(18..21)
+                    ),
                     val: ExprKind::ident("bar").span(24..27)
                 },
             ],
@@ -313,18 +316,20 @@ fn compound_expressions() {
                     params: vec![
                         Binding {
                             mutable: true,
-                            pat: Pat::Ident {
+                            pat: PatKind::Ident {
                                 ident: Ident::new("a"),
                                 subpat: None
-                            },
+                            }
+                            .span(8..9),
                             ty: None
                         },
                         Binding {
                             mutable: false,
-                            pat: Pat::Ident {
+                            pat: PatKind::Ident {
                                 ident: Ident::new("b"),
                                 subpat: None
-                            },
+                            }
+                            .span(11..12),
                             ty: Some(Ty {
                                 kind: TyKind::Int,
                                 span: Span::from(14..17)
@@ -352,10 +357,13 @@ fn compound_expressions() {
                 },
                 Arg {
                     mutable: false,
-                    label: Some(Pat::Ident {
-                        ident: Ident::new("b"),
-                        subpat: None
-                    }),
+                    label: Some(
+                        PatKind::Ident {
+                            ident: Ident::new("b"),
+                            subpat: None
+                        }
+                        .span(37..38)
+                    ),
                     val: ExprKind::int(2).span(41..42).into()
                 },
             ]
@@ -392,10 +400,11 @@ fn var_expressions() {
         Ok(ExprKind::Let {
             binding: Binding {
                 mutable: false,
-                pat: Pat::Ident {
+                pat: PatKind::Ident {
                     ident: Ident::new("x"),
                     subpat: None
-                },
+                }
+                .span(4..5),
                 ty: None
             },
             val: ExprKind::InfixExpr {
@@ -423,10 +432,11 @@ fn var_expressions() {
         Ok(ExprKind::Let {
             binding: Binding {
                 mutable: true,
-                pat: Pat::Ident {
+                pat: PatKind::Ident {
                     ident: Ident::new("y"),
                     subpat: None
-                },
+                }
+                .span(8..9),
                 ty: Some(Ty {
                     kind: TyKind::UInt,
                     span: Span::from(11..15)
@@ -478,10 +488,11 @@ if y < 3 then {
             ExprKind::Let {
                 binding: Binding {
                     mutable: true,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("y"),
                         subpat: None
-                    },
+                    }
+                    .span(9..10),
                     ty: None
                 },
                 val: ExprKind::int(5).span(13..14).into()
@@ -517,10 +528,11 @@ if y < 3 then {
                     ExprKind::Let {
                         binding: Binding {
                             mutable: false,
-                            pat: Pat::Ident {
+                            pat: PatKind::Ident {
                                 ident: Ident::new("a"),
                                 subpat: None
-                            },
+                            }
+                            .span(55..56),
                             ty: None
                         },
                         val: ExprKind::int(5).span(59..60).into()
@@ -542,7 +554,7 @@ if y < 3 then {
 fn malformed_expressions() {
     assert_eq!(
         Parser::parse_expr("[1, 3, 4, 5"),
-        Err(ErrorKind::Eof.span(11..11))
+        Err(ErrorKind::Eof.span(0..0))
     );
     assert_eq!(
         Parser::parse_expr("*5"),

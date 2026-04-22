@@ -57,6 +57,8 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         let (ident, _) = self.ident()?;
 
+        let generic_params = self.generic_params()?;
+
         let (params, _) = self.delimited_list(Self::param, TokKind::LParen, TokKind::RParen)?;
 
         self.consume(TokKind::Colon)?;
@@ -69,7 +71,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         Ok(ExecItem::Func {
             ident,
-            generic_params: vec![],
+            generic_params,
             params,
             return_ty,
             body,

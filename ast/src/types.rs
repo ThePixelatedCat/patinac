@@ -1,13 +1,9 @@
 use ident::Ident;
-use span::{Span, impl_span};
+use span::impl_span;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ty {
-    pub kind: TyKind,
-    pub span: Span,
-}
+impl_span!(TyKind as Ty);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TyKind {
     Int,
     UInt,
@@ -21,10 +17,8 @@ pub enum TyKind {
     Adt(Ident, Vec<Ty>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     pub mutable: bool,
     pub ty: Ty,
 }
-
-impl_span!(TyKind as Ty);

@@ -6,13 +6,9 @@ use crate::types::{Param, Ty, TyVar};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, PartialEq)]
-pub struct Error {
-    kind: ErrorKind,
-    span: Span,
-}
+impl_span!(ErrorKind as Error);
 
-#[derive(ThisError, Debug, PartialEq)]
+#[derive(ThisError, Debug, PartialEq, Clone)]
 pub enum ErrorKind {
     #[error("unbound identifier")]
     UnboundIdent,
@@ -41,5 +37,3 @@ pub enum ErrorKind {
 fn describe_mutability(mutable: bool) -> &'static str {
     if mutable { "mutable" } else { "immutable" }
 }
-
-impl_span!(ErrorKind as Error);

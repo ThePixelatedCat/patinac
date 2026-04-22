@@ -16,7 +16,7 @@ use ast::{
     Ast,
     exprs::Expr,
     items::{AdtItem, ExecItem, Field},
-    patterns::Pat,
+    patterns::{Pat, PatKind},
     types::{Ty as AstTy, TyKind as AstTyKind},
 };
 use ident::Ident;
@@ -101,11 +101,11 @@ impl TypeChecker {
                         for (pat, ty, mutable) in
                             iter::zip(&params, param_tys).map(|(p, ty)| (&p.pat, ty.ty, ty.mutable))
                         {
-                            match pat {
-                                Pat::Ident { ident, subpat } => {
+                            match &pat.kind {
+                                PatKind::Ident { ident, subpat } => {
                                     ctx.insert(*ident, ty, mutable);
                                 }
-                                Pat::Wildcard => {}
+                                PatKind::Wildcard => {}
                                 _ => todo!("tuple patterns are unimplemented"),
                             }
                         }
@@ -164,7 +164,7 @@ impl TypeChecker {
                         false,
                     );
                 }
-                AdtItem::Enum { def, variants } => todo!(),
+                AdtItem::Enum { def, variants } => {}
             }
         }
 

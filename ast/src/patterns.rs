@@ -1,24 +1,21 @@
 use ident::Ident;
+use span::impl_span;
 
 use crate::exprs::LitExpr;
 
+impl_span!(PatKind as Pat);
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum Pat {
+pub enum PatKind {
     Literal {
         negate: bool,
-        literal: LitExpr,
+        lit: LitExpr,
     },
     Wildcard,
     Ident {
         ident: Ident,
         subpat: Option<Box<Pat>>,
     },
+    Constructor(Ident, Vec<Pat>),
     Tuple(Vec<Pat>),
-    Array(Vec<Pat>, Option<ArrayRestPat>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArrayRestPat {
-    Discard,
-    Name(Ident),
 }

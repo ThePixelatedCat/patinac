@@ -2,9 +2,15 @@ use std::{error::Error, fmt::Display, ops::Range};
 
 #[macro_export]
 macro_rules! impl_span {
-    ($self:path as $spanned:path) => {
+    ($self:path as $spanned:ident) => {
+        #[derive(Debug, Clone, PartialEq)]
+        pub struct $spanned {
+            pub kind: $self,
+            pub span: $crate::Span,
+        }
+
         impl $self {
-            pub fn span(self, span: impl Into<Span>) -> $spanned {
+            pub fn span(self, span: impl Into<$crate::Span>) -> $spanned {
                 $spanned {
                     kind: self,
                     span: span.into(),

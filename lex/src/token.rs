@@ -1,7 +1,7 @@
+use displaydoc::Display;
 #[cfg(any(test, feature = "test"))]
 use proptest::{arbitrary::Arbitrary, prelude::Strategy};
 use span::Span;
-use std::fmt::Display;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Tok<'src> {
@@ -11,150 +11,143 @@ pub struct Tok<'src> {
 }
 
 #[cfg_attr(any(test, feature = "test"), derive(proptest_derive::Arbitrary))]
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-#[repr(u8)]
+#[derive(Display, PartialEq, Eq, Debug, Clone, Copy)]
 pub enum TokKind {
-    // Literals
+    /* LITERALS */
+    /// int literal
     IntLit,
+    /// float literal
     FloatLit,
+    /// string literal
     StringLit,
+    /// char literal
     CharLit,
-    // Delimiters
-    LParen,
-    RParen,
-    LBrace,
-    RBrace,
-    LBracket,
-    RBracket,
-    // Symbols
-    Eq,
-    Ampersand,
-    Pipe,
-    Bang,
-    Plus,
-    Minus,
-    Times,
-    FSlash,
-    BSlash,
-    Dot,
-    Comma,
-    Colon,
-    Semicolon,
-    Underscore,
-    Arrow,
-    // Operators
-    Exponent,
-    And,
-    Or,
-    Xor,
-    Eqq,
-    Neq,
-    Lt,
-    Gt,
-    Leq,
-    Geq,
-    // Keywords
-    Int,
-    UInt,
-    Byte,
-    Float,
-    Bool,
-    Char,
-    Let,
-    Mut,
-    Const,
-    Fn,
-    Record,
-    Enum,
-    If,
-    Then,
-    Else,
-    For,
-    In,
-    While,
-    Do,
-    Match,
-    With,
-    Return,
-    Break,
-    Continue,
-    True,
-    False,
-    // Misc
-    Ident,
-}
 
-impl Display for TokKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::IntLit => "int literal",
-                Self::FloatLit => "float literal",
-                Self::StringLit => "string literal",
-                Self::CharLit => "char literal",
-                Self::LParen => "`(`",
-                Self::RParen => "`)`",
-                Self::LBrace => "`{`",
-                Self::RBrace => "`}`",
-                Self::LBracket => "`[`",
-                Self::RBracket => "`]`",
-                Self::Eq => "`=`",
-                Self::Ampersand => "`&`",
-                Self::Pipe => "`|`",
-                Self::Bang => "`!`",
-                Self::Lt => "`<`",
-                Self::Gt => "`>`",
-                Self::Plus => "`+`",
-                Self::Minus => "`-`",
-                Self::Times => "`*`",
-                Self::FSlash => "`/`",
-                Self::BSlash => r"`\`",
-                Self::Dot => "`.`",
-                Self::Comma => "`,`",
-                Self::Colon => "`:`",
-                Self::Semicolon => "`;`",
-                Self::Underscore => "`_`",
-                Self::Arrow => "`->`",
-                Self::Exponent => "`**`",
-                Self::And => "`&&`",
-                Self::Or => "`||`",
-                Self::Xor => "`^`",
-                Self::Eqq => "`==`",
-                Self::Neq => "`!=`",
-                Self::Leq => "`<=`",
-                Self::Geq => "`>=`",
-                Self::Int => "`Int`",
-                Self::UInt => "`UInt`",
-                Self::Byte => "`Byte`",
-                Self::Float => "`Float`",
-                Self::Bool => "`Bool`",
-                Self::Char => "`Char`",
-                Self::Let => "`let`",
-                Self::Mut => "`mut`",
-                Self::Const => "`const`",
-                Self::Fn => "`fn`",
-                Self::Record => "`record`",
-                Self::Enum => "`enum`",
-                Self::If => "`if`",
-                Self::Then => "`then`",
-                Self::Else => "`else`",
-                Self::For => "`for`",
-                Self::In => "`in`",
-                Self::While => "`while`",
-                Self::Do => "`do`",
-                Self::Match => "`match`",
-                Self::With => "`with`",
-                Self::Return => "`return`",
-                Self::Break => "`break`",
-                Self::Continue => "`continue`",
-                Self::True => "`true`",
-                Self::False => "`false`",
-                Self::Ident => "identifier",
-            }
-        )
-    }
+    /* DELIMITERS */
+    /// `(`
+    LParen,
+    /// `)`
+    RParen,
+    /// `{{`
+    LBrace,
+    /// `}}`
+    RBrace,
+    /// `[`
+    LBracket,
+    /// `]`
+    RBracket,
+
+    /* SYMBOLS */
+    /// `=`
+    Eq,
+    /// `&`
+    Ampersand,
+    /// `|`
+    Pipe,
+    /// `\`
+    BSlash,
+    /// `.`
+    Dot,
+    /// `,`
+    Comma,
+    /// `:`
+    Colon,
+    /// `;`
+    Semicolon,
+    /// `_`
+    Underscore,
+    /// `->`
+    Arrow,
+
+    /* OPERATORS */
+    /// `+`
+    Plus,
+    /// `-`
+    Minus,
+    /// `*`
+    Times,
+    /// `/`
+    Divide,
+    /// `**`
+    Exponent,
+    /// `&&`
+    And,
+    /// `||`
+    Or,
+    /// `^`
+    Xor,
+    /// `!`
+    Bang,
+    /// `==`
+    Eqq,
+    /// `!=`
+    Neq,
+    /// `<`
+    Lt,
+    /// `>`
+    Gt,
+    /// `<=`
+    Leq,
+    /// `>=`
+    Geq,
+
+    /* KEYWORDS */
+    /// `Int`
+    Int,
+    /// `UInt`
+    UInt,
+    /// `Byte`
+    Byte,
+    /// `Float`
+    Float,
+    /// `Bool`
+    Bool,
+    /// `Char`
+    Char,
+    /// `let`
+    Let,
+    /// `mut`
+    Mut,
+    /// `const`
+    Const,
+    /// `fn`
+    Fn,
+    /// `record`
+    Record,
+    /// `enum`
+    Enum,
+    /// `if`
+    If,
+    /// `then`
+    Then,
+    /// `else`
+    Else,
+    /// `for`
+    For,
+    /// `in`
+    In,
+    /// `while`
+    While,
+    /// `do`
+    Do,
+    /// `match`
+    Match,
+    /// `with`
+    With,
+    /// `return`
+    Return,
+    /// `break`
+    Break,
+    /// `continue`
+    Continue,
+    /// `true`
+    True,
+    /// `false`
+    False,
+
+    /* MISC */
+    /// Identifier
+    Ident,
 }
 
 impl TokKind {

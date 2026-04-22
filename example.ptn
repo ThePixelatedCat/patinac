@@ -1,9 +1,11 @@
-fn sum(a, b) -> a + b
-fn sum_annotated(a: Int, b: Int): Int -> a + b
+fn sum(a: Int, b: Int): Int -> a + b
 fn sum_block(a: Int, b: Int): Int -> {
     a + b
 }
 const sum = fn(a, b) -> a + b
+
+fn square(i: Int): Int -> i * i
+fn sumOfSquares(n: UInt): Int -> range(0, n).iter().map(square).fold(0, sum)
 
 const twelve: Int = 12
 const inc: fn(Int): Int = sum(1, _)

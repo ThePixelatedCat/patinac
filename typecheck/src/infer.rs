@@ -1,6 +1,6 @@
 use ast::{
-    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, UnaryOp},
-    patterns::Pat,
+    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, UnaryOp},
+    patterns::{Pat, PatKind},
     types::Ty as AstTy,
 };
 use ident::Ident;
@@ -14,7 +14,6 @@ use crate::{
 };
 
 impl TypeChecker {
-    #[expect(unused)]
     pub(super) fn infer(
         &mut self,
         ty_env: &TyEnv,
@@ -24,7 +23,10 @@ impl TypeChecker {
         let span = expr.span;
         match expr.kind {
             ExprKind::Ident(ident) => Self::infer_ident(ctx, span, ident),
-            ExprKind::Lit(lit) => self.infer_lit(span, lit),
+            ExprKind::Lit(lit) => {
+                let ty = self.infer_lit(&lit);
+                Ok(ExprKind::Lit(lit).span_ty(span, ty))
+            }
             ExprKind::Array(exprs) => self.infer_array(ty_env, ctx, span, exprs),
             ExprKind::Tuple(exprs) => self.infer_tuple(ty_env, ctx, span, exprs),
             ExprKind::CallExpr { func, args } => self.infer_call(ty_env, ctx, span, *func, args),
@@ -45,7 +47,9 @@ impl TypeChecker {
             ExprKind::If { cond, th, el } => {
                 self.infer_if(ty_env, ctx, span, *cond, *th, el.map(|v| *v))
             }
-            ExprKind::Match { scrutinee, arms } => todo!(),
+            ExprKind::Match { scrutinee, arms } => {
+                self.infer_match(ty_env, ctx, span, *scrutinee, arms)
+            }
             ExprKind::For {
                 pattern,
                 iter,
@@ -87,6 +91,33 @@ impl TypeChecker {
             .collect()
     }
 
+    fn bind(
+        &mut self,
+        ty_env: &TyEnv,
+        ctx: &mut Ctx,
+        pat: &Pat,
+        mutable: bool,
+        ty: Ty,
+    ) -> Result<()> {
+        match &pat.kind {
+            PatKind::Literal { negate, lit } => {
+                let ty = self.infer_lit(lit);
+                if *negate {
+                    self.constrain_either_eq(a, tys, pat.span);
+                }
+            }
+            PatKind::Wildcard => {}
+            PatKind::Ident { ident, subpat } => {
+                ctx.insert(*ident, ty, mutable);
+            }
+            _ => {
+                todo!("tuple patterns are unimplemented")
+            }
+        }
+
+        Ok(())
+    }
+
     fn infer_ident(ctx: &Ctx, span: Span, ident: Ident) -> Result<Expr<Ty>> {
         ctx.get(ident, span)
             .map(|info| ExprKind::Ident(ident).span_ty(span, info.ty))
@@ -125,16 +156,14 @@ impl TypeChecker {
         }
     }
 
-    fn infer_lit(&mut self, span: Span, lit: LitExpr) -> Result<Expr<Ty>> {
-        let ty = match lit {
+    fn infer_lit(&mut self, lit: &LitExpr) -> Ty {
+        match lit {
             LitExpr::Int(_) => self.fresh_int_var(),
             LitExpr::Float(_) => Ty::Float,
             LitExpr::String(_) => Ty::string(),
             LitExpr::Char(_) => Ty::Char,
             LitExpr::Bool(_) => Ty::Bool,
-        };
-
-        Ok(ExprKind::Lit(lit).span_ty(span, ty))
+        }
     }
 
     fn infer_array(
@@ -390,6 +419,48 @@ impl TypeChecker {
         .span_ty(span, th_ty))
     }
 
+    fn infer_match(
+        &mut self,
+        ty_env: &TyEnv,
+        ctx: &mut Ctx,
+        span: Span,
+        scrutinee: Expr<()>,
+        arms: Vec<MatchArm<()>>,
+    ) -> Result<Expr<Ty>> {
+        let scrutinee = self.infer(ty_env, ctx, scrutinee)?;
+
+        let ty = self.fresh_var();
+
+        let arms = arms
+            .into_iter()
+            .map(|arm| {
+                match arm.pattern.kind {
+                    PatKind::Literal { negate, lit } => todo!(),
+                    PatKind::Wildcard => todo!(),
+                    PatKind::Ident { ident, subpat } => todo!(),
+                    PatKind::Constructor(ident, pats) => todo!(),
+                    PatKind::Tuple(pats) => todo!(),
+                }
+
+                let body = self.infer(ty_env, ctx, *arm.body)?;
+                self.constrain_eq(&body, ty.clone());
+
+                Ok(MatchArm {
+                    pattern: arm.pattern,
+                    guard: None,
+                    body: Box::new(body),
+                    span: arm.span,
+                })
+            })
+            .collect()?;
+
+        Ok(ExprKind::Match {
+            scrutinee: Box::new(scrutinee),
+            arms,
+        }
+        .span_ty(span, ty))
+    }
+
     fn infer_let(
         &mut self,
         ty_env: &TyEnv,
@@ -404,15 +475,17 @@ impl TypeChecker {
             self.constrain_eq(&val, ty.into());
         }
 
-        match &binding.pat {
-            Pat::Ident { ident, subpat } => {
-                ctx.insert(*ident, val.ty.clone(), binding.mutable);
-            }
-            Pat::Wildcard => {}
-            _ => {
-                todo!("tuple patterns are unimplemented")
-            }
-        }
+        self.bind(ty_env, ctx, &binding.pat, binding.mutable, val.ty.clone())?;
+
+        // match &binding.pat {
+        //     Pat::Ident { ident, subpat } => {
+        //         ctx.insert(*ident, val.ty.clone(), binding.mutable);
+        //     }
+        //     Pat::Wildcard => {}
+        //     _ => {
+        //         todo!("tuple patterns are unimplemented")
+        //     }
+        // }
 
         let ty = val.ty.clone();
         Ok(ExprKind::Let {

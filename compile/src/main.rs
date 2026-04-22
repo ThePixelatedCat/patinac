@@ -44,12 +44,7 @@ fn main() {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
-                print_diagnostic(
-                    DiagnosticKind::Error,
-                    &err.kind().to_string(),
-                    err.span(),
-                    &src,
-                );
+                print_diagnostic(DiagnosticKind::Error, &err.kind.to_string(), err.span, &src);
             }
             return;
         }

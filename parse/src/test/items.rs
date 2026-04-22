@@ -3,7 +3,7 @@ use pretty_assertions::assert_eq;
 use ast::{
     exprs::{Binding, ExprKind, InfixOp},
     items::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param, Variant},
-    patterns::Pat,
+    patterns::PatKind,
     types::{Ty, TyKind},
 };
 use ident::Ident;
@@ -34,10 +34,11 @@ fn const_items() {
             val: ExprKind::LambdaExpr {
                 params: vec![Binding {
                     mutable: false,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("x"),
                         subpat: None
-                    },
+                    }
+                    .span(14..15),
                     ty: None
                 }],
                 return_ty: None,
@@ -192,10 +193,11 @@ fn function_items() {
             params: vec![
                 Param {
                     mutable: true,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("a"),
                         subpat: None
-                    },
+                    }
+                    .span(11..12),
                     ty: Ty {
                         kind: TyKind::Byte,
                         span: Span::from(14..18)
@@ -203,10 +205,11 @@ fn function_items() {
                 },
                 Param {
                     mutable: false,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("b"),
                         subpat: None
-                    },
+                    }
+                    .span(20..21),
                     ty: Ty {
                         kind: TyKind::Byte,
                         span: Span::from(23..27)

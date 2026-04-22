@@ -26,7 +26,7 @@ pub struct Param {
     pub ty: Ty,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AdtItem {
     Record { def: AdtDef, fields: Vec<Field> },
     Enum { def: AdtDef, variants: Vec<Variant> },
@@ -38,14 +38,14 @@ pub struct AdtDef {
     pub generics: Vec<GenericParam>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub ident: Ident,
     pub ty: Ty,
     pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Variant {
     pub ident: Ident,
     pub fields: Vec<Field>,

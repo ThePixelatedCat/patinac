@@ -7,7 +7,7 @@ use pretty_assertions::assert_eq;
 use ast::{
     exprs::{Arg, Binding, ExprKind, InfixOp},
     items::{AdtDef, AdtItem, ExecItem, Field, GenericParam, Param},
-    patterns::Pat,
+    patterns::PatKind,
     types::{Param as TyParam, TyKind},
 };
 use ident::Ident;
@@ -42,18 +42,20 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
             params: vec![
                 Param {
                     mutable: true,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("x"),
                         subpat: None
-                    },
+                    }
+                    .span(22..23),
                     ty: TyKind::Bool.span(25..29)
                 },
                 Param {
                     mutable: false,
-                    pat: Pat::Ident {
+                    pat: PatKind::Ident {
                         ident: Ident::new("bar"),
                         subpat: None
-                    },
+                    }
+                    .span(31..34),
                     ty: TyKind::Adt(
                         Ident::new("Bar"),
                         vec![
@@ -80,10 +82,11 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                 ExprKind::Let {
                     binding: Binding {
                         mutable: true,
-                        pat: Pat::Ident {
+                        pat: PatKind::Ident {
                             ident: Ident::new("x"),
                             subpat: None
-                        },
+                        }
+                        .span(88..89),
                         ty: Some(
                             TyKind::Tuple(vec![
                                 TyKind::Bool.span(93..97),
@@ -129,10 +132,11 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                                 ExprKind::Let {
                                     binding: Binding {
                                         mutable: false,
-                                        pat: Pat::Ident {
+                                        pat: PatKind::Ident {
                                             ident: Ident::new("baz"),
                                             subpat: None
-                                        },
+                                        }
+                                        .span(156..159),
                                         ty: None
                                     },
                                     val: Box::new(

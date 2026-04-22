@@ -154,6 +154,20 @@ fn fac(n: UInt): UInt ->
 ";
 
     assert_eq!(check_full(input), Ok(()));
+}
 
-    //assert_eq!(check_full("const UHOH = UHOH + 1"), Err(TypeError::Infinite.spanned(13..17)));
+#[test]
+fn option() {
+    let input = "\
+enum Option[T] 
+| Some(v: T)
+| None()
+
+fn map[T, U](self: Option[T], f: fn(T) -> U): Option[U] -> 
+    match self with
+    | Some(v) -> Some(f(v))
+    | None -> None
+";
+
+    assert_eq!(check_full(input), Ok(()))
 }

@@ -1,4 +1,4 @@
-use ast::{exprs::Binding, patterns::Pat};
+use ast::exprs::Binding;
 use ident::Ident;
 use lex::{Tok, TokKind};
 use span::Span;
@@ -20,15 +20,6 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             mutable: self.consume_at(TokKind::Mut).is_some(),
             pat: self.pattern()?,
             ty: self.ty_annot()?,
-        })
-    }
-
-    pub fn pattern(&mut self) -> Result<Pat> {
-        // TODO add other patterns
-
-        Ok(Pat::Ident {
-            ident: self.ident()?.0,
-            subpat: None,
         })
     }
 
