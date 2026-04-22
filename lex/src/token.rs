@@ -1,4 +1,5 @@
 use displaydoc::Display;
+use logos::Logos;
 #[cfg(any(test, feature = "test"))]
 use proptest::{arbitrary::Arbitrary, prelude::Strategy};
 use span::Span;
@@ -11,142 +12,207 @@ pub struct Tok<'src> {
 }
 
 #[cfg_attr(any(test, feature = "test"), derive(proptest_derive::Arbitrary))]
-#[derive(Display, PartialEq, Eq, Debug, Clone, Copy)]
+#[derive(Logos, PartialEq, Eq, Debug, Display, Clone, Copy)]
+#[logos(skip(r"(\p{Pattern_White_Space}+)|(//.*)", allow_greedy = true))]
+#[logos(subpattern dec_int = "([0-9][0-9_]*)")]
+#[logos(subpattern escape = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
 pub enum TokKind {
     /* LITERALS */
-    /// int literal
+    /// integer literal
+    #[regex("(?&dec_int)|(0b[0-1][0-1_]*)|(0o[0-7][0-7_]*)|(0x[0-9a-fA-F][0-9a-fA-F_]*)")]
     IntLit,
     /// float literal
+    #[regex(r"(?&dec_int)\.(?&dec_int)([Ee]-?(?&dec_int))?")]
     FloatLit,
     /// string literal
+    #[regex(r##"("([^"\\]|(?&escape))*")|((?s)#".*"#)"##, allow_greedy = true)]
     StringLit,
-    /// char literal
+    /// character literal
+    #[regex(r"'([^\t\n\r'\\]|(?&escape))'")]
     CharLit,
 
     /* DELIMITERS */
     /// `(`
+    #[token("(")]
     LParen,
     /// `)`
+    #[token(")")]
     RParen,
     /// `{{`
+    #[token("{")]
     LBrace,
     /// `}}`
+    #[token("}")]
     RBrace,
     /// `[`
+    #[token("[")]
     LBracket,
     /// `]`
+    #[token("]")]
     RBracket,
 
     /* SYMBOLS */
     /// `=`
+    #[token("=")]
     Eq,
     /// `&`
+    #[token("&")]
     Ampersand,
     /// `|`
+    #[token("|")]
     Pipe,
     /// `\`
+    #[token("\\")]
     BSlash,
     /// `.`
+    #[token(".")]
     Dot,
     /// `,`
+    #[token(",")]
     Comma,
     /// `:`
+    #[token(":")]
     Colon,
     /// `;`
+    #[token(";")]
     Semicolon,
     /// `_`
+    #[token("_")]
     Underscore,
     /// `->`
+    #[token("->")]
     Arrow,
 
     /* OPERATORS */
     /// `+`
+    #[token("+")]
     Plus,
     /// `-`
+    #[token("-")]
     Minus,
     /// `*`
+    #[token("*")]
     Times,
     /// `/`
+    #[token("/")]
     Divide,
     /// `**`
+    #[token("**")]
     Exponent,
     /// `&&`
+    #[token("&&")]
     And,
     /// `||`
+    #[token("||")]
     Or,
     /// `^`
+    #[token("^")]
     Xor,
     /// `!`
+    #[token("!")]
     Bang,
     /// `==`
+    #[token("==")]
     Eqq,
     /// `!=`
+    #[token("!=")]
     Neq,
     /// `<`
+    #[token("<")]
     Lt,
     /// `>`
+    #[token(">")]
     Gt,
     /// `<=`
+    #[token("<=")]
     Leq,
     /// `>=`
+    #[token(">=")]
     Geq,
 
     /* KEYWORDS */
     /// `Int`
+    #[token("Int")]
     Int,
     /// `UInt`
+    #[token("UInt")]
     UInt,
     /// `Byte`
+    #[token("Byte")]
     Byte,
     /// `Float`
+    #[token("Float")]
     Float,
     /// `Bool`
+    #[token("Bool")]
     Bool,
     /// `Char`
+    #[token("Char")]
     Char,
     /// `let`
+    #[token("let")]
     Let,
     /// `mut`
+    #[token("mut")]
     Mut,
     /// `const`
+    #[token("const")]
     Const,
     /// `fn`
+    #[token("fn")]
     Fn,
     /// `record`
+    #[token("record")]
     Record,
     /// `enum`
+    #[token("enum")]
     Enum,
     /// `if`
+    #[token("if")]
     If,
     /// `then`
+    #[token("then")]
     Then,
     /// `else`
+    #[token("else")]
     Else,
     /// `for`
+    #[token("for")]
     For,
     /// `in`
+    #[token("in")]
     In,
     /// `while`
+    #[token("while")]
     While,
     /// `do`
+    #[token("do")]
     Do,
     /// `match`
+    #[token("match")]
     Match,
     /// `with`
+    #[token("with")]
     With,
     /// `return`
+    #[token("return")]
     Return,
     /// `break`
+    #[token("break")]
     Break,
     /// `continue`
+    #[token("continue")]
     Continue,
     /// `true`
+    #[token("true")]
     True,
     /// `false`
+    #[token("false")]
     False,
 
     /* MISC */
-    /// Identifier
+    /// identifier
+    #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
 }
 

@@ -10,10 +10,6 @@ mod types;
 use std::{iter::Peekable, result, vec};
 
 use ast::Ast;
-#[cfg(any(test, feature = "test"))]
-use ast::exprs::Expr;
-#[cfg(any(test, feature = "test"))]
-use lex::Lexer;
 use lex::{Tok, TokKind};
 
 pub use crate::error::{Error, ErrorKind, Result};
@@ -54,9 +50,9 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
     }
 
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<Expr<()>> {
+    pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr<()>> {
         Self {
-            toks: Lexer::lex(src).unwrap().into_iter().peekable(),
+            toks: lex::lex(src).unwrap().into_iter().peekable(),
         }
         .expr()
     }
@@ -64,7 +60,7 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
     #[cfg(any(test, feature = "test"))]
     pub fn parse_item(src: &'src str) -> Result<Item> {
         Self {
-            toks: Lexer::lex(src).unwrap().into_iter().peekable(),
+            toks: lex::lex(src).unwrap().into_iter().peekable(),
         }
         .item()
     }

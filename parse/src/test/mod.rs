@@ -11,7 +11,6 @@ use ast::{
     types::{Param as TyParam, TyKind},
 };
 use ident::Ident;
-use lex::Lexer;
 use span::Span;
 
 use crate::Parser;
@@ -32,7 +31,7 @@ fn wow_we_did_it(mut x: Bool, bar: Bar[Baz[T], U]): fn(mut Int) -> {} -> {
 record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
 "#;
 
-    let items = Parser::parse(Lexer::lex(input).unwrap()).unwrap();
+    let items = Parser::parse(lex::lex(input).unwrap()).unwrap();
 
     assert_eq!(
         items.execs[0],

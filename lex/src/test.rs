@@ -4,13 +4,13 @@ use proptest::{collection::vec, prelude::*};
 
 use span::Span;
 
-use crate::{Lexer, Tok, TokKind as T};
+use crate::{TokKind as T, lex, token::Tok};
 
 #[test]
 fn single_char_tokens() {
     let src = "+-(.):";
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             T::Plus.span(src, 0..1),
             T::Minus.span(src, 1..2),
@@ -24,14 +24,14 @@ fn single_char_tokens() {
 
 #[test]
 fn unknown_input() {
-    assert_eq!(Lexer::lex("$$$$$$$+"), Err(vec![Span::from(0..7)]));
+    assert_eq!(lex("$$$$$$$+"), Err(vec![Span::from(0..7)]));
 }
 
 #[test]
 fn single_char_tokens_with_whitespace() {
     let src = "   + -  (.): ";
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             T::Plus.span(src, 3..4),
             T::Minus.span(src, 5..6),
@@ -47,7 +47,7 @@ fn single_char_tokens_with_whitespace() {
 fn maybe_multiple_char_tokens() {
     let src = "&&=<=_!=||**->";
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             T::And.span(src, 0..2),
             T::Eq.span(src, 2..3),
@@ -65,7 +65,7 @@ fn maybe_multiple_char_tokens() {
 fn keywords() {
     let src = "if Int record Byte let mut UInt enum Float = match Bool else Char fn";
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             T::If.span(src, 0..2),
             T::Int.span(src, 3..6),
@@ -90,7 +90,7 @@ fn keywords() {
 fn comment() {
     let src = "//hello, world!\nif let";
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![T::If.span(src, 16..18), T::Let.span(src, 19..22)]),
     );
 }
@@ -99,7 +99,7 @@ fn comment() {
 fn literals() {
     let src = r#"1 0.21 1.5E-2 true "test"'\n''\''"#;
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             T::IntLit.span(src, 0..1),
             T::FloatLit.span(src, 2..6),
@@ -128,7 +128,7 @@ fn test(var: Type, var2_: Bool): Int -> {
 "#;
 
     assert_eq!(
-        Lexer::lex(src),
+        lex(src),
         Ok(vec![
             // function signature
             T::Fn.span(src, 23..25),
@@ -208,25 +208,33 @@ fn test(var: Type, var2_: Bool): Int -> {
 
 #[test]
 fn unicode_gibberish() {
-    assert_eq!(Lexer::lex("®"), Err(vec![Span::from(0..1)]));
+    assert_eq!(lex("®"), Err(vec![Span::from(0..2)]));
+}
+
+#[test]
+fn unicode_ident() {
+    assert_eq!(
+        lex("Москва東京π"),
+        Ok(vec![T::Ident.span("Москва東京π", 0..20)])
+    );
 }
 
 #[test]
 fn eof_comment() {
-    assert_eq!(Lexer::lex("//"), Ok(Vec::<Tok>::new()));
+    assert_eq!(lex("//"), Ok(Vec::<Tok>::new()));
 }
 
 proptest! {
     #[test]
     fn doesnt_crash(s in r"\PC*") {
-        let _ = Lexer::lex(&s);
+        let _ = lex(&s);
     }
 
     #[test]
     fn reverse(in_toks in vec(T::arb(), 8..=512)) {
         let raw = in_toks.iter().map(T::reverse).join(" ");
 
-        let Ok(toks) = Lexer::lex(&raw) else {return Err(TestCaseError::Fail("lexer errored".into()))};
+        let Ok(toks) = lex(&raw) else {return Err(TestCaseError::Fail("lexer errored".into()))};
         let out_toks: Vec<_> = toks.into_iter().map(|tok| tok.kind).collect();
 
         prop_assert_eq!(in_toks, out_toks)

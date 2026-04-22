@@ -1,85 +1,34 @@
-mod rules;
 #[cfg(test)]
 mod test;
 mod token;
 
+use logos::Logos;
+use rangemap::set::RangeSet;
 use span::Span;
+
 pub use token::{Tok, TokKind};
 
-pub struct Lexer<'src> {
-    src: &'src str,
-    output: Vec<Tok<'src>>,
-    errors: Vec<Span>,
-}
+pub fn lex(src: &str) -> Result<Vec<Tok<'_>>, Vec<Span>> {
+    let mut out = Vec::new();
+    let mut errs = RangeSet::new();
+    let mut has_err = false;
 
-impl<'src> Lexer<'src> {
-    pub fn lex(input: &'src str) -> Result<Vec<Tok<'src>>, Vec<Span>> {
-        let mut lexer = Self {
-            src: input,
-            output: Vec::with_capacity(input.len() / 4),
-            errors: Vec::new(),
-        };
-        lexer.all_tokens();
-        if lexer.errors.is_empty() {
-            Ok(lexer.output)
-        } else {
-            Err(lexer.errors)
-        }
-    }
-
-    fn all_tokens(&mut self) {
-        let mut pos = 0;
-        while let Some(token) = self.next_token(pos) {
-            match token {
-                Ok(token) => {
-                    pos = token.span.end;
-                    self.output.push(token);
-                }
-                Err(span) => {
-                    pos = span.end;
-                    self.errors.push(span);
-                }
+    for (tok, span) in TokKind::lexer(src).spanned() {
+        match tok {
+            Ok(tok) if !has_err => {
+                out.push(tok.span(src, span));
             }
+            Err(()) => {
+                has_err = true;
+                errs.insert(span);
+            }
+            _ => {}
         }
     }
 
-    fn next_token(&self, pos: usize) -> Option<Result<Tok<'src>, Span>> {
-        let input = self.get_rest(pos)?;
-
-        if input.starts_with("//") {
-            self.next_token(pos + input.find(['\n', '\r'])?)
-        } else if input.starts_with(char::is_whitespace) {
-            let whitespace_length = input
-                .char_indices()
-                .take_while(|(_, c)| c.is_whitespace())
-                .last()
-                .unwrap()
-                .0;
-            self.next_token(pos + whitespace_length + 1)
-        } else {
-            Some(rules::matches(input).map_or_else(
-                || Err(self.find_err(pos)),
-                |(token, len)| Ok(token.span(self.src, pos..pos + len)),
-            ))
-        }
-    }
-
-    fn find_err(&self, pos: usize) -> Span {
-        let start = pos;
-        let mut end = start;
-
-        while let Some(input) = self.get_rest(end)
-            && rules::matches(input).is_none()
-        {
-            end += 1;
-        }
-
-        Span::from(start..end)
-    }
-
-    fn get_rest(&self, pos: usize) -> Option<&str> {
-        (pos < self.src.len())
-            .then(|| self.src.get(pos..))
-            .flatten()
+    if has_err {
+        Err(errs.into_iter().map(Span::from).collect())
+    } else {
+        Ok(out)
     }
 }

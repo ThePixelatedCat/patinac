@@ -3,7 +3,6 @@ use std::{env, fmt::Display, fs};
 use anyhow::anyhow;
 use yansi::Paint;
 
-use lex::Lexer;
 use parse::Parser;
 use span::Span;
 
@@ -30,7 +29,7 @@ fn main() {
         .unwrap();
     let src = fs::read_to_string(src_path).unwrap();
 
-    let toks = match Lexer::lex(&src) {
+    let toks = match lex::lex(&src) {
         Ok(tokens) => tokens,
         Err(spans) => {
             for span in spans {
