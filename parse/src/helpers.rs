@@ -1,9 +1,9 @@
 use ast::exprs::Binding;
-use ident::Ident;
+use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 use span::Span;
 
-use crate::{ErrorKind, Parser, Result, error::Error};
+use crate::{Error, ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
@@ -15,7 +15,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         f(token.kind).span(token.span)
     }
 
-    pub fn binding(&mut self) -> Result<Binding> {
+    pub fn binding(&mut self) -> Result<Binding<Ident>> {
         Ok(Binding {
             mutable: self.consume_at(TokKind::Mut).is_some(),
             pat: self.pattern()?,
@@ -23,9 +23,11 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    pub fn ident(&mut self) -> Result<(Ident, Span)> {
-        self.consume(TokKind::Ident)
-            .map(|ident| (Ident::new(ident.src), ident.span))
+    pub fn ident(&mut self) -> Result<SpanIdent> {
+        self.consume(TokKind::Ident).map(|ident| SpanIdent {
+            ident: Ident::new(ident.src),
+            span: ident.span,
+        })
     }
 
     pub fn delimited_list<T, F>(

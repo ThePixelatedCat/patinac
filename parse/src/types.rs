@@ -1,6 +1,6 @@
 use ast::types::{Param, Ty, TyKind};
+use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
-use span::Span;
 
 use crate::{ErrorKind, Parser, Result};
 
@@ -11,7 +11,7 @@ macro_rules! primitive {
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn ty(&mut self) -> Result<Ty> {
+    pub fn ty(&mut self) -> Result<Ty<Ident>> {
         match self.peek()? {
             TokKind::Int => primitive!(self, Int),
             TokKind::UInt => primitive!(self, UInt),
@@ -19,37 +19,20 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Float => primitive!(self, Float),
             TokKind::Bool => primitive!(self, Bool),
             TokKind::Char => primitive!(self, Char),
-            TokKind::LBracket => self.array_ty(),
-            TokKind::LBrace => self.tuple_ty(),
+            TokKind::Hash => self.tuple_ty(),
             TokKind::Fn => self.fn_ty(),
             TokKind::Ident => self.adt_ty(),
-            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of type name"))),
+            _ => Err(self.err_next(ErrorKind::Unexpected)),
         }
     }
 
-    fn array_ty(&mut self) -> Result<Ty> {
-        let start = self.consume(TokKind::LBracket)?.span.start;
-
-        let inner_type = self.ty()?;
-
-        let end = self.consume(TokKind::RBracket)?.span.end;
-
-        Ok(Ty {
-            kind: TyKind::Array(Box::new(inner_type)),
-            span: Span::from(start..end),
-        })
+    fn tuple_ty(&mut self) -> Result<Ty<Ident>> {
+        let start = self.consume(TokKind::Hash)?.span.start;
+        self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)
+            .map(|(types, span)| TyKind::Tuple(types).span(start..span.end))
     }
 
-    fn tuple_ty(&mut self) -> Result<Ty> {
-        let (types, span) = self.delimited_list(Self::ty, TokKind::LBrace, TokKind::RBrace)?;
-
-        Ok(Ty {
-            kind: TyKind::Tuple(types),
-            span,
-        })
-    }
-
-    fn fn_ty(&mut self) -> Result<Ty> {
+    fn fn_ty(&mut self) -> Result<Ty<Ident>> {
         let start = self.consume(TokKind::Fn)?.span.start;
 
         let (params, _) = self.delimited_list(
@@ -64,35 +47,31 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         )?;
 
         self.consume(TokKind::Arrow)?;
+
         let result = Box::new(self.ty()?);
 
         let span = start..result.span.end;
-        Ok(Ty {
-            kind: TyKind::Fn(params, result),
-            span: Span::from(span),
-        })
+        Ok(TyKind::Fn { params, result }.span(span))
     }
 
-    fn adt_ty(&mut self) -> Result<Ty> {
-        let (ident, span) = self.ident()?;
-
-        let start = span.start;
+    fn adt_ty(&mut self) -> Result<Ty<Ident>> {
+        let SpanIdent {
+            ident,
+            span: ident_span,
+        } = self.ident()?;
 
         let (generics, end) = if self.at(TokKind::LBracket) {
             let (generics, generics_span) =
                 self.delimited_list(Self::ty, TokKind::LBracket, TokKind::RBracket)?;
             (generics, generics_span.end)
         } else {
-            (Vec::new(), span.end)
+            (vec![], ident_span.end)
         };
 
-        Ok(Ty {
-            kind: TyKind::Adt(ident, generics),
-            span: Span::from(start..end),
-        })
+        Ok(TyKind::Adt(ident, generics).span(ident_span.start..end))
     }
 
-    pub fn ty_annot(&mut self) -> Result<Option<Ty>> {
+    pub fn ty_annot(&mut self) -> Result<Option<Ty<Ident>>> {
         self.consume_at(TokKind::Colon)
             .map(|_| self.ty())
             .transpose()

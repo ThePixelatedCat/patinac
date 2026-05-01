@@ -82,6 +82,12 @@ pub enum TokKind {
     /// `->`
     #[token("->")]
     Arrow,
+    /// `::`
+    #[token("::")]
+    PathSep,
+    /// `#`
+    #[token("#")]
+    Hash,
 
     /* OPERATORS */
     /// `+`
@@ -176,24 +182,24 @@ pub enum TokKind {
     /// `else`
     #[token("else")]
     Else,
-    /// `for`
-    #[token("for")]
-    For,
-    /// `in`
-    #[token("in")]
-    In,
-    /// `while`
-    #[token("while")]
-    While,
-    /// `do`
-    #[token("do")]
-    Do,
     /// `match`
     #[token("match")]
     Match,
     /// `with`
     #[token("with")]
     With,
+    /// `for`
+    #[token("for")]
+    For,
+    /// `in`
+    #[token("in")]
+    In,
+    /// `do`
+    #[token("do")]
+    Do,
+    /// `loop`
+    #[token("loop")]
+    Loop,
     /// `return`
     #[token("return")]
     Return,
@@ -214,6 +220,8 @@ pub enum TokKind {
     /// identifier
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
+    /// end of file
+    Eof,
 }
 
 impl TokKind {
@@ -240,6 +248,6 @@ impl TokKind {
 
     #[cfg(any(test, feature = "test"))]
     pub fn arb() -> impl Strategy<Value = Self> {
-        Self::arbitrary()
+        Self::arbitrary().prop_filter("skipped eof", |&t| t != Self::Eof)
     }
 }

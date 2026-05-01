@@ -3,14 +3,18 @@ use std::{error::Error, fmt::Display, ops::Range};
 #[macro_export]
 macro_rules! impl_span {
     ($self:path as $spanned:ident) => {
+        impl_span!($self as $spanned<>);
+    };
+    ($self:path as $spanned:ident<$($gen:ident),*>) => {
+        #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Debug, Clone, PartialEq)]
-        pub struct $spanned {
+        pub struct $spanned<$( $gen ),*> {
             pub kind: $self,
             pub span: $crate::Span,
         }
 
-        impl $self {
-            pub fn span(self, span: impl Into<$crate::Span>) -> $spanned {
+        impl<$( $gen ),*> $self {
+            pub fn span(self, span: impl Into<$crate::Span>) -> $spanned<$( $gen ),*> {
                 $spanned {
                     kind: self,
                     span: span.into(),

@@ -1,4 +1,5 @@
 use ast::patterns::{Pat, PatKind};
+use ident::SpanIdent;
 use lex::{Tok, TokKind};
 
 use crate::{ErrorKind, Parser, Result};
@@ -30,24 +31,25 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 Ok(PatKind::Wildcard.span(self.consume(TokKind::Underscore)?.span))
             }
             TokKind::Ident => {
-                let (ident, ident_span) = self.ident()?;
+                let SpanIdent {
+                    ident,
+                    span: ident_span,
+                } = self.ident()?;
 
                 if self.at(TokKind::LParen) {
                     let (fields, fields_span) =
                         self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)?;
                     Ok(PatKind::Constructor(ident, fields).span(ident_span.start..fields_span.end))
                 } else {
-                    Ok(PatKind::Ident {
-                        ident,
-                        subpat: None,
-                    }
-                    .span(ident_span))
+                    Ok(PatKind::Ident(ident).span(ident_span))
                 }
             }
-            TokKind::LBrace => self
-                .delimited_list(Self::pattern, TokKind::LBrace, TokKind::RBrace)
-                .map(|(pats, span)| PatKind::Tuple(pats).span(span)),
-            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of pattern"))),
+            TokKind::Hash => {
+                let start = self.consume(TokKind::Hash)?.span.start;
+                self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
+                    .map(|(pats, span)| PatKind::Tuple(pats).span(start..span.end))
+            }
+            _ => Err(self.err_next(ErrorKind::Unexpected)),
         }
     }
 }

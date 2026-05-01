@@ -1,0 +1,12 @@
+[package]
+name = "errors"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Internal
+span = { path = "../span" }
+# External
+
+[lints]
+workspace = true

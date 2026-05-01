@@ -1,7 +1,12 @@
+use itertools::Itertools;
+use smallvec::{SmallVec, smallvec};
 use std::str::FromStr;
 
-use ast::exprs::{Arg, Expr, ExprKind, InfixOp, LitExpr, MatchArm, UnaryOp};
-use itertools::Itertools;
+use ast::{
+    Path,
+    exprs::{Arg, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+};
+use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 use span::Span;
 
@@ -19,13 +24,29 @@ fn process_escapes(input: &str) -> String {
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn expr(&mut self) -> Result<Expr<()>> {
+    pub(super) fn stmt(&mut self) -> Result<Stmt<(), Ident, Ident>> {
+        match self.peek()? {
+            TokKind::Let => {
+                let start = self.consume(TokKind::Let)?.span.start;
+
+                let binding = self.binding()?;
+                self.consume(TokKind::Eq)?;
+                let val = Box::new(self.expr()?);
+
+                let span = Span::from(start..val.span.end);
+                Ok(Stmt::Decl { binding, val, span })
+            }
+            _ => self.expr().map(Stmt::Expr),
+        }
+    }
+
+    pub fn expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         self.expr_inner(0)
     }
 
-    fn expr_inner(&mut self, binding_power: u8) -> Result<Expr<()>> {
+    fn expr_inner(&mut self, binding_power: u8) -> Result<Expr<(), Ident, Ident>> {
         let mut lhs = match self.peek()? {
-            TokKind::Ident => self.ident_expr(),
+            TokKind::Ident => self.path_expr(),
             TokKind::IntLit
             | TokKind::FloatLit
             | TokKind::CharLit
@@ -35,18 +56,29 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 .lit_expr()
                 .map(|(lit, span)| ExprKind::Lit(lit).span(span)),
             TokKind::LBracket => self.array_lit_expr(),
-            TokKind::LBrace => self.brace_exprs(),
+            TokKind::Hash => self.tuple_lit_expr(),
+            TokKind::LBrace => self.block_expr(),
             TokKind::Minus | TokKind::Bang => self.unop_expr(),
             TokKind::Fn => self.lambda_expr(),
-            TokKind::Let => self.let_expr(),
             TokKind::If => self.if_expr(),
             TokKind::Match => self.match_expr(),
             TokKind::For => self.for_expr(),
-            TokKind::While => self.while_expr(),
+            TokKind::Loop => self.loop_expr(),
             TokKind::Break => self.break_expr(),
             TokKind::Continue => self.continue_expr(),
             TokKind::Return => self.return_expr(),
-            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "start of expression"))),
+            _ => {
+                let err_tok = self.next()?;
+                let mut err = ErrorKind::Unexpected(err_tok.kind)
+                    .span(err_tok.span)
+                    .context("At start of expression");
+
+                if err_tok.kind == TokKind::Let {
+                    err = err.context("`let` is a statement, and can only be used within a block");
+                }
+
+                Err(err)
+            }
         }?;
 
         loop {
@@ -102,9 +134,40 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         Ok(lhs)
     }
 
-    fn ident_expr(&mut self) -> Result<Expr<()>> {
-        self.ident()
-            .map(|(ident, ident_span)| ExprKind::Ident(ident).span(ident_span))
+    fn path_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
+        let SpanIdent {
+            ident: head,
+            span: head_span,
+        } = self.ident()?;
+
+        let mut rest = SmallVec::new();
+        let mut rest_end = 0;
+        while self.consume_at(TokKind::PathSep).is_some() {
+            let SpanIdent { ident, span } = self.ident()?;
+            rest_end = span.end;
+            rest.push(ident);
+        }
+
+        let (path, span) = rest.pop().map_or_else(
+            || {
+                (
+                    Path {
+                        prefix: smallvec![],
+                        end: head,
+                    },
+                    head_span,
+                )
+            },
+            |end| {
+                rest.insert(0, head);
+                (
+                    Path { prefix: rest, end },
+                    Span::from(head_span.start..rest_end),
+                )
+            },
+        );
+
+        Ok(ExprKind::Path(path).span(span))
     }
 
     pub fn lit_expr(&mut self) -> Result<(LitExpr, Span)> {
@@ -115,7 +178,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::StringLit => self.string_lit_expr(),
             TokKind::True => Ok((LitExpr::Bool(true), self.consume(TokKind::True)?.span)),
             TokKind::False => Ok((LitExpr::Bool(false), self.consume(TokKind::False)?.span)),
-            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "literal"))),
+            _ => Err(self.err_next(ErrorKind::Unexpected)),
         }
     }
 
@@ -147,40 +210,31 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         Ok((LitExpr::String(val), tok.span))
     }
 
-    fn array_lit_expr(&mut self) -> Result<Expr<()>> {
+    fn array_lit_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         self.delimited_list(Self::expr, TokKind::LBracket, TokKind::RBracket)
-            .map(|(arr, span)| ExprKind::Array(arr).span(span))
+            .map(|(exprs, span)| ExprKind::Array(exprs).span(span))
     }
 
-    fn brace_exprs(&mut self) -> Result<Expr<()>> {
+    fn tuple_lit_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
+        let start = self.consume(TokKind::Hash)?.span.start;
+        self.delimited_list(Self::expr, TokKind::LParen, TokKind::RParen)
+            .map(|(exprs, span)| ExprKind::Tuple(exprs).span(start..span.end))
+    }
+
+    fn block_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::LBrace)?.span.start;
 
-        if let Some(brace) = self.consume_at(TokKind::RBrace) {
-            return Ok(ExprKind::Tuple(vec![]).span(start..brace.span.end));
-        }
-
-        let mut exprs = vec![self.expr()?];
-        let tuple = self.consume_at(TokKind::Comma).is_some();
-
+        let mut stmts = vec![];
         while !self.at(TokKind::RBrace) {
-            exprs.push(self.expr()?);
-
-            if tuple && self.consume_at(TokKind::Comma).is_none() {
-                break;
-            }
+            stmts.push(self.stmt()?);
         }
 
         let end = self.consume(TokKind::RBrace)?.span.end;
 
-        let expr = if tuple {
-            ExprKind::Tuple(exprs)
-        } else {
-            ExprKind::Block(exprs)
-        };
-        Ok(expr.span(start..end))
+        Ok(ExprKind::Block(stmts).span(start..end))
     }
 
-    fn if_expr(&mut self) -> Result<Expr<()>> {
+    fn if_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::If)?.span.start;
 
         let cond = self.expr()?;
@@ -205,10 +259,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         .span(start..end))
     }
 
-    fn for_expr(&mut self) -> Result<Expr<()>> {
+    fn for_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::For)?.span.start;
 
-        let pattern = self.pattern()?;
+        let pat = self.pattern()?;
 
         self.consume(TokKind::In)?;
 
@@ -221,32 +275,24 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let span = start..body.span.end;
 
         Ok(ExprKind::For {
-            pattern,
+            pat,
             iter: Box::new(iter),
             body: Box::new(body),
         }
         .span(span))
     }
 
-    fn while_expr(&mut self) -> Result<Expr<()>> {
-        let start = self.consume(TokKind::While)?.span.start;
-
-        let cond = self.expr()?;
-
-        self.consume(TokKind::Do)?;
+    fn loop_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
+        let start = self.consume(TokKind::Loop)?.span.start;
 
         let body = self.expr()?;
 
         let span = start..body.span.end;
 
-        Ok(ExprKind::While {
-            cond: Box::new(cond),
-            body: Box::new(body),
-        }
-        .span(span))
+        Ok(ExprKind::Loop(Box::new(body)).span(span))
     }
 
-    fn match_expr(&mut self) -> Result<Expr<()>> {
+    fn match_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::Match)?.span.start;
 
         let scrutinee = self.expr()?;
@@ -268,32 +314,19 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         .span(span))
     }
 
-    fn match_arm(&mut self) -> Result<MatchArm<()>> {
+    fn match_arm(&mut self) -> Result<MatchArm<(), Ident, Ident>> {
         let start = self.consume(TokKind::Pipe)?.span.start;
 
-        let pattern = self.pattern()?;
-
-        let guard = self
-            .consume_at(TokKind::If)
-            .map(|_| self.expr())
-            .transpose()?
-            .map(Box::new);
-
+        let pat = self.pattern()?;
         self.consume(TokKind::Arrow)?;
-
-        let body = Box::new(self.expr()?);
+        let body = self.expr()?;
 
         let span = Span::from(start..body.span.end);
 
-        Ok(MatchArm {
-            pattern,
-            guard,
-            body,
-            span,
-        })
+        Ok(MatchArm { pat, body, span })
     }
 
-    fn unop_expr(&mut self) -> Result<Expr<()>> {
+    fn unop_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let op_token = self.next()?;
 
         let op = match op_token.kind {
@@ -313,22 +346,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         .span(span))
     }
 
-    fn let_expr(&mut self) -> Result<Expr<()>> {
-        let start = self.consume(TokKind::Let)?.span.start;
-
-        let binding = self.binding()?;
-        self.consume(TokKind::Eq)?;
-        let val = self.expr()?;
-
-        let span = start..val.span.end;
-        Ok(ExprKind::Let {
-            binding,
-            val: Box::new(val),
-        }
-        .span(span))
-    }
-
-    fn lambda_expr(&mut self) -> Result<Expr<()>> {
+    fn lambda_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::Fn)?.span.start;
 
         let (params, _) = self.delimited_list(Self::binding, TokKind::LParen, TokKind::RParen)?;
@@ -348,30 +366,30 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         .span(span))
     }
 
-    fn return_expr(&mut self) -> Result<Expr<()>> {
+    fn return_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let start = self.consume(TokKind::Return)?.span.start;
         let expr = self.expr()?;
         let span = start..expr.span.end;
         Ok(ExprKind::Return(Box::new(expr)).span(span))
     }
 
-    fn break_expr(&mut self) -> Result<Expr<()>> {
+    fn break_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let span = self.consume(TokKind::Break)?.span;
         Ok(ExprKind::Break.span(span))
     }
 
-    fn continue_expr(&mut self) -> Result<Expr<()>> {
+    fn continue_expr(&mut self) -> Result<Expr<(), Ident, Ident>> {
         let span = self.consume(TokKind::Continue)?.span;
         Ok(ExprKind::Continue.span(span))
     }
 
-    fn dot_suffixes(&mut self, lhs: Expr<()>) -> Result<Expr<()>> {
+    fn dot_suffixes(&mut self, lhs: Expr<(), Ident, Ident>) -> Result<Expr<(), Ident, Ident>> {
         self.consume(TokKind::Dot)?;
 
         match self.peek()? {
             TokKind::Ident => {
-                let (field, field_span) = self.ident()?;
-                let span = lhs.span.start..field_span.end;
+                let field = self.ident()?;
+                let span = lhs.span.start..field.span.end;
 
                 Ok(ExprKind::FieldExpr {
                     base: Box::new(lhs),
@@ -390,11 +408,13 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 }
                 .span(span))
             }
-            _ => Err(self.err_next(|tk| ErrorKind::Unexpected(tk, "following dot in place"))),
+            _ => Err(self
+                .err_next(ErrorKind::Unexpected)
+                .context("Expected `[` or identifier")),
         }
     }
 
-    fn call_suffix(&mut self, lhs: Expr<()>) -> Result<Expr<()>> {
+    fn call_suffix(&mut self, lhs: Expr<(), Ident, Ident>) -> Result<Expr<(), Ident, Ident>> {
         let start = lhs.span.start;
 
         let (args, Span { end, .. }) =
@@ -407,24 +427,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         .span(start..end))
     }
 
-    fn arg(&mut self) -> Result<Arg<()>> {
-        let mutable = self.consume_at(TokKind::Mut).is_some();
-
-        let label = self
-            .consume_at(TokKind::Dot)
-            .map(|_| {
-                let label = self.pattern()?;
-                self.consume(TokKind::Eq)?;
-                Ok(label)
-            })
-            .transpose()?;
-
-        let val = self.expr()?;
-
+    fn arg(&mut self) -> Result<Arg<(), Ident, Ident>> {
         Ok(Arg {
-            mutable,
-            label,
-            val,
+            mutable: self.consume_at(TokKind::Mut).is_some(),
+            val: self.expr()?,
         })
     }
 }

@@ -1,55 +1,60 @@
-use ident::Ident;
+use ident::{Ident, SpanIdent};
+use smallvec::SmallVec;
 use span::Span;
 
-use crate::{Pat, exprs::Expr, types::Ty};
+use crate::{exprs::Expr, patterns::Pat, types::Ty};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ExecItem<T> {
-    Const {
-        ident: Ident,
-        ty: Option<Ty>,
-        val: Expr<T>,
-    },
-    Func {
-        ident: Ident,
-        generic_params: Vec<GenericParam>,
-        params: Vec<Param>,
-        return_ty: Ty,
-        body: Expr<T>,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Param {
-    pub mutable: bool,
-    pub pat: Pat,
-    pub ty: Ty,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum AdtItem {
-    Record { def: AdtDef, fields: Vec<Field> },
-    Enum { def: AdtDef, variants: Vec<Variant> },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdtDef {
-    pub ident: Ident,
-    pub generics: Vec<GenericParam>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub ident: Ident,
-    pub ty: Ty,
+pub struct ExecItem<TyInfo, AdtIdent, VarIdent> {
+    pub ident: SpanIdent,
+    pub kind: ExecKind<TyInfo, AdtIdent, VarIdent>,
     pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Variant {
-    pub ident: Ident,
-    pub fields: Vec<Field>,
+pub enum ExecKind<T, A, V> {
+    Const {
+        ty: Option<Ty<A>>,
+        val: Expr<T, A, V>,
+    },
+    Func {
+        generics: SmallVec<[A; 4]>,
+        params: Vec<Param<A>>,
+        return_ty: Ty<A>,
+        body: Expr<T, A, V>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Param<A> {
+    pub mutable: bool,
+    pub pat: Pat,
+    pub ty: Ty<A>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GenericParam(pub Ident);
+pub struct AdtItem<AdtIdent> {
+    pub ident: SpanIdent,
+    pub generics: SmallVec<[AdtIdent; 4]>,
+    pub span: Span,
+    pub kind: AdtKind<AdtIdent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdtKind<A> {
+    Record(Vec<Field<A>>),
+    Enum(Vec<Variant<A>>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variant<A> {
+    pub ident: SpanIdent,
+    pub fields: Vec<Field<A>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field<A> {
+    pub ident: Ident,
+    pub ty: Ty<A>,
+    pub span: Span,
+}

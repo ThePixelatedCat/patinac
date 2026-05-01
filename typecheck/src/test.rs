@@ -2,7 +2,6 @@ use std::sync::LazyLock;
 
 use ena::unify::UnifyKey;
 use ident::Ident;
-use lex::Lexer;
 use parse::Parser;
 
 use crate::{
@@ -30,7 +29,7 @@ fn check_expr(input: &str) -> Result<ConcreteTy> {
 }
 
 fn check_full(input: &str) -> Result<()> {
-    let toks = Lexer::lex(input).unwrap();
+    let toks = lex::lex(input).unwrap();
     let ast = Parser::parse(toks).unwrap();
     TypeChecker::new().type_program(ast)?;
     Ok(())

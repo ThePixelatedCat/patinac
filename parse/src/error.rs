@@ -1,18 +1,22 @@
-use thiserror::Error as ThisError;
-
+use derive_more::Display;
 use lex::TokKind;
-use span::impl_span;
+use span::Span;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = errors::Result<T, ErrorKind>;
+pub type Error = errors::Error<ErrorKind>;
 
-impl_span!(ErrorKind as Error);
+impl ErrorKind {
+    pub fn span(self, span: impl Into<Span>) -> Error {
+        Error::span(self, span)
+    }
+}
 
-#[derive(ThisError, Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
-    #[error("expected {expected}, found {found}")]
+    #[display("expected {expected}, found {found}")]
     Mismatched { expected: TokKind, found: TokKind },
-    #[error("unexpected token {0} at {1}")]
-    Unexpected(TokKind, &'static str),
-    #[error("unexpected end of file")]
+    #[display("Unexpected token {_0}")]
+    Unexpected(TokKind),
+    #[display("unexpected end of file")]
     Eof,
 }

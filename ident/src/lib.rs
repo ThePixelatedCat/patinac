@@ -3,6 +3,8 @@ use std::{
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
+use span::Span;
+
 type Symbol = string_interner::symbol::SymbolU32;
 type Interner = string_interner::DefaultStringInterner;
 
@@ -11,29 +13,27 @@ fn interner() -> MutexGuard<'static, Interner> {
     INTERNER.lock().expect("Interner Poisoned!")
 }
 
+fn get_str(interner: &Interner, ident: Ident) -> &str {
+    interner
+            .resolve(ident.0)
+            .expect("Idents can only be created through interning a value, so the value will exist in the interner")
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ident(Symbol);
 
 impl fmt::Debug for Ident {
-    #[allow(
-        clippy::significant_drop_tightening,
-        reason = "literally cannot do that, shut up clippy"
-    )]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let interner = interner();
-        let val = interner
-            .resolve(self.0)
-            .expect("Idents can only be created through interning a value, so the value will exist in the interner");
-        f.debug_tuple("Ident").field(&val).finish()
+        f.debug_tuple("Ident")
+            .field(&get_str(&interner, *self))
+            .finish()
     }
 }
 
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        interner()
-            .resolve(self.0)
-            .expect("Idents can only be created through interning a value, so the value will exist in the interner")
-            .fmt(f)
+        get_str(&interner(), *self).fmt(f)
     }
 }
 
@@ -42,7 +42,16 @@ impl Ident {
         Self(interner().get_or_intern(string))
     }
 
-    pub fn new_static(string: &'static str) -> Self {
-        Self(interner().get_or_intern_static(string))
+    pub fn span(self, span: impl Into<Span>) -> SpanIdent {
+        SpanIdent {
+            ident: self,
+            span: span.into(),
+        }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpanIdent {
+    pub ident: Ident,
+    pub span: Span,
 }

@@ -14,7 +14,7 @@ ena = "0.14.3"
 fnv = "1.0.7"
 itertools = "0.14.0"
 im = "15.1.0"
-thiserror = "2.0.18"
+derive_more = { version = "2.1.1", features = ["display"] }
 
 [dev-dependencies]
 # Internal

@@ -16,8 +16,8 @@ enum DiagnosticKind {
 impl Display for DiagnosticKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DiagnosticKind::Error => "error".bright_red().fmt(f),
-            DiagnosticKind::Warning => "warning".yellow().fmt(f),
+            Self::Error => "error".bright_red().fmt(f),
+            Self::Warning => "warning".yellow().fmt(f),
         }
     }
 }

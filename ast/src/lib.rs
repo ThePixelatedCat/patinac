@@ -1,18 +1,26 @@
-use ident::Ident;
+use smallvec::SmallVec;
 
 pub mod exprs;
 pub mod items;
 pub mod patterns;
 pub mod types;
 
-use crate::{
-    items::{AdtItem, ExecItem},
-    patterns::Pat,
-    types::Ty,
-};
+pub struct Ast<TyInfo, AdtIdent, VarIdent> {
+    pub adts: Vec<items::AdtItem<AdtIdent>>,
+    pub execs: Vec<items::ExecItem<TyInfo, AdtIdent, VarIdent>>,
+}
 
-#[derive(Default)]
-pub struct Ast<T> {
-    pub adts: Vec<AdtItem>,
-    pub execs: Vec<ExecItem<T>>,
+impl<T, I, V> Default for Ast<T, I, V> {
+    fn default() -> Self {
+        Self {
+            adts: Vec::default(),
+            execs: Vec::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Path<PreIdent, EndIdent> {
+    pub prefix: SmallVec<[PreIdent; 4]>,
+    pub end: EndIdent,
 }

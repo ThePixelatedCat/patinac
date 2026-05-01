@@ -1,76 +1,81 @@
+use ident::{Ident, SpanIdent};
+use smallvec::smallvec;
 use span::Span;
 
-use crate::{Ident, Pat, Ty};
+use crate::{Path, patterns::Pat, types::Ty};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Expr<T> {
-    pub kind: ExprKind<T>,
-    pub span: Span,
-    pub ty: T,
+pub enum Stmt<TyInfo, AdtIdent, VarIdent> {
+    Decl {
+        binding: Binding<AdtIdent>,
+        val: Box<Expr<TyInfo, AdtIdent, VarIdent>>,
+        span: Span,
+    },
+    Expr(Expr<TyInfo, AdtIdent, VarIdent>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ExprKind<T> {
-    Ident(Ident),
+pub struct Expr<TyInfo, AdtIdent, VarIdent> {
+    pub kind: ExprKind<TyInfo, AdtIdent, VarIdent>,
+    pub span: Span,
+    pub ty: TyInfo,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprKind<T, A, V> {
+    Path(Path<A, V>),
     Lit(LitExpr),
-    Array(Vec<Expr<T>>),
-    Tuple(Vec<Expr<T>>),
+    Array(Vec<Expr<T, A, V>>),
+    Tuple(Vec<Expr<T, A, V>>),
     InfixExpr {
         op: InfixOp,
-        lhs: Box<Expr<T>>,
-        rhs: Box<Expr<T>>,
+        lhs: Box<Expr<T, A, V>>,
+        rhs: Box<Expr<T, A, V>>,
     },
     UnaryExpr {
         op: UnaryOp,
-        expr: Box<Expr<T>>,
+        expr: Box<Expr<T, A, V>>,
     },
     FieldExpr {
-        base: Box<Expr<T>>,
-        field: Ident,
+        base: Box<Expr<T, A, V>>,
+        field: SpanIdent,
     },
     IndexExpr {
-        arr: Box<Expr<T>>,
-        idx: Box<Expr<T>>,
+        arr: Box<Expr<T, A, V>>,
+        idx: Box<Expr<T, A, V>>,
     },
     CallExpr {
-        func: Box<Expr<T>>,
-        args: Vec<Arg<T>>,
+        func: Box<Expr<T, A, V>>,
+        args: Vec<Arg<T, A, V>>,
     },
     LambdaExpr {
-        params: Vec<Binding>,
-        return_ty: Option<Ty>,
-        body: Box<Expr<T>>,
-    },
-    Let {
-        binding: Binding,
-        val: Box<Expr<T>>,
+        params: Vec<Binding<A>>,
+        return_ty: Option<Ty<A>>,
+        body: Box<Expr<T, A, V>>,
     },
     If {
-        cond: Box<Expr<T>>,
-        th: Box<Expr<T>>,
-        el: Option<Box<Expr<T>>>,
+        cond: Box<Expr<T, A, V>>,
+        th: Box<Expr<T, A, V>>,
+        el: Option<Box<Expr<T, A, V>>>,
     },
     Match {
-        scrutinee: Box<Expr<T>>,
-        arms: Vec<MatchArm<T>>,
+        scrutinee: Box<Expr<T, A, V>>,
+        arms: Vec<MatchArm<T, A, V>>,
     },
     For {
-        pattern: Pat,
-        iter: Box<Expr<T>>,
-        body: Box<Expr<T>>,
+        pat: Pat,
+        iter: Box<Expr<T, A, V>>,
+        body: Box<Expr<T, A, V>>,
     },
-    While {
-        cond: Box<Expr<T>>,
-        body: Box<Expr<T>>,
-    },
+    Loop(Box<Expr<T, A, V>>),
     Break,
     Continue,
-    Return(Box<Expr<T>>),
-    Block(Vec<Expr<T>>),
+    Return(Box<Expr<T, A, V>>),
+    Block(Vec<Stmt<T, A, V>>),
 }
 
-impl ExprKind<()> {
-    pub fn span(self, span: impl Into<Span>) -> Expr<()> {
+impl<A, V> ExprKind<(), A, V> {
+    pub fn span(self, span: impl Into<Span>) -> Expr<(), A, V> {
         Expr {
             kind: self,
             span: span.into(),
@@ -79,17 +84,22 @@ impl ExprKind<()> {
     }
 }
 
-impl<T> ExprKind<T> {
-    pub fn span_ty(self, span: impl Into<Span>, ty: T) -> Expr<T> {
+impl<T, A> ExprKind<T, A, Ident> {
+    pub fn ident(string: &str) -> Self {
+        Self::Path(Path {
+            prefix: smallvec![],
+            end: Ident::new(string),
+        })
+    }
+}
+
+impl<T, A, V> ExprKind<T, A, V> {
+    pub fn span_ty(self, span: impl Into<Span>, ty: T) -> Expr<T, A, V> {
         Expr {
             kind: self,
             span: span.into(),
             ty,
         }
-    }
-
-    pub fn ident(string: &str) -> Self {
-        Self::Ident(Ident::new(string))
     }
 
     pub const fn int(i: u64) -> Self {
@@ -123,24 +133,22 @@ pub enum LitExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Binding {
+pub struct Binding<AdtIdent> {
     pub mutable: bool,
     pub pat: Pat,
-    pub ty: Option<Ty>,
+    pub ty: Option<Ty<AdtIdent>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Arg<T> {
+pub struct Arg<T, A, V> {
     pub mutable: bool,
-    pub label: Option<Pat>,
-    pub val: Expr<T>,
+    pub val: Expr<T, A, V>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MatchArm<T> {
-    pub pattern: Pat,
-    pub guard: Option<Box<Expr<T>>>,
-    pub body: Box<Expr<T>>,
+pub struct MatchArm<T, A, V> {
+    pub pat: Pat,
+    pub body: Expr<T, A, V>,
     pub span: Span,
 }
 
