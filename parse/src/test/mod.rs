@@ -39,7 +39,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
         ExecItem {
             ident: Ident::new("testingfn"),
             ident_span: Span::from(4..13),
-            kind: ExecKind::Func {
+            kind: ExecKind::Fn {
                 generics: smallvec![],
                 params: vec![
                     Param {

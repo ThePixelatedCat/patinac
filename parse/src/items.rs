@@ -83,7 +83,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         Ok(ExecItem {
             ident: ident.ident,
             ident_span: ident.span,
-            kind: ExecKind::Func {
+            kind: ExecKind::Fn {
                 generics,
                 params,
                 result,

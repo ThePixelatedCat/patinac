@@ -11,8 +11,8 @@ pub type Error = errors::Error<ErrorKind>;
 pub enum ErrorKind {
     #[display("Unbound variable {_0}")]
     UnboundVariable(Ident),
-    #[display("Duplicate item with name {ident} (first occurence at {first})")]
-    DupItem { ident: Ident, first: Span },
+    #[display("Duplicate item with name {_0}")]
+    DupItem(Ident),
     #[display("Unknown type {_0}")]
     UnknownType(TyKind<Ident>),
 }

@@ -161,7 +161,7 @@ fn function_items() {
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum"),
             ident_span: Span::from(3..6),
-            kind: ExecKind::Func {
+            kind: ExecKind::Fn {
                 generics: smallvec![],
                 params: vec![
                     Param {

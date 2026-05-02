@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 
 use ast::{
     exprs::{Arg, Binding, Expr, ExprKind, InfixOp, Stmt},
-    items::{ExecItem, ExecKind, Param, Return},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
     patterns::PatKind,
     types::{Param as ParamTy, TyKind},
 };
@@ -11,18 +11,49 @@ use parse::Parser;
 use smallvec::smallvec;
 use span::Span;
 
-use crate::{AdtId, NameTable, Result, Scope, VarId, VarInfo, resolve, resolve_expr};
+use crate::{
+    AdtId, AdtInfo, NameTable, Result, Scope, VarId, VarInfo, resolve, resolve_expr,
+    table::{AdtTable, PartialAdtTable, PartialVarTable, VarTable},
+};
 
 fn test_resolve_expr(input: &str) -> Result<(Expr<(), AdtId, VarId>, NameTable)> {
     let expr = Parser::parse_expr(input).unwrap();
 
-    let mut table = NameTable::default();
-    let expr = resolve_expr(&mut table, &Scope::default(), &Scope::default(), expr)?;
-    Ok((expr, table))
+    let adt_table = AdtTable::default();
+    let mut var_table = PartialVarTable::default();
+    let expr = resolve_expr(
+        &adt_table,
+        &Scope::default(),
+        &mut var_table,
+        &Scope::default(),
+        expr,
+    )?;
+    Ok((
+        expr,
+        NameTable {
+            adts: adt_table,
+            vars: var_table.finalise(),
+        },
+    ))
 }
 
 fn test_resolve_full(input: &str) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, NameTable)> {
     resolve(Parser::parse(lex::lex(input).unwrap()).unwrap())
+}
+
+#[test]
+fn lambda() {
+    todo!()
+}
+
+#[test]
+fn match_() {
+    todo!()
+}
+
+#[test]
+fn for_() {
+    todo!()
 }
 
 #[test]
@@ -35,19 +66,19 @@ fn shadowing() {
 }"#;
 
     let mut expected_table = NameTable::default();
-    let id_1 = expected_table.insert_var(VarInfo {
+    let id_1 = expected_table.vars.insert(VarInfo {
         ident: Ident::new("a"),
         mutable: false,
         ty: Some(TyKind::UInt.span(14..18)),
         span: Span::from(11..12),
     });
-    let id_2 = expected_table.insert_var(VarInfo {
+    let id_2 = expected_table.vars.insert(VarInfo {
         ident: Ident::new("a"),
         mutable: false,
         ty: None,
         span: Span::from(32..33),
     });
-    let id_3 = expected_table.insert_var(VarInfo {
+    let id_3 = expected_table.vars.insert(VarInfo {
         ident: Ident::new("a"),
         mutable: false,
         ty: None,
@@ -107,7 +138,7 @@ fn fib() {
 ";
 
     let mut expected_table = NameTable::default();
-    let fib = expected_table.insert_var(VarInfo {
+    let fib = expected_table.vars.insert(VarInfo {
         ident: Ident::new("fib"),
         mutable: false,
         ty: Some(
@@ -122,7 +153,7 @@ fn fib() {
         ),
         span: Span::from(8..11),
     });
-    let n = expected_table.insert_var(VarInfo {
+    let n = expected_table.vars.insert(VarInfo {
         ident: Ident::new("n"),
         mutable: false,
         ty: Some(TyKind::UInt.span(15..19)),
@@ -135,7 +166,7 @@ fn fib() {
             vec![ExecItem {
                 ident: fib,
                 ident_span: Span::from(8..11),
-                kind: ExecKind::Func {
+                kind: ExecKind::Fn {
                     generics: smallvec![],
                     params: vec![Param {
                         mutable: false,
@@ -157,7 +188,7 @@ fn fib() {
                         th: ExprKind::ident_id(n).span(66..67).into(),
                         el: Some(
                             ExprKind::Infix {
-                                op: InfixOp::Sub,
+                                op: InfixOp::Add,
                                 lhs: ExprKind::Call {
                                     func: ExprKind::ident_id(fib).span(94..97).into(),
                                     args: vec![Arg {
@@ -198,3 +229,205 @@ fn fib() {
         ))
     );
 }
+
+#[test]
+fn consts() {
+    let input = "
+    const B = A * 2
+    const A = 5
+";
+
+    let mut expected_table = NameTable::default();
+    let b = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("B"),
+        mutable: false,
+        ty: None,
+        span: Span::from(11..12),
+    });
+    let a = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("A"),
+        mutable: false,
+        ty: None,
+        span: Span::from(31..32),
+    });
+
+    assert_eq!(
+        test_resolve_full(input),
+        Ok((
+            vec![
+                ExecItem {
+                    ident: b,
+                    ident_span: Span::from(11..12),
+                    kind: ExecKind::Const {
+                        ty: None,
+                        val: ExprKind::Infix {
+                            op: InfixOp::Mul,
+                            lhs: ExprKind::ident_id(a).span(15..16).into(),
+                            rhs: ExprKind::int(2).span(19..20).into()
+                        }
+                        .span(15..20)
+                    }
+                },
+                ExecItem {
+                    ident: a,
+                    ident_span: Span::from(31..32),
+                    kind: ExecKind::Const {
+                        ty: None,
+                        val: ExprKind::int(5).span(35..36)
+                    }
+                }
+            ],
+            expected_table
+        ))
+    );
+}
+
+#[test]
+fn list() {
+    let input = r#"
+    record List[T](head: Link[T])
+
+    enum Link[T]
+    | Cons(elem: T, next: Link[T])
+    | Nil()
+
+    fn cons[T](list: List[T], elem: T): List[T] -> "todo"
+"#;
+
+    let mut adt_table = PartialAdtTable::default();
+
+    let list_adt = adt_table.reserve();
+    let link = adt_table.reserve();
+
+    let list_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
+    let link_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
+
+    adt_table.fulfill(
+        list_adt,
+        AdtInfo::Item(AdtItem {
+            ident: Ident::new("List").span(12..16),
+            generics: smallvec![list_t],
+            span: Span::from(5..34),
+            kind: AdtKind::Record(vec![Field {
+                ident: Ident::new("head"),
+                ty: TyKind::Adt(link, vec![TyKind::Adt(list_t, vec![]).span(31..32)]).span(26..33),
+                span: Span::from(20..33),
+            }]),
+        }),
+    );
+    adt_table.fulfill(
+        link,
+        AdtInfo::Item(AdtItem {
+            ident: Ident::new("Link").span(45..49),
+            generics: smallvec![link_t],
+            span: Span::from(40..99),
+            kind: AdtKind::Enum(vec![
+                Variant {
+                    ident: Ident::new("Cons").span(59..63),
+                    fields: vec![
+                        Field {
+                            ident: Ident::new("elem"),
+                            ty: TyKind::Adt(link_t, vec![]).span(70..71),
+                            span: Span::from(64..71),
+                        },
+                        Field {
+                            ident: Ident::new("next"),
+                            ty: TyKind::Adt(link, vec![TyKind::Adt(link_t, vec![]).span(84..85)])
+                                .span(79..86),
+                            span: Span::from(73..86),
+                        },
+                    ],
+                },
+                Variant {
+                    ident: Ident::new("Nil").span(94..97),
+                    fields: vec![],
+                },
+            ]),
+        }),
+    );
+
+    let fn_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
+
+    let mut table = NameTable {
+        adts: adt_table.finalise(),
+        vars: VarTable::default(),
+    };
+
+    let cons = table.vars.insert(VarInfo {
+        ident: Ident::new("cons"),
+        mutable: false,
+        ty: Some(
+            TyKind::Fn {
+                params: vec![
+                    ParamTy {
+                        mutable: false,
+                        ty: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(127..128)])
+                            .span(122..129),
+                    },
+                    ParamTy {
+                        mutable: false,
+                        ty: TyKind::Adt(fn_t, vec![]).span(137..138),
+                    },
+                ],
+                result: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(146..147)])
+                    .span(141..148)
+                    .into(),
+            }
+            .span(112..148),
+        ),
+        span: Span::from(108..112),
+    });
+    let list = table.vars.insert(VarInfo {
+        ident: Ident::new("list"),
+        mutable: false,
+        ty: Some(
+            TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(127..128)]).span(122..129),
+        ),
+        span: Span::from(116..120),
+    });
+    let elem = table.vars.insert(VarInfo {
+        ident: Ident::new("elem"),
+        mutable: false,
+        ty: Some(TyKind::Adt(fn_t, vec![]).span(137..138)),
+        span: Span::from(131..135),
+    });
+
+    assert_eq!(
+        test_resolve_full(input),
+        Ok((
+            vec![ExecItem {
+                ident: cons,
+                ident_span: Span::from(108..112),
+                kind: ExecKind::Fn {
+                    generics: smallvec![fn_t],
+                    params: vec![
+                        Param {
+                            mutable: false,
+                            pat: PatKind::Ident(list).span(116..120),
+                            ty: TyKind::Adt(
+                                list_adt,
+                                vec![TyKind::Adt(fn_t, vec![]).span(127..128)]
+                            )
+                            .span(122..129),
+                        },
+                        Param {
+                            mutable: false,
+                            pat: PatKind::Ident(elem).span(131..135),
+                            ty: TyKind::Adt(fn_t, vec![]).span(137..138),
+                        },
+                    ],
+                    result: Return {
+                        mutable: false,
+                        ty: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(146..147)])
+                            .span(141..148)
+                    },
+                    body: ExprKind::string("todo").span(152..158)
+                }
+            }],
+            table
+        ))
+    );
+}
+
+// Rebinding items
+// Unbound item

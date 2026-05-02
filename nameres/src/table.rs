@@ -26,15 +26,15 @@ pub enum AdtInfo {
 
 #[derive(Debug, Default, PartialEq)]
 pub struct NameTable {
-    vars: Vec<VarInfo>,
-    adts: Vec<AdtInfo>,
+    pub adts: AdtTable,
+    pub vars: VarTable,
 }
 
 impl Index<VarId> for NameTable {
     type Output = VarInfo;
 
     fn index(&self, index: VarId) -> &Self::Output {
-        &self.vars[index.0 as usize]
+        &self.vars[index]
     }
 }
 
@@ -42,62 +42,106 @@ impl Index<AdtId> for NameTable {
     type Output = AdtInfo;
 
     fn index(&self, index: AdtId) -> &Self::Output {
-        &self.adts[index.0 as usize]
+        &self.adts[index]
     }
 }
 
-impl NameTable {
-    pub(crate) fn insert_var(&mut self, info: VarInfo) -> VarId {
-        let id = VarId(self.vars.len().try_into().unwrap());
-        self.vars.push(info);
+#[derive(Debug, Default, PartialEq)]
+pub struct PartialAdtTable(Vec<Option<AdtInfo>>);
+
+impl PartialAdtTable {
+    pub(crate) fn insert(&mut self, info: AdtInfo) -> AdtId {
+        let id = AdtId(self.0.len().try_into().unwrap());
+        self.0.push(Some(info));
         id
     }
 
-    pub(crate) fn insert_adt(&mut self, info: AdtInfo) -> AdtId {
-        let id = AdtId(self.vars.len().try_into().unwrap());
-        self.adts.push(info);
+    pub(crate) fn reserve(&mut self) -> AdtId {
+        let id = AdtId(self.0.len().try_into().unwrap());
+        self.0.push(None);
         id
     }
 
-    pub(crate) fn reserve_var(&mut self) -> Reservation<'_, VarId> {
-        let id = VarId(self.vars.len().try_into().unwrap());
-        Reservation { table: self, id }
+    pub(crate) fn fulfill(&mut self, id: AdtId, info: AdtInfo) {
+        self.0[id.0 as usize].get_or_insert(info);
     }
 
-    pub(crate) fn reserve_adt(&mut self) -> Reservation<'_, AdtId> {
-        let id = AdtId(self.vars.len().try_into().unwrap());
-        Reservation { table: self, id }
-    }
-}
-
-pub struct Reservation<'a, I> {
-    table: &'a mut NameTable,
-    id: I,
-}
-
-impl<I> Reservation<'_, I> {
-    pub(crate) const fn table(&self) -> &NameTable {
-        self.table
-    }
-
-    pub(crate) const fn id(&self) -> I
-    where
-        I: Copy,
-    {
-        self.id
+    pub(crate) fn finalise(self) -> AdtTable {
+        AdtTable(
+            self.0
+                .into_iter()
+                .map(|i| i.expect("Defined but unresolved adt- this indicates an internal bug"))
+                .collect(),
+        )
     }
 }
 
-impl Reservation<'_, VarId> {
-    pub(crate) fn check_in(self, info: VarInfo) -> VarId {
-        self.table.vars.push(info);
-        self.id
+#[derive(Debug, Default, PartialEq)]
+pub struct AdtTable(Vec<AdtInfo>);
+
+impl Index<AdtId> for AdtTable {
+    type Output = AdtInfo;
+
+    fn index(&self, index: AdtId) -> &Self::Output {
+        &self.0[index.0 as usize]
     }
 }
 
-impl Reservation<'_, AdtId> {
-    pub(crate) fn check_in(self, info: AdtInfo) -> AdtId {
-        self.table.adts.push(info);
-        self.id
+impl AdtTable {
+    pub(crate) fn insert(&mut self, info: AdtInfo) -> AdtId {
+        let id = AdtId(self.0.len().try_into().unwrap());
+        self.0.push(info);
+        id
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct PartialVarTable(Vec<Option<VarInfo>>);
+
+impl PartialVarTable {
+    pub(crate) fn insert(&mut self, info: VarInfo) -> VarId {
+        let id = VarId(self.0.len().try_into().unwrap());
+        self.0.push(Some(info));
+        id
+    }
+
+    pub(crate) fn reserve(&mut self) -> VarId {
+        let id = VarId(self.0.len().try_into().unwrap());
+        self.0.push(None);
+        id
+    }
+
+    pub(crate) fn fulfill(&mut self, id: VarId, info: VarInfo) {
+        self.0[id.0 as usize].get_or_insert(info);
+    }
+
+    pub(crate) fn finalise(self) -> VarTable {
+        VarTable(
+            self.0
+                .into_iter()
+                .map(|i| {
+                    i.expect("Defined but unresolved variable name- this indicates an internal bug")
+                })
+                .collect(),
+        )
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct VarTable(Vec<VarInfo>);
+
+impl Index<VarId> for VarTable {
+    type Output = VarInfo;
+
+    fn index(&self, index: VarId) -> &Self::Output {
+        &self.0[index.0 as usize]
+    }
+}
+
+impl VarTable {
+    pub(crate) fn insert(&mut self, info: VarInfo) -> VarId {
+        let id = VarId(self.0.len().try_into().unwrap());
+        self.0.push(info);
+        id
     }
 }

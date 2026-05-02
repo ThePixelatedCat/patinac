@@ -17,7 +17,7 @@ pub enum ExecKind<T, A, V> {
         ty: Option<Ty<A>>,
         val: Expr<T, A, V>,
     },
-    Func {
+    Fn {
         generics: SmallVec<[A; 4]>,
         params: Vec<Param<A, V>>,
         result: Return<A>,
