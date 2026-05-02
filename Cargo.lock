@@ -371,6 +371,9 @@ dependencies = [
  "foldhash 0.2.0",
  "ident",
  "im",
+ "lex",
+ "parse",
+ "pretty_assertions",
  "smallvec",
  "span",
 ]

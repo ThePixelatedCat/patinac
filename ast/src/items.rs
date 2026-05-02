@@ -6,9 +6,9 @@ use crate::{exprs::Expr, patterns::Pat, types::Ty};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecItem<TyInfo, AdtIdent, VarIdent> {
-    pub ident: SpanIdent,
+    pub ident: VarIdent,
+    pub ident_span: Span,
     pub kind: ExecKind<TyInfo, AdtIdent, VarIdent>,
-    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,16 +19,22 @@ pub enum ExecKind<T, A, V> {
     },
     Func {
         generics: SmallVec<[A; 4]>,
-        params: Vec<Param<A>>,
-        return_ty: Ty<A>,
+        params: Vec<Param<A, V>>,
+        result: Return<A>,
         body: Expr<T, A, V>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Param<A> {
+pub struct Param<A, V> {
     pub mutable: bool,
-    pub pat: Pat,
+    pub pat: Pat<V>,
+    pub ty: Ty<A>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Return<A> {
+    pub mutable: bool,
     pub ty: Ty<A>,
 }
 

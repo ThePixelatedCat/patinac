@@ -6,7 +6,7 @@ use itertools::Itertools;
 use ident::Ident;
 use span::impl_span;
 
-impl_span!(TyKind<AdtIdent> as Ty<AdtIdent>);
+impl_span!(TyKind<AdtIdent> as Ty<AdtIdent>, r#"A type with associated span"#);
 
 impl<T: Eq> Eq for Ty<T> {}
 
@@ -16,6 +16,7 @@ impl<A: Display> Display for Ty<A> {
     }
 }
 
+/// The kinds of types as viewed by the parser
 #[derive(Debug, Display, Clone, PartialEq, Eq)]
 pub enum TyKind<AdtIdent> {
     Int,
@@ -35,32 +36,29 @@ pub enum TyKind<AdtIdent> {
     Adt(AdtIdent, Vec<Ty<AdtIdent>>),
 }
 
-fn fn_display_helper<A: Display>(generics: &[A]) -> String {
-    if generics.is_empty() {
-        String::new()
-    } else {
-        format!("[{}]", generics.iter().join(", "))
-    }
-}
-
 impl TyKind<Ident> {
+    /// Helper to create a new [TyKind::Adt] with no generic parameters, and handling creating the [Ident] automatically
     pub fn named(name: &str) -> Self {
         Self::Adt(Ident::new(name), vec![])
     }
 
+    /// Helper to create a new [TyKind::Adt] for a `String`
     pub fn string() -> Self {
         Self::named("String")
     }
 
+    /// Helper to create a new [TyKind::Adt] for an `Array` storing the given type
     pub fn array(inner: Ty<Ident>) -> Self {
         Self::Adt(Ident::new("Array"), vec![inner])
     }
 
+    /// Helper to create a new empty [TyKind::Tuple] for representing the Unit type
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
 }
 
+/// A parameter of a function type
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param<AdtIdent> {
     pub mutable: bool,

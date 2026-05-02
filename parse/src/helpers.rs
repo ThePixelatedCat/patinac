@@ -15,7 +15,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         f(token.kind).span(token.span)
     }
 
-    pub fn binding(&mut self) -> Result<Binding<Ident>> {
+    pub fn binding(&mut self) -> Result<Binding<Ident, Ident>> {
         Ok(Binding {
             mutable: self.consume_at(TokKind::Mut).is_some(),
             pat: self.pattern()?,

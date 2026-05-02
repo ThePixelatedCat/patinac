@@ -3,7 +3,7 @@ use smallvec::smallvec;
 
 use ast::{
     exprs::{Binding, ExprKind, InfixOp},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
     patterns::PatKind,
     types::TyKind,
 };
@@ -18,22 +18,23 @@ fn const_items() {
     assert_eq!(
         Parser::parse_item(r#"const hello_world: String = "Hello, World!""#),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("hello_world").span(6..17),
+            ident: Ident::new("hello_world"),
+            ident_span: Span::from(6..17),
             kind: ExecKind::Const {
                 ty: Some(TyKind::string().span(19..25),),
                 val: ExprKind::string("Hello, World!").span(28..43)
             },
-            span: Span::from(0..43)
         }))
     );
 
     assert_eq!(
         Parser::parse_item("const id = fn(x) -> x"),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("id").span(6..8),
+            ident: Ident::new("id"),
+            ident_span: Span::from(6..8),
             kind: ExecKind::Const {
                 ty: None,
-                val: ExprKind::LambdaExpr {
+                val: ExprKind::Lamda {
                     params: vec![Binding {
                         mutable: false,
                         pat: PatKind::ident("x").span(14..15),
@@ -44,7 +45,6 @@ fn const_items() {
                 }
                 .span(11..21)
             },
-            span: Span::from(0..21)
         }))
     );
 }
@@ -157,9 +157,10 @@ enum Foo
 #[test]
 fn function_items() {
     assert_eq!(
-        Parser::parse_item("fn sum(mut a: Byte, b: Byte): #() -> a = a + b"),
+        Parser::parse_item("fn sum(mut a: Byte, b: Byte) -> a = a + b"),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("sum").span(3..6),
+            ident: Ident::new("sum"),
+            ident_span: Span::from(3..6),
             kind: ExecKind::Func {
                 generics: smallvec![],
                 params: vec![
@@ -174,22 +175,24 @@ fn function_items() {
                         ty: TyKind::Byte.span(23..27)
                     }
                 ],
-                return_ty: TyKind::unit().span(30..33),
-                body: ExprKind::InfixExpr {
+                result: Return {
+                    mutable: false,
+                    ty: TyKind::unit().span(28..29)
+                },
+                body: ExprKind::Infix {
                     op: InfixOp::Assign,
-                    lhs: Box::new(ExprKind::ident("a").span(37..38)),
+                    lhs: Box::new(ExprKind::ident("a").span(32..33)),
                     rhs: Box::new(
-                        ExprKind::InfixExpr {
+                        ExprKind::Infix {
                             op: InfixOp::Add,
-                            lhs: Box::new(ExprKind::ident("a").span(41..42)),
-                            rhs: Box::new(ExprKind::ident("b").span(45..46))
+                            lhs: Box::new(ExprKind::ident("a").span(36..37)),
+                            rhs: Box::new(ExprKind::ident("b").span(40..41))
                         }
-                        .span(41..46)
+                        .span(36..41)
                     )
                 }
-                .span(37..46)
-            },
-            span: Span::from(0..46)
+                .span(32..41)
+            }
         }))
     )
 }

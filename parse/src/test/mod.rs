@@ -7,7 +7,7 @@ use smallvec::smallvec;
 
 use ast::{
     exprs::{Arg, Binding, ExprKind, InfixOp, Stmt},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return},
     patterns::PatKind,
     types::{Param as TyParam, TyKind},
 };
@@ -21,7 +21,7 @@ fn file() {
     #[rustfmt::skip]
     let input =
 r#"
-fn wow_we_did_it(mut x: Bool, bar: Bar[Baz[T], U]): fn(mut Int) -> #()-> {
+fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
     let mut x: #(Bool, T) = true + sin(y)
     x = if bar < 3 then {
         let baz = bar.value + 2 * 4
@@ -37,40 +37,44 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
     assert_eq!(
         items.execs[0],
         ExecItem {
-            ident: Ident::new("wow_we_did_it").span(4..17),
+            ident: Ident::new("testingfn"),
+            ident_span: Span::from(4..13),
             kind: ExecKind::Func {
                 generics: smallvec![],
                 params: vec![
                     Param {
                         mutable: true,
-                        pat: PatKind::ident("x").span(22..23),
-                        ty: TyKind::Bool.span(25..29)
+                        pat: PatKind::ident("x").span(18..19),
+                        ty: TyKind::Bool.span(21..25)
                     },
                     Param {
                         mutable: false,
-                        pat: PatKind::ident("bar").span(31..34),
+                        pat: PatKind::ident("bar").span(27..30),
                         ty: TyKind::Adt(
                             Ident::new("Bar"),
                             vec![
                                 TyKind::Adt(
                                     Ident::new("Baz"),
-                                    vec![TyKind::named("T").span(44..45)],
+                                    vec![TyKind::named("T").span(40..41)],
                                 )
-                                .span(40..46),
-                                TyKind::named("U").span(48..49)
+                                .span(36..42),
+                                TyKind::named("U").span(44..45)
                             ]
                         )
-                        .span(36..50)
+                        .span(32..46)
                     }
                 ],
-                return_ty: TyKind::Fn {
-                    params: vec![TyParam {
-                        mutable: true,
-                        ty: TyKind::Int.span(60..63)
-                    }],
-                    result: Box::new(TyKind::Tuple(vec![]).span(68..71))
-                }
-                .span(53..71),
+                result: Return {
+                    mutable: true,
+                    ty: TyKind::Fn {
+                        params: vec![TyParam {
+                            mutable: true,
+                            ty: TyKind::Int.span(60..63)
+                        }],
+                        result: Box::new(TyKind::Tuple(vec![]).span(68..71))
+                    }
+                    .span(53..71)
+                },
                 body: ExprKind::Block(vec![
                     Stmt::Decl {
                         binding: Binding {
@@ -85,11 +89,11 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                             )
                         },
                         val: Box::new(
-                            ExprKind::InfixExpr {
+                            ExprKind::Infix {
                                 op: InfixOp::Add,
                                 lhs: Box::new(ExprKind::bool(true).span(104..108)),
                                 rhs: Box::new(
-                                    ExprKind::CallExpr {
+                                    ExprKind::Call {
                                         func: Box::new(ExprKind::ident("sin").span(111..114)),
                                         args: vec![Arg {
                                             mutable: false,
@@ -104,12 +108,12 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                         span: Span::from(80..117)
                     },
                     Stmt::Expr(
-                        ExprKind::InfixExpr {
+                        ExprKind::Infix {
                             op: InfixOp::Assign,
                             lhs: Box::new(ExprKind::ident("x").span(122..123)),
                             rhs: ExprKind::If {
                                 cond: Box::new(
-                                    ExprKind::InfixExpr {
+                                    ExprKind::Infix {
                                         op: InfixOp::Lt,
                                         lhs: Box::new(ExprKind::ident("bar").span(129..132)),
                                         rhs: Box::new(ExprKind::int(3).span(135..136))
@@ -125,10 +129,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                                 ty: None
                                             },
                                             val: Box::new(
-                                                ExprKind::InfixExpr {
+                                                ExprKind::Infix {
                                                     op: InfixOp::Add,
                                                     lhs: Box::new(
-                                                        ExprKind::FieldExpr {
+                                                        ExprKind::Field {
                                                             base: Box::new(
                                                                 ExprKind::ident("bar")
                                                                     .span(162..165)
@@ -139,7 +143,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                                         .span(162..171)
                                                     ),
                                                     rhs: Box::new(
-                                                        ExprKind::InfixExpr {
+                                                        ExprKind::Infix {
                                                             op: InfixOp::Mul,
                                                             lhs: Box::new(
                                                                 ExprKind::int(2).span(174..175)
@@ -156,7 +160,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                             span: Span::from(152..179)
                                         },
                                         Stmt::Expr(
-                                            ExprKind::InfixExpr {
+                                            ExprKind::Infix {
                                                 op: InfixOp::Add,
                                                 lhs: Box::new(ExprKind::ident("x").span(188..189)),
                                                 rhs: Box::new(ExprKind::int(1).span(192..193))
@@ -169,7 +173,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                 el: Some(Box::new(
                                     ExprKind::If {
                                         cond: Box::new(
-                                            ExprKind::InfixExpr {
+                                            ExprKind::Infix {
                                                 op: InfixOp::Leq,
                                                 lhs: Box::new(
                                                     ExprKind::ident("bar").span(208..211)
@@ -179,7 +183,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                             .span(208..216)
                                         ),
                                         th: Box::new(
-                                            ExprKind::CallExpr {
+                                            ExprKind::Call {
                                                 func: Box::new(
                                                     ExprKind::ident("fizz").span(230..234)
                                                 ),
@@ -209,7 +213,6 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                 ])
                 .span(74..244)
             },
-            span: Span::from(1..244)
         }
     );
 

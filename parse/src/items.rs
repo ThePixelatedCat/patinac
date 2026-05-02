@@ -1,6 +1,9 @@
 use derive_more::From;
 
-use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
+use ast::{
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
+    types::TyKind,
+};
 use errors::ResultExt;
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
@@ -29,33 +32,26 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     }
 
     fn const_item(&mut self) -> Result<ExecItem<(), Ident, Ident>> {
-        let start = self.consume(TokKind::Const)?.span.start;
+        self.consume(TokKind::Const)?;
 
         let ident = self.ident()?;
-
         let ty = self.ty_annot()?;
-
         self.consume(TokKind::Eq)?;
-
         let val = self.expr()?;
 
-        let span = Span::from(start..val.span.end);
-
         Ok(ExecItem {
-            ident,
+            ident: ident.ident,
+            ident_span: ident.span,
             kind: ExecKind::Const { ty, val },
-            span,
         })
     }
 
     fn func_item(&mut self) -> Result<ExecItem<(), Ident, Ident>> {
-        let start = self.consume(TokKind::Fn)?.span.start;
+        self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
-
         let (generics, _) = self.generic_params()?;
-
-        let (params, _) = self.delimited_list(
+        let (params, param_span) = self.delimited_list(
             |this| {
                 let mutable = this.consume_at(TokKind::Mut).is_some();
                 let pat = this.pattern()?;
@@ -68,26 +64,31 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::LParen,
             TokKind::RParen,
         )?;
-
-        self.consume(TokKind::Colon)?;
-
-        let return_ty = self.ty()?;
-
+        let result = self
+            .consume_at(TokKind::Colon)
+            .map(|_| {
+                Ok(Return {
+                    mutable: self.consume_at(TokKind::Mut).is_some(),
+                    ty: self.ty()?,
+                })
+            })
+            .transpose()?
+            .unwrap_or_else(|| Return {
+                mutable: false,
+                ty: TyKind::unit().span(param_span.end..param_span.end + 1),
+            });
         self.consume(TokKind::Arrow)?;
-
         let body = self.expr()?;
 
-        let span = Span::from(start..body.span.end);
-
         Ok(ExecItem {
-            ident,
+            ident: ident.ident,
+            ident_span: ident.span,
             kind: ExecKind::Func {
                 generics,
                 params,
-                return_ty,
+                result,
                 body,
             },
-            span,
         })
     }
 

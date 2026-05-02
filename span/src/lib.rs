@@ -1,11 +1,12 @@
-use std::{error::Error, fmt::Display, ops::Range};
+use std::{fmt::Display, ops::Range};
 
 #[macro_export]
 macro_rules! impl_span {
-    ($self:path as $spanned:ident) => {
-        impl_span!($self as $spanned<>);
+    ($self:path as $spanned:ident $(, $doc:expr)?) => {
+        impl_span!($self as $spanned<> $(, $doc)?);
     };
-    ($self:path as $spanned:ident<$($gen:ident),*>) => {
+    ($self:path as $spanned:ident<$($gen:ident),*> $(, $doc:expr)?) => {
+        $(#[doc = $doc])?
         #[allow(clippy::derive_partial_eq_without_eq)]
         #[derive(Debug, Clone, PartialEq)]
         pub struct $spanned<$( $gen ),*> {
@@ -50,20 +51,3 @@ impl Display for Span {
         write!(f, "{}..{}", self.start, self.end)
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Spnd<T>(pub T, pub Span);
-
-impl<T> Spnd<T> {
-    pub fn new(inner: T, span: impl Into<Span>) -> Self {
-        Self(inner, span.into())
-    }
-}
-
-impl<T: Display> Display for Spnd<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.1, self.0)
-    }
-}
-
-impl<T: Error> Error for Spnd<T> {}

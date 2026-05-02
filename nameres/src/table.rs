@@ -5,9 +5,9 @@ use ast::{items::AdtItem, types::Ty};
 use ident::Ident;
 use span::Span;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VarId(u32);
-
+#[derive(Debug, PartialEq)]
 pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
@@ -15,15 +15,16 @@ pub struct VarInfo {
     pub span: Span,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AdtId(u32);
 
+#[derive(Debug, PartialEq)]
 pub enum AdtInfo {
     Item(AdtItem<AdtId>),
     Param(Ident),
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct NameTable {
     vars: Vec<VarInfo>,
     adts: Vec<AdtInfo>,

@@ -234,6 +234,7 @@ impl TokKind {
         }
     }
 
+    /// Converts the token into a string that parses back into itself
     #[cfg(any(test, feature = "test"))]
     pub fn reverse(&self) -> String {
         match self {
@@ -246,6 +247,7 @@ impl TokKind {
         }
     }
 
+    /// A strategy that produces random tokens, excluding [Eof][Self::Eof]
     #[cfg(any(test, feature = "test"))]
     pub fn arb() -> impl Strategy<Value = Self> {
         Self::arbitrary().prop_filter("skipped eof", |&t| t != Self::Eof)

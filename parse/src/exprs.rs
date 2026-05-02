@@ -124,7 +124,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
             let span = lhs.span.start..rhs.span.end;
 
-            lhs = ExprKind::InfixExpr {
+            lhs = ExprKind::Infix {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
@@ -339,7 +339,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         let span = op_token.span.start..expr.span.end;
 
-        Ok(ExprKind::UnaryExpr {
+        Ok(ExprKind::Unary {
             op,
             expr: Box::new(expr),
         }
@@ -358,7 +358,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let body = Box::new(self.expr()?);
 
         let span = start..body.span.end;
-        Ok(ExprKind::LambdaExpr {
+        Ok(ExprKind::Lamda {
             params,
             return_ty,
             body,
@@ -391,7 +391,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let field = self.ident()?;
                 let span = lhs.span.start..field.span.end;
 
-                Ok(ExprKind::FieldExpr {
+                Ok(ExprKind::Field {
                     base: Box::new(lhs),
                     field,
                 }
@@ -402,7 +402,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let idx = Box::new(self.expr()?);
 
                 let span = lhs.span.start..self.consume(TokKind::RBracket)?.span.end;
-                Ok(ExprKind::IndexExpr {
+                Ok(ExprKind::Index {
                     arr: Box::new(lhs),
                     idx,
                 }
@@ -420,7 +420,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let (args, Span { end, .. }) =
             self.delimited_list(Self::arg, TokKind::LParen, TokKind::RParen)?;
 
-        Ok(ExprKind::CallExpr {
+        Ok(ExprKind::Call {
             func: Box::new(lhs),
             args,
         }

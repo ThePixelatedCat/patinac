@@ -1,11 +1,11 @@
 use ast::patterns::{Pat, PatKind};
-use ident::SpanIdent;
+use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 
 use crate::{ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn pattern(&mut self) -> Result<Pat> {
+    pub fn pattern(&mut self) -> Result<Pat<Ident>> {
         match self.peek()? {
             TokKind::Minus
             | TokKind::IntLit

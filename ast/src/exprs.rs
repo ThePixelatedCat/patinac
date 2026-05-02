@@ -7,7 +7,7 @@ use crate::{Path, patterns::Pat, types::Ty};
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt<TyInfo, AdtIdent, VarIdent> {
     Decl {
-        binding: Binding<AdtIdent>,
+        binding: Binding<AdtIdent, VarIdent>,
         val: Box<Expr<TyInfo, AdtIdent, VarIdent>>,
         span: Span,
     },
@@ -27,29 +27,29 @@ pub enum ExprKind<T, A, V> {
     Lit(LitExpr),
     Array(Vec<Expr<T, A, V>>),
     Tuple(Vec<Expr<T, A, V>>),
-    InfixExpr {
+    Infix {
         op: InfixOp,
         lhs: Box<Expr<T, A, V>>,
         rhs: Box<Expr<T, A, V>>,
     },
-    UnaryExpr {
+    Unary {
         op: UnaryOp,
         expr: Box<Expr<T, A, V>>,
     },
-    FieldExpr {
+    Field {
         base: Box<Expr<T, A, V>>,
         field: SpanIdent,
     },
-    IndexExpr {
+    Index {
         arr: Box<Expr<T, A, V>>,
         idx: Box<Expr<T, A, V>>,
     },
-    CallExpr {
+    Call {
         func: Box<Expr<T, A, V>>,
         args: Vec<Arg<T, A, V>>,
     },
-    LambdaExpr {
-        params: Vec<Binding<A>>,
+    Lamda {
+        params: Vec<Binding<A, V>>,
         return_ty: Option<Ty<A>>,
         body: Box<Expr<T, A, V>>,
     },
@@ -63,7 +63,7 @@ pub enum ExprKind<T, A, V> {
         arms: Vec<MatchArm<T, A, V>>,
     },
     For {
-        pat: Pat,
+        pat: Pat<V>,
         iter: Box<Expr<T, A, V>>,
         body: Box<Expr<T, A, V>>,
     },
@@ -89,6 +89,15 @@ impl<T, A> ExprKind<T, A, Ident> {
         Self::Path(Path {
             prefix: smallvec![],
             end: Ident::new(string),
+        })
+    }
+}
+
+impl<T, A, V> ExprKind<T, A, V> {
+    pub fn ident_id(id: V) -> Self {
+        Self::Path(Path {
+            prefix: smallvec![],
+            end: id,
         })
     }
 }
@@ -133,9 +142,9 @@ pub enum LitExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Binding<AdtIdent> {
+pub struct Binding<AdtIdent, VarIdent> {
     pub mutable: bool,
-    pub pat: Pat,
+    pub pat: Pat<VarIdent>,
     pub ty: Option<Ty<AdtIdent>>,
 }
 
@@ -147,7 +156,7 @@ pub struct Arg<T, A, V> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm<T, A, V> {
-    pub pat: Pat,
+    pub pat: Pat<V>,
     pub body: Expr<T, A, V>,
     pub span: Span,
 }
