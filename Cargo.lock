@@ -77,6 +77,7 @@ dependencies = [
  "anyhow",
  "ast",
  "lex",
+ "nameres",
  "parse",
  "span",
  "yansi",

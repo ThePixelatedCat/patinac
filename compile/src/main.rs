@@ -49,6 +49,14 @@ fn main() {
         }
     };
 
+    let (exec_items, name_table) = match nameres::resolve(ast) {
+        Ok(v) => v,
+        Err(err) => {
+            print_diagnostic(DiagnosticKind::Error, &err.kind.to_string(), err.span, &src);
+            return;
+        }
+    };
+
     //TypeChecker::new().check(&ast)?;
 }
 
