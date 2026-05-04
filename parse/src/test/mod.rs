@@ -71,7 +71,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                             mutable: true,
                             ty: TyKind::Int.span(60..63)
                         }],
-                        result: Box::new(TyKind::Tuple(vec![]).span(68..71))
+                        result: TyKind::Tuple(vec![]).span(68..71).into()
                     }
                     .span(53..71)
                 },
@@ -88,122 +88,100 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                 .span(91..101)
                             )
                         },
-                        val: Box::new(
-                            ExprKind::Infix {
-                                op: InfixOp::Add,
-                                lhs: Box::new(ExprKind::bool(true).span(104..108)),
-                                rhs: Box::new(
-                                    ExprKind::Call {
-                                        func: Box::new(ExprKind::ident("sin").span(111..114)),
-                                        args: vec![Arg {
-                                            mutable: false,
-                                            val: ExprKind::ident("y").span(115..116)
-                                        }]
-                                    }
-                                    .span(111..117)
-                                )
+                        val: ExprKind::Infix {
+                            op: InfixOp::Add,
+                            lhs: ExprKind::bool(true).span(104..108).into(),
+                            rhs: ExprKind::Call {
+                                func: ExprKind::ident("sin").span(111..114).into(),
+                                args: vec![Arg {
+                                    mutable: false,
+                                    val: ExprKind::ident("y").span(115..116)
+                                }]
                             }
-                            .span(104..117)
-                        ),
+                            .span(111..117)
+                            .into()
+                        }
+                        .span(104..117),
                         span: Span::from(80..117)
                     },
                     Stmt::Expr(
                         ExprKind::Infix {
                             op: InfixOp::Assign,
-                            lhs: Box::new(ExprKind::ident("x").span(122..123)),
+                            lhs: ExprKind::ident("x").span(122..123).into(),
                             rhs: ExprKind::If {
-                                cond: Box::new(
-                                    ExprKind::Infix {
-                                        op: InfixOp::Lt,
-                                        lhs: Box::new(ExprKind::ident("bar").span(129..132)),
-                                        rhs: Box::new(ExprKind::int(3).span(135..136))
-                                    }
-                                    .span(129..136)
-                                ),
-                                th: Box::new(
-                                    ExprKind::Block(vec![
-                                        Stmt::Decl {
-                                            binding: Binding {
-                                                mutable: false,
-                                                pat: PatKind::ident("baz").span(156..159),
-                                                ty: None
-                                            },
-                                            val: Box::new(
-                                                ExprKind::Infix {
-                                                    op: InfixOp::Add,
-                                                    lhs: Box::new(
-                                                        ExprKind::Field {
-                                                            base: Box::new(
-                                                                ExprKind::ident("bar")
-                                                                    .span(162..165)
-                                                            ),
-                                                            field: Ident::new("value")
-                                                                .span(166..171)
-                                                        }
-                                                        .span(162..171)
-                                                    ),
-                                                    rhs: Box::new(
-                                                        ExprKind::Infix {
-                                                            op: InfixOp::Mul,
-                                                            lhs: Box::new(
-                                                                ExprKind::int(2).span(174..175)
-                                                            ),
-                                                            rhs: Box::new(
-                                                                ExprKind::int(4).span(178..179)
-                                                            )
-                                                        }
-                                                        .span(174..179)
-                                                    )
-                                                }
-                                                .span(162..179)
-                                            ),
-                                            span: Span::from(152..179)
+                                cond: ExprKind::Infix {
+                                    op: InfixOp::Lt,
+                                    lhs: ExprKind::ident("bar").span(129..132).into(),
+                                    rhs: ExprKind::int(3).span(135..136).into()
+                                }
+                                .span(129..136)
+                                .into(),
+                                th: ExprKind::Block(vec![
+                                    Stmt::Decl {
+                                        binding: Binding {
+                                            mutable: false,
+                                            pat: PatKind::ident("baz").span(156..159),
+                                            ty: None
                                         },
-                                        Stmt::Expr(
-                                            ExprKind::Infix {
-                                                op: InfixOp::Add,
-                                                lhs: Box::new(ExprKind::ident("x").span(188..189)),
-                                                rhs: Box::new(ExprKind::int(1).span(192..193))
+                                        val: ExprKind::Infix {
+                                            op: InfixOp::Add,
+                                            lhs: ExprKind::Field {
+                                                base: ExprKind::ident("bar").span(162..165).into(),
+                                                field: Ident::new("value").span(166..171)
                                             }
-                                            .span(188..193)
-                                        )
-                                    ])
-                                    .span(142..199)
-                                ),
-                                el: Some(Box::new(
+                                            .span(162..171)
+                                            .into(),
+                                            rhs: ExprKind::Infix {
+                                                op: InfixOp::Mul,
+                                                lhs: ExprKind::int(2).span(174..175).into(),
+                                                rhs: ExprKind::int(4).span(178..179).into()
+                                            }
+                                            .span(174..179)
+                                            .into()
+                                        }
+                                        .span(162..179),
+                                        span: Span::from(152..179)
+                                    },
+                                    Stmt::Expr(
+                                        ExprKind::Infix {
+                                            op: InfixOp::Add,
+                                            lhs: ExprKind::ident("x").span(188..189).into(),
+                                            rhs: ExprKind::int(1).span(192..193).into()
+                                        }
+                                        .span(188..193)
+                                    )
+                                ])
+                                .span(142..199)
+                                .into(),
+                                el: Some(
                                     ExprKind::If {
-                                        cond: Box::new(
-                                            ExprKind::Infix {
-                                                op: InfixOp::Leq,
-                                                lhs: Box::new(
-                                                    ExprKind::ident("bar").span(208..211)
-                                                ),
-                                                rhs: Box::new(ExprKind::int(2).span(215..216))
-                                            }
-                                            .span(208..216)
-                                        ),
-                                        th: Box::new(
-                                            ExprKind::Call {
-                                                func: Box::new(
-                                                    ExprKind::ident("fizz").span(230..234)
-                                                ),
-                                                args: vec![
-                                                    Arg {
-                                                        mutable: false,
-                                                        val: ExprKind::int(3).span(235..236)
-                                                    },
-                                                    Arg {
-                                                        mutable: false,
-                                                        val: ExprKind::float(5.1).span(238..241)
-                                                    }
-                                                ]
-                                            }
-                                            .span(230..242)
-                                        ),
+                                        cond: ExprKind::Infix {
+                                            op: InfixOp::Leq,
+                                            lhs: ExprKind::ident("bar").span(208..211).into(),
+                                            rhs: ExprKind::int(2).span(215..216).into()
+                                        }
+                                        .span(208..216)
+                                        .into(),
+                                        th: ExprKind::Call {
+                                            func: ExprKind::ident("fizz").span(230..234).into(),
+                                            args: vec![
+                                                Arg {
+                                                    mutable: false,
+                                                    val: ExprKind::int(3).span(235..236)
+                                                },
+                                                Arg {
+                                                    mutable: false,
+                                                    val: ExprKind::float(5.1).span(238..241)
+                                                }
+                                            ]
+                                        }
+                                        .span(230..242)
+                                        .into(),
                                         el: None
                                     }
                                     .span(205..242)
-                                ))
+                                    .into()
+                                )
                             }
                             .span(126..242)
                             .into()

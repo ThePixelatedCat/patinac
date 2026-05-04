@@ -262,7 +262,7 @@ fn compound_expressions() {
         Parser::parse_expr("{fn(mut a, b: Int) -> a + b}(mut 1, 2)"),
         Ok(ExprKind::Call {
             func: ExprKind::Block(vec![Stmt::Expr(
-                ExprKind::Lamda {
+                ExprKind::Lambda {
                     params: vec![
                         Binding {
                             mutable: true,
@@ -379,7 +379,7 @@ fn var_expressions() {
         Parser::parse_expr("y = 3 + 7 * 0.5"),
         Ok(ExprKind::Infix {
             op: InfixOp::Assign,
-            lhs: Box::new(ExprKind::ident("y").span(0..1)),
+            lhs: ExprKind::ident("y").span(0..1).into(),
             rhs: ExprKind::Infix {
                 op: InfixOp::Add,
                 lhs: ExprKind::int(3).span(4..5).into(),
@@ -562,7 +562,7 @@ if y < 3 then {
             Stmt::Expr(
                 ExprKind::Infix {
                     op: InfixOp::Assign,
-                    lhs: Box::new(ExprKind::ident("y").span(25..26)),
+                    lhs: ExprKind::ident("y").span(25..26).into(),
                     rhs: ExprKind::int(1).span(29..30).into()
                 }
                 .span(25..30)

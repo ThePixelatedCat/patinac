@@ -50,7 +50,7 @@ impl Ident {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanIdent {
     pub ident: Ident,
     pub span: Span,

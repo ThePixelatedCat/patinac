@@ -31,7 +31,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
                 let binding = self.binding()?;
                 self.consume(TokKind::Eq)?;
-                let val = Box::new(self.expr()?);
+                let val = self.expr()?;
 
                 let span = Span::from(start..val.span.end);
                 Ok(Stmt::Decl { binding, val, span })
@@ -358,7 +358,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let body = Box::new(self.expr()?);
 
         let span = start..body.span.end;
-        Ok(ExprKind::Lamda {
+        Ok(ExprKind::Lambda {
             params,
             return_ty,
             body,

@@ -19,9 +19,3 @@ impl PatKind<Ident> {
         Self::Ident(Ident::new(string))
     }
 }
-
-impl<V> PatKind<V> {
-    pub fn ident_id(id: V) -> Self {
-        Self::Ident(id)
-    }
-}

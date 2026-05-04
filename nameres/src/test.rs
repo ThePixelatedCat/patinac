@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use ast::{
-    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, Stmt},
+    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt},
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
     patterns::PatKind,
     types::{Param as ParamTy, TyKind},
@@ -12,7 +12,9 @@ use smallvec::smallvec;
 use span::Span;
 
 use crate::{
-    AdtId, AdtInfo, NameTable, Result, Scope, VarId, VarInfo, resolve, resolve_expr,
+    AdtId, AdtInfo, NameTable, Result, Scope, VarId, VarInfo,
+    error::ErrorKind,
+    resolve, resolve_expr,
     table::{AdtTable, PartialAdtTable, PartialVarTable, VarTable},
 };
 
@@ -43,17 +45,199 @@ fn test_resolve_full(input: &str) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, Na
 
 #[test]
 fn lambda() {
-    todo!()
+    let input = "{
+    let mut a = 5
+    let b = 6
+    fn(c) -> a + b + c
+}";
+
+    let mut expected_table = NameTable::default();
+    let a = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("a"),
+        mutable: true,
+        ty: None,
+        span: Span::from(14..15),
+    });
+    let b = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("b"),
+        mutable: false,
+        ty: None,
+        span: Span::from(28..29),
+    });
+    let a_immut = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("a"),
+        mutable: false,
+        ty: None,
+        span: Span::from(14..15),
+    });
+    let c = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("c"),
+        mutable: false,
+        ty: None,
+        span: Span::from(41..42),
+    });
+
+    assert_eq!(
+        test_resolve_expr(input),
+        Ok((
+            ExprKind::Block(vec![
+                Stmt::Decl {
+                    binding: Binding {
+                        mutable: true,
+                        pat: PatKind::Ident(a).span(14..15),
+                        ty: None
+                    },
+                    val: ExprKind::int(5).span(18..19),
+                    span: Span::from(6..19)
+                },
+                Stmt::Decl {
+                    binding: Binding {
+                        mutable: false,
+                        pat: PatKind::Ident(b).span(28..29),
+                        ty: None
+                    },
+                    val: ExprKind::int(6).span(32..33),
+                    span: Span::from(24..33)
+                },
+                Stmt::Expr(
+                    ExprKind::Lambda {
+                        params: vec![Binding {
+                            mutable: false,
+                            pat: PatKind::Ident(c).span(41..42),
+                            ty: None
+                        }],
+                        return_ty: None,
+                        body: ExprKind::Infix {
+                            op: InfixOp::Add,
+                            lhs: ExprKind::Infix {
+                                op: InfixOp::Add,
+                                lhs: ExprKind::ident_id(a_immut).span(47..48).into(),
+                                rhs: ExprKind::ident_id(b).span(51..52).into(),
+                            }
+                            .span(47..52)
+                            .into(),
+                            rhs: ExprKind::ident_id(c).span(55..56).into(),
+                        }
+                        .span(47..56)
+                        .into()
+                    }
+                    .span(38..56)
+                )
+            ])
+            .span(0..58),
+            expected_table
+        ))
+    );
 }
 
 #[test]
 fn match_() {
-    todo!()
+    let input = "
+    match 5 with
+    | x -> x
+    | -1 -> 0
+    | #(a, b) -> #(b, a)
+";
+
+    let mut expected_table = NameTable::default();
+    let x = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("x"),
+        mutable: false,
+        ty: None,
+        span: Span::from(24..25),
+    });
+    let a = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("a"),
+        mutable: false,
+        ty: None,
+        span: Span::from(53..54),
+    });
+    let b = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("b"),
+        mutable: false,
+        ty: None,
+        span: Span::from(56..57),
+    });
+
+    assert_eq!(
+        test_resolve_expr(input),
+        Ok((
+            ExprKind::Match {
+                scrutinee: ExprKind::int(5).span(11..12).into(),
+                arms: vec![
+                    MatchArm {
+                        pat: PatKind::Ident(x).span(24..25),
+                        body: ExprKind::ident_id(x).span(29..30),
+                        span: Span::from(22..30)
+                    },
+                    MatchArm {
+                        pat: PatKind::Literal {
+                            negate: true,
+                            lit: LitExpr::Int(1)
+                        }
+                        .span(37..39),
+                        body: ExprKind::int(0).span(43..44),
+                        span: Span::from(35..44)
+                    },
+                    MatchArm {
+                        pat: PatKind::Tuple(vec![
+                            PatKind::Ident(a).span(53..54),
+                            PatKind::Ident(b).span(56..57)
+                        ])
+                        .span(51..58),
+                        body: ExprKind::Tuple(vec![
+                            ExprKind::ident_id(b).span(64..65),
+                            ExprKind::ident_id(a).span(67..68)
+                        ])
+                        .span(62..69),
+                        span: Span::from(49..69)
+                    }
+                ]
+            }
+            .span(5..69),
+            expected_table
+        ))
+    );
 }
 
 #[test]
 fn for_() {
-    todo!()
+    let input = "
+    for x in [1, 2, 3] do x + 5
+";
+
+    let mut expected_table = NameTable::default();
+    let x = expected_table.vars.insert(VarInfo {
+        ident: Ident::new("x"),
+        mutable: false,
+        ty: None,
+        span: Span::from(9..10),
+    });
+
+    assert_eq!(
+        test_resolve_expr(input),
+        Ok((
+            ExprKind::For {
+                pat: PatKind::Ident(x).span(9..10),
+                iter: ExprKind::Array(vec![
+                    ExprKind::int(1).span(15..16),
+                    ExprKind::int(2).span(18..19),
+                    ExprKind::int(3).span(21..22)
+                ])
+                .span(14..23)
+                .into(),
+                body: ExprKind::Infix {
+                    op: InfixOp::Add,
+                    lhs: ExprKind::ident_id(x).span(27..28).into(),
+                    rhs: ExprKind::int(5).span(31..32).into()
+                }
+                .span(27..32)
+                .into()
+            }
+            .span(5..32),
+            expected_table
+        ))
+    );
 }
 
 #[test]
@@ -170,7 +354,7 @@ fn fib() {
                     generics: smallvec![],
                     params: vec![Param {
                         mutable: false,
-                        pat: PatKind::ident_id(n).span(12..13),
+                        pat: PatKind::Ident(n).span(12..13),
                         ty: TyKind::UInt.span(15..19)
                     }],
                     result: Return {
@@ -227,6 +411,14 @@ fn fib() {
             }],
             expected_table
         ))
+    );
+}
+
+#[test]
+fn unbound_var() {
+    assert_eq!(
+        test_resolve_expr("a + 5"),
+        Err(ErrorKind::UnboundVariable(Ident::new("a")).span(0..1))
     );
 }
 
@@ -429,5 +621,33 @@ fn list() {
     );
 }
 
-// Rebinding items
-// Unbound item
+#[test]
+fn unknown_type() {
+    assert_eq!(
+        test_resolve_expr(r#"{let x: String = "Hello, World!"}"#),
+        Err(ErrorKind::UnknownType(TyKind::string()).span(8..14))
+    );
+}
+
+#[test]
+fn rebinding() {
+    let input = "
+    const A = 5
+    const A = 6
+";
+
+    assert_eq!(
+        test_resolve_full(input),
+        Err(ErrorKind::DupItem(Ident::new("A"), Span::from(11..12)).span(27..28))
+    );
+
+    let input = "
+    record Foo()
+    record Foo(val: UInt)
+";
+
+    assert_eq!(
+        test_resolve_full(input),
+        Err(ErrorKind::DupItem(Ident::new("Foo"), Span::from(12..15)).span(29..32))
+    );
+}

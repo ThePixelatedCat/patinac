@@ -8,7 +8,7 @@ use crate::{Path, patterns::Pat, types::Ty};
 pub enum Stmt<TyInfo, AdtIdent, VarIdent> {
     Decl {
         binding: Binding<AdtIdent, VarIdent>,
-        val: Box<Expr<TyInfo, AdtIdent, VarIdent>>,
+        val: Expr<TyInfo, AdtIdent, VarIdent>,
         span: Span,
     },
     Expr(Expr<TyInfo, AdtIdent, VarIdent>),
@@ -48,7 +48,7 @@ pub enum ExprKind<T, A, V> {
         func: Box<Expr<T, A, V>>,
         args: Vec<Arg<T, A, V>>,
     },
-    Lamda {
+    Lambda {
         params: Vec<Binding<A, V>>,
         return_ty: Option<Ty<A>>,
         body: Box<Expr<T, A, V>>,

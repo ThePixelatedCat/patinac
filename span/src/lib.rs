@@ -25,7 +25,7 @@ macro_rules! impl_span {
     };
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

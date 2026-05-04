@@ -4,14 +4,14 @@ use span::Span;
 
 use crate::{exprs::Expr, patterns::Pat, types::Ty};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ExecItem<TyInfo, AdtIdent, VarIdent> {
     pub ident: VarIdent,
     pub ident_span: Span,
     pub kind: ExecKind<TyInfo, AdtIdent, VarIdent>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum ExecKind<T, A, V> {
     Const {
         ty: Option<Ty<A>>,

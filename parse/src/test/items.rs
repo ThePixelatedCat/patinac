@@ -34,7 +34,7 @@ fn const_items() {
             ident_span: Span::from(6..8),
             kind: ExecKind::Const {
                 ty: None,
-                val: ExprKind::Lamda {
+                val: ExprKind::Lambda {
                     params: vec![Binding {
                         mutable: false,
                         pat: PatKind::ident("x").span(14..15),
@@ -181,15 +181,14 @@ fn function_items() {
                 },
                 body: ExprKind::Infix {
                     op: InfixOp::Assign,
-                    lhs: Box::new(ExprKind::ident("a").span(32..33)),
-                    rhs: Box::new(
-                        ExprKind::Infix {
-                            op: InfixOp::Add,
-                            lhs: Box::new(ExprKind::ident("a").span(36..37)),
-                            rhs: Box::new(ExprKind::ident("b").span(40..41))
-                        }
-                        .span(36..41)
-                    )
+                    lhs: ExprKind::ident("a").span(32..33).into(),
+                    rhs: ExprKind::Infix {
+                        op: InfixOp::Add,
+                        lhs: ExprKind::ident("a").span(36..37).into(),
+                        rhs: ExprKind::ident("b").span(40..41).into()
+                    }
+                    .span(36..41)
+                    .into()
                 }
                 .span(32..41)
             }
