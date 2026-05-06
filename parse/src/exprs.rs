@@ -82,33 +82,32 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         }?;
 
         loop {
-            let Ok(peeked) = self.peek() else { break };
-            let op = match peeked {
+            let op = match self.peek() {
                 // Attach suffix to current lhs and re-loop
-                TokKind::Dot => {
+                Ok(TokKind::Dot) => {
                     lhs = self.dot_suffixes(lhs)?;
                     continue;
                 }
-                TokKind::LParen => {
+                Ok(TokKind::LParen) => {
                     lhs = self.call_suffix(lhs)?;
                     continue;
                 }
                 // Continue current iteration with given binop
-                TokKind::Eq => InfixOp::Assign,
-                TokKind::Plus => InfixOp::Add,
-                TokKind::Minus => InfixOp::Sub,
-                TokKind::Times => InfixOp::Mul,
-                TokKind::Divide => InfixOp::Div,
-                TokKind::Xor => InfixOp::Xor,
-                TokKind::Exponent => InfixOp::Exp,
-                TokKind::Eqq => InfixOp::Eqq,
-                TokKind::Neq => InfixOp::Neq,
-                TokKind::And => InfixOp::And,
-                TokKind::Or => InfixOp::Or,
-                TokKind::Lt => InfixOp::Lt,
-                TokKind::Leq => InfixOp::Leq,
-                TokKind::Gt => InfixOp::Gt,
-                TokKind::Geq => InfixOp::Geq,
+                Ok(TokKind::Eq) => InfixOp::Assign,
+                Ok(TokKind::Plus) => InfixOp::Add,
+                Ok(TokKind::Minus) => InfixOp::Sub,
+                Ok(TokKind::Times) => InfixOp::Mul,
+                Ok(TokKind::Divide) => InfixOp::Div,
+                Ok(TokKind::Xor) => InfixOp::Xor,
+                Ok(TokKind::Exponent) => InfixOp::Exp,
+                Ok(TokKind::Eqq) => InfixOp::Eqq,
+                Ok(TokKind::Neq) => InfixOp::Neq,
+                Ok(TokKind::And) => InfixOp::And,
+                Ok(TokKind::Or) => InfixOp::Or,
+                Ok(TokKind::Lt) => InfixOp::Lt,
+                Ok(TokKind::Leq) => InfixOp::Leq,
+                Ok(TokKind::Gt) => InfixOp::Gt,
+                Ok(TokKind::Geq) => InfixOp::Geq,
                 _ => break,
             };
 

@@ -32,7 +32,7 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
 record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
 "#;
 
-    let items = Parser::parse(lex::lex(input).unwrap()).unwrap();
+    let items = Parser::new(lex::lex(input).unwrap()).parse().unwrap();
 
     assert_eq!(
         items.execs[0],

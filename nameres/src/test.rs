@@ -40,7 +40,7 @@ fn test_resolve_expr(input: &str) -> Result<(Expr<(), AdtId, VarId>, NameTable)>
 }
 
 fn test_resolve_full(input: &str) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, NameTable)> {
-    resolve(Parser::parse(lex::lex(input).unwrap()).unwrap())
+    resolve(Parser::new(lex::lex(input).unwrap()).parse().unwrap())
 }
 
 #[test]

@@ -94,21 +94,19 @@ impl<T, A> ExprKind<T, A, Ident> {
 }
 
 impl<T, A, V> ExprKind<T, A, V> {
-    pub fn ident_id(id: V) -> Self {
-        Self::Path(Path {
-            prefix: smallvec![],
-            end: id,
-        })
-    }
-}
-
-impl<T, A, V> ExprKind<T, A, V> {
     pub fn span_ty(self, span: impl Into<Span>, ty: T) -> Expr<T, A, V> {
         Expr {
             kind: self,
             span: span.into(),
             ty,
         }
+    }
+
+    pub fn ident_id(id: V) -> Self {
+        Self::Path(Path {
+            prefix: smallvec![],
+            end: id,
+        })
     }
 
     pub const fn int(i: u64) -> Self {

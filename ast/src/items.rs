@@ -32,7 +32,7 @@ pub struct Param<A, V> {
     pub ty: Ty<A>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Return<A> {
     pub mutable: bool,
     pub ty: Ty<A>,

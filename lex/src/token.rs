@@ -4,7 +4,7 @@ use logos::Logos;
 use proptest::{arbitrary::Arbitrary, prelude::Strategy};
 use span::Span;
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Tok<'src> {
     pub kind: TokKind,
     pub span: Span,

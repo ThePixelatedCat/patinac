@@ -10,7 +10,7 @@ pub struct Ast<TyInfo, AdtIdent, VarIdent> {
     pub execs: Vec<items::ExecItem<TyInfo, AdtIdent, VarIdent>>,
 }
 
-impl<T, I, V> Default for Ast<T, I, V> {
+impl<T, A, V> Default for Ast<T, A, V> {
     fn default() -> Self {
         Self {
             adts: Vec::default(),

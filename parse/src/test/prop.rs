@@ -11,14 +11,14 @@ proptest! {
         let raw = in_toks.iter().map(TokKind::reverse).join(" ");
 
         if let Ok(toks) = lex::lex(&raw) {
-            let _ = Parser::parse(toks);
+            let _ = Parser::new(toks).parse();
         }
     }
 
     #[test]
     fn doesnt_crash_string(s in r"\PC*") {
         if let Ok(toks) = lex::lex(&s) {
-            let _ = Parser::parse(toks);
+            let _ = Parser::new(toks).parse();
         }
     }
 }

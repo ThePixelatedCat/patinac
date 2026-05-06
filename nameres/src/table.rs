@@ -13,7 +13,7 @@ impl From<VarId> for u32 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
@@ -29,7 +29,7 @@ impl From<AdtId> for u32 {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdtInfo {
     Item(AdtItem<AdtId>),
     Param(Ident),

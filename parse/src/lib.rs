@@ -22,26 +22,28 @@ pub struct Parser<'src, I: Iterator<Item = Tok<'src>>> {
 }
 
 impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
-    pub fn parse(toks: Vec<Tok<'src>>) -> result::Result<Ast<(), Ident, Ident>, Vec<Error>> {
-        let mut parser = Self {
+    pub fn new(toks: Vec<Tok<'src>>) -> Self {
+        Self {
             toks: toks.into_iter().peekable(),
-        };
+        }
+    }
 
+    pub fn parse(mut self) -> result::Result<Ast<(), Ident, Ident>, Vec<Error>> {
         let mut ast = Ast::default();
         let mut errs = Vec::new();
 
-        while parser.peek().is_ok() {
-            match parser.item() {
+        while self.peek().is_ok() {
+            match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
                 Err(err) => {
                     errs.push(err);
                     // Skip to next item
-                    while let Ok(tok) = parser.peek()
+                    while let Ok(tok) = self.peek()
                         && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
                             .contains(&tok)
                     {
-                        let _ = parser.next();
+                        let _ = self.next();
                     }
                 }
             }
@@ -52,26 +54,17 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_stmt(src: &'src str) -> Result<ast::exprs::Stmt<(), Ident, Ident>> {
-        Self {
-            toks: lex::lex(src).unwrap().into_iter().peekable(),
-        }
-        .stmt()
+        Self::new(lex::lex(src).unwrap()).stmt()
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr<(), Ident, Ident>> {
-        Self {
-            toks: lex::lex(src).unwrap().into_iter().peekable(),
-        }
-        .expr()
+        Self::new(lex::lex(src).unwrap()).expr()
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_item(src: &'src str) -> Result<Item> {
-        Self {
-            toks: lex::lex(src).unwrap().into_iter().peekable(),
-        }
-        .item()
+        Self::new(lex::lex(src).unwrap()).item()
     }
 }
 
