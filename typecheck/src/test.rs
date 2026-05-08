@@ -2,24 +2,16 @@ use std::sync::LazyLock;
 
 use ena::unify::UnifyKey;
 use ident::Ident;
+use nameres::AdtId;
 use parse::Parser;
 
-use crate::{
-    ConcreteTy, ErrorKind, Result, Ty, TypeChecker,
-    env::{Ctx, TyEnv, TyInfo},
-    types::{Param, TyVar},
-};
+use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, type_vars::TyVar};
+use types::{Param, Return};
 
-static TY_ENV: LazyLock<TyEnv> = LazyLock::new(|| {
-    let mut ty_env = TyEnv::default();
-    ty_env.insert(Ident::new("String"), TyInfo::default());
-    ty_env
-});
-
-fn check_expr(input: &str) -> Result<ConcreteTy> {
+fn check_expr(input: &str) -> Result<Ty<AdtId>> {
     let mut checker = TypeChecker::new();
 
-    let typed_expr = checker.infer(
+    let typed_expr = checker.infer_expr(
         &TY_ENV,
         &mut Ctx::default(),
         Parser::parse_expr(input).unwrap(),
@@ -30,7 +22,7 @@ fn check_expr(input: &str) -> Result<ConcreteTy> {
 
 fn check_full(input: &str) -> Result<()> {
     let toks = lex::lex(input).unwrap();
-    let ast = Parser::parse(toks).unwrap();
+    let ast = Parser::new(toks).parse().unwrap();
     TypeChecker::new().type_program(ast)?;
     Ok(())
 }
@@ -38,62 +30,59 @@ fn check_full(input: &str) -> Result<()> {
 #[test]
 fn type_of_if_single_branch() {
     let input = r#"if true then {"Hi" {}}"#;
-    assert_eq!(check_expr(input), Ok(ConcreteTy::unit()))
+    assert_eq!(check_expr(input), Ok(Ty::unit()))
 }
 
 #[test]
 fn type_of_if_single_branch_err() {
     assert_eq!(
         check_expr("if true then 5.0"),
-        Err(ErrorKind::TypesNotEqual(Ty::Float, Ty::unit()).span(13..16))
+        Err(ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::unit()).span(13..16))
     )
 }
 
 #[test]
 fn type_of_if() {
-    assert_eq!(
-        check_expr("if true then 5.0 else -3.0"),
-        Ok(ConcreteTy::Float)
-    )
+    assert_eq!(check_expr("if true then 5.0 else -3.0"), Ok(Ty::Float))
 }
 
 #[test]
 fn type_of_if_err() {
     assert_eq!(
         check_expr(r#"if true then "true" else false"#),
-        Err(ErrorKind::TypesNotEqual(Ty::Bool, Ty::string()).span(25..30))
+        Err(ErrorKind::TypesNotEqual(PartialTy::Bool, PartialTy::string()).span(25..30))
     )
 }
 
 #[test]
 fn arrays() {
-    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5].[0]"), Ok(ConcreteTy::Int));
+    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5].[0]"), Ok(Ty::Int));
 }
 
 #[test]
 fn vars() {
-    assert_eq!(
-        check_expr("{let mut a: Byte = 1 a = 2}"),
-        Ok(ConcreteTy::unit())
-    );
+    assert_eq!(check_expr("{let mut a: Byte = 1 a = 2}"), Ok(Ty::unit()));
 }
 
 #[test]
 fn lambdas() {
     assert_eq!(
         check_expr("fn(mut a, b): UInt -> {a = a + b a}"),
-        Ok(ConcreteTy::Func(
+        Ok(Ty::Fn(
             vec![
                 Param {
                     mutable: true,
-                    ty: ConcreteTy::UInt
+                    ty: Ty::UInt
                 },
                 Param {
                     mutable: false,
-                    ty: ConcreteTy::UInt
+                    ty: Ty::UInt
                 }
             ],
-            Box::new(ConcreteTy::UInt)
+            Box::new(Return {
+                mutable: false,
+                ty: Ty::UInt
+            })
         ))
     );
 }
@@ -102,17 +91,17 @@ fn lambdas() {
 fn maths() {
     assert_eq!(
         check_expr("1 + 1.0"),
-        Err(ErrorKind::TypesNotEqual(Ty::IntVar(TyVar::from_index(0)), Ty::Float).span(4..7))
+        Err(
+            ErrorKind::TypesNotEqual(PartialTy::IntVar(TyVar::from_index(0)), PartialTy::Float)
+                .span(4..7)
+        )
     );
-    assert_eq!(check_expr("1.0 + 1.0"), Ok(ConcreteTy::Float))
+    assert_eq!(check_expr("1.0 + 1.0"), Ok(Ty::Float))
 }
 
 #[test]
 fn type_of_int() {
-    assert_eq!(
-        check_expr("{let a = 5 let b: Int = 1 a + b}"),
-        Ok(ConcreteTy::Int)
-    );
+    assert_eq!(check_expr("{let a = 5 let b: Int = 1 a + b}"), Ok(Ty::Int));
 }
 
 #[test]
@@ -127,7 +116,7 @@ fn type_of_block() {
     } else 32
 }";
 
-    assert_eq!(check_expr(input), Ok(ConcreteTy::Int));
+    assert_eq!(check_expr(input), Ok(Ty::Int));
 }
 
 #[test]
@@ -139,7 +128,7 @@ fn shadowing() {
     a
 }"#;
 
-    assert_eq!(check_expr(input), Ok(ConcreteTy::string()));
+    assert_eq!(check_expr(input), Ok(Ty::string()));
 }
 
 #[test]

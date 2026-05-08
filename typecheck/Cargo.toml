@@ -5,9 +5,12 @@ edition = "2024"
 
 [dependencies]
 # Internal
-ast = { path = "../ast" }
 span = { path = "../span" }
 ident = { path = "../ident" }
+errors = { path = "../errors" }
+types = { path = "../types" }
+ast = { path = "../ast" }
+nameres = { path = "../nameres" }
 # External
 ego-tree = "0.11.0"
 ena = "0.14.3"

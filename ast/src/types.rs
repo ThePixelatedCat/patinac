@@ -6,6 +6,8 @@ use itertools::Itertools;
 use ident::Ident;
 use span::impl_span;
 
+use crate::items::Return;
+
 impl_span!(TyKind<AdtIdent> as Ty<AdtIdent>, "A type with associated span");
 
 impl<T: Eq> Eq for Ty<T> {}
@@ -27,10 +29,10 @@ pub enum TyKind<AdtIdent> {
     Bool,
     #[display("{{{}}}", _0.iter().map(|ty| &ty.kind).join(", "))]
     Tuple(Vec<Ty<AdtIdent>>),
-    #[display("fn({}) -> {result}", params.iter().join(", "))]
+    #[display("fn({}) -> {ret}", params.iter().join(", "))]
     Fn {
         params: Vec<Param<AdtIdent>>,
-        result: Box<Ty<AdtIdent>>,
+        ret: Box<Return<AdtIdent>>,
     },
     #[display("{_0}[{}]", _1.iter().map(|ty| &ty.kind).join(", "))]
     Adt(AdtIdent, Vec<Ty<AdtIdent>>),
@@ -68,8 +70,8 @@ pub struct Param<AdtIdent> {
 impl<A: Display> Display for Param<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.mutable {
-            "mut".fmt(f)?;
+            "mut ".fmt(f)?;
         }
-        write!(f, "{}", self.ty.kind)
+        self.ty.fmt(f)
     }
 }

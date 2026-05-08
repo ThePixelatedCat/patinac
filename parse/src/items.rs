@@ -1,21 +1,19 @@
 use derive_more::From;
+use smallvec::{SmallVec, smallvec};
 
-use ast::{
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
-    types::TyKind,
-};
+use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
 use errors::ResultExt;
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
-use smallvec::{SmallVec, smallvec};
 use span::Span;
+use types::Ty;
 
 use crate::{ErrorKind, Parser, Result};
 
 #[derive(From, PartialEq, Debug)]
 pub enum Item {
-    ExecItem(ExecItem<(), Ident, Ident>),
-    AdtItem(AdtItem<Ident>),
+    ExecItem(ExecItem<(), SpanIdent, Ident>),
+    AdtItem(AdtItem<SpanIdent>),
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
@@ -31,7 +29,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         }
     }
 
-    fn const_item(&mut self) -> Result<ExecItem<(), Ident, Ident>> {
+    fn const_item(&mut self) -> Result<ExecItem<(), SpanIdent, Ident>> {
         self.consume(TokKind::Const)?;
 
         let ident = self.ident()?;
@@ -46,37 +44,29 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    fn func_item(&mut self) -> Result<ExecItem<(), Ident, Ident>> {
+    fn func_item(&mut self) -> Result<ExecItem<(), SpanIdent, Ident>> {
         self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
         let (generics, _) = self.generic_params()?;
-        let (params, param_span) = self.delimited_list(
+        let (params, _) = self.delimited_list(
             |this| {
                 let mutable = this.consume_at(TokKind::Mut).is_some();
                 let pat = this.pattern()?;
                 this.consume(TokKind::Colon)
                     .context("Type annotations are required on function parameters")?;
-                let ty = this.ty()?;
+                let (ty, _) = this.ty()?;
 
                 Ok(Param { mutable, pat, ty })
             },
             TokKind::LParen,
             TokKind::RParen,
         )?;
-        let result = self
+        let (ret_mut, ret_ty) = self
             .consume_at(TokKind::Colon)
-            .map(|_| {
-                Ok(Return {
-                    mutable: self.consume_at(TokKind::Mut).is_some(),
-                    ty: self.ty()?,
-                })
-            })
+            .map(|_| Ok((self.consume_at(TokKind::Mut).is_some(), self.ty()?.0)))
             .transpose()?
-            .unwrap_or_else(|| Return {
-                mutable: false,
-                ty: TyKind::unit().span(param_span.end..param_span.end + 1),
-            });
+            .unwrap_or_else(|| (false, Ty::unit()));
         self.consume(TokKind::Arrow)?;
         let body = self.expr()?;
 
@@ -86,13 +76,14 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             kind: ExecKind::Fn {
                 generics,
                 params,
-                result,
+                ret_mut,
+                ret_ty,
                 body,
             },
         })
     }
 
-    fn record_item(&mut self) -> Result<AdtItem<Ident>> {
+    fn record_item(&mut self) -> Result<AdtItem<SpanIdent>> {
         let start = self.consume(TokKind::Record)?.span.start;
 
         let ident = self.ident()?;
@@ -108,7 +99,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    fn enum_item(&mut self) -> Result<AdtItem<Ident>> {
+    fn enum_item(&mut self) -> Result<AdtItem<SpanIdent>> {
         let start = self.consume(TokKind::Enum)?.span.start;
 
         let ident = self.ident()?;
@@ -135,7 +126,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    fn fields(&mut self) -> Result<(Vec<Field<Ident>>, Span)> {
+    fn fields(&mut self) -> Result<(Vec<Field<SpanIdent>>, Span)> {
         self.delimited_list(
             |this| {
                 let SpanIdent {
@@ -144,21 +135,26 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 } = this.ident()?;
 
                 this.consume(TokKind::Colon)?;
-                let ty = this.ty()?;
+                let (ty, ty_span) = this.ty()?;
 
-                let span = Span::from(ident_span.start..ty.span.end);
-
-                Ok(Field { ident, ty, span })
+                Ok(Field {
+                    ident,
+                    ty,
+                    span: Span::from(ident_span.start..ty_span.end),
+                })
             },
             TokKind::LParen,
             TokKind::RParen,
         )
     }
 
-    fn generic_params(&mut self) -> Result<(SmallVec<[Ident; 4]>, Option<Span>)> {
+    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Span>)> {
         if self.at(TokKind::LBracket) {
             let (idents, span) = self.delimited_list(
-                |this| this.consume(TokKind::Ident).map(|tok| Ident::new(tok.src)),
+                |this| {
+                    this.consume(TokKind::Ident)
+                        .map(|tok| Ident::new(tok.src).span(tok.span))
+                },
                 TokKind::LBracket,
                 TokKind::RBracket,
             )?;

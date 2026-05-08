@@ -1,39 +1,40 @@
-use thiserror::Error as ThisError;
+use derive_more::Display;
 
-use span::{Span, impl_span};
+use span::Span;
 
-use crate::types::{Param, Ty, TyVar};
+use crate::type_vars::{Param, PartialTy, Return, TyVar};
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = errors::Result<T, ErrorKind>;
+pub type Error = errors::Error<ErrorKind>;
 
-impl_span!(ErrorKind as Error);
-
-#[derive(ThisError, Debug, PartialEq, Clone)]
-pub enum ErrorKind {
-    #[error("unbound identifier")]
-    UnboundIdent,
-    #[error("types `{0}` and `{1}` are not equal")]
-    TypesNotEqual(Ty, Ty),
-    #[error("attempted mutation of immutable place")]
-    Mutation,
-    #[error("infinite (TEMP)")]
-    Infinite(TyVar, Ty),
-    #[error("could not infer the type of the expression")]
-    UninferredType,
-    #[error("left hand side of an assignment must be a place expression")]
-    NotPlaceExpr,
-    #[error("place overlaps with {0}")]
-    OverlappingPlace(Span),
-    #[error("unknown type")]
-    UnknownType,
-    #[error("field not found")]
-    MissingField,
-    #[error("{0} is a primitive type, therefore has no fields")]
-    PrimitiveTypeNoField(Ty),
-    #[error("{0} is {mut_0}, while {1} is {mut_1}", mut_0 = describe_mutability(.0.mutable), mut_1 = describe_mutability(.1.mutable))]
-    ParamMutability(Param<Ty>, Param<Ty>),
+impl ErrorKind {
+    pub fn span(self, span: impl Into<Span>) -> Error {
+        Error::span(self, span)
+    }
 }
 
-fn describe_mutability(mutable: bool) -> &'static str {
-    if mutable { "mutable" } else { "immutable" }
+#[derive(Debug, Display, PartialEq, Eq, Clone)]
+pub enum ErrorKind {
+    #[display("types `{_0}` and `{_1}` are not equal")]
+    TypesNotEqual(PartialTy, PartialTy),
+    #[display("attempted mutation of immutable place")]
+    Mutation,
+    #[display("infinite (TEMP)")]
+    Infinite(TyVar, PartialTy),
+    #[display("could not infer the type of the expression")]
+    UninferredType,
+    #[display("left hand side of an assignment must be a place expression")]
+    NotPlaceExpr,
+    #[display("mutable place overlaps with {_0}")]
+    OverlappingPlace(Span),
+    #[display("field not found")]
+    MissingField,
+    #[display("{_0} is a primitive type, therefore has no fields")]
+    PrimitiveTypeNoField(PartialTy),
+    #[display("mismatched parameter count between type `{_0}` and type `{_1}`")]
+    ParamCount(PartialTy, PartialTy),
+    #[display("mismatched parameter mutability between `{_0}` and `{_1}`")]
+    ParamMutability(Param, Param),
+    #[display("mismatched return type mutability between `{_0}` and `{_1}`")]
+    ReturnMutability(Return, Return),
 }

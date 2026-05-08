@@ -1,8 +1,10 @@
-use ident::{Ident, SpanIdent};
 use smallvec::smallvec;
-use span::Span;
 
-use crate::{Path, patterns::Pat, types::Ty};
+use ident::{Ident, SpanIdent};
+use span::Span;
+use types::Ty;
+
+use crate::{Path, patterns::Pat};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt<TyInfo, AdtIdent, VarIdent> {
@@ -50,7 +52,6 @@ pub enum ExprKind<T, A, V> {
     },
     Lambda {
         params: Vec<Binding<A, V>>,
-        return_ty: Option<Ty<A>>,
         body: Box<Expr<T, A, V>>,
     },
     If {

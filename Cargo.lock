@@ -26,6 +26,7 @@ dependencies = [
  "itertools",
  "smallvec",
  "span",
+ "types",
 ]
 
 [[package]]
@@ -133,10 +134,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ego-tree"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b04dc5a38e4f151a79d9f2451ae6037fb6eaf5cba34771f44781f80e508498e3"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
+name = "ena"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eabffdaee24bd1bf95c5ef7cec31260444317e72ea56c4c91750e8b7ee58d5f1"
+dependencies = [
+ "log",
+]
 
 [[package]]
 name = "equivalent"
@@ -224,6 +240,9 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "heck"
@@ -241,8 +260,9 @@ checksum = "3d3067d79b975e8844ca9eb072e16b31c3c1c36928edf9c6789548c524d0d954"
 name = "ident"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
  "span",
- "string-interner",
+ "string-interner 0.20.0",
 ]
 
 [[package]]
@@ -372,11 +392,13 @@ dependencies = [
  "foldhash 0.2.0",
  "ident",
  "im",
+ "itertools",
  "lex",
  "parse",
  "pretty_assertions",
  "smallvec",
  "span",
+ "types",
 ]
 
 [[package]]
@@ -408,7 +430,8 @@ dependencies = [
  "proptest",
  "smallvec",
  "span",
- "string-interner",
+ "string-interner 0.19.0",
+ "types",
 ]
 
 [[package]]
@@ -695,6 +718,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "string-interner"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad3df9b59e2eded8d825c7c4363ad339a20fb6bc0b9a4778560f518f59910b15"
+dependencies = [
+ "hashbrown 0.16.1",
+ "serde",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -719,10 +752,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "typecheck"
+version = "0.1.0"
+dependencies = [
+ "ast",
+ "derive_more",
+ "ego-tree",
+ "ena",
+ "errors",
+ "fnv",
+ "ident",
+ "im",
+ "itertools",
+ "lex",
+ "nameres",
+ "parse",
+ "span",
+ "types",
+]
+
+[[package]]
 name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+
+[[package]]
+name = "types"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "ident",
+ "itertools",
+ "smallvec",
+ "span",
+]
 
 [[package]]
 name = "unarray"

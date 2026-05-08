@@ -3,7 +3,6 @@ use smallvec::SmallVec;
 pub mod exprs;
 pub mod items;
 pub mod patterns;
-pub mod types;
 
 pub struct Ast<TyInfo, AdtIdent, VarIdent> {
     pub adts: Vec<items::AdtItem<AdtIdent>>,

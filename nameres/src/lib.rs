@@ -6,26 +6,27 @@ mod test;
 use std::iter;
 
 use foldhash::{HashMap, HashSet};
+use itertools::Itertools;
 use smallvec::{SmallVec, smallvec};
 
 use ast::{
     Ast, Path,
     exprs::{Arg, Binding, Expr, ExprKind, MatchArm, Stmt},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
     patterns::{Pat, PatKind},
-    types::{Param as ParamTy, Ty, TyKind},
 };
-use ident::Ident;
-
 use error::{ErrorKind, Result};
+use ident::{Ident, SpanIdent};
 use span::Span;
-pub use table::{AdtId, AdtInfo, NameTable, VarId, VarInfo};
+use types::{Param as ParamTy, Return, Ty};
 
-use crate::table::{AdtTable, PartialAdtTable, PartialVarTable};
+pub use table::*;
 
 type Scope<Id> = im::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
-pub fn resolve(ast: Ast<(), Ident, Ident>) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, NameTable)> {
+pub fn resolve(
+    ast: Ast<(), SpanIdent, Ident>,
+) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, NameTable)> {
     let mut adt_table = PartialAdtTable::default();
     let mut adt_scope = Scope::default();
 
@@ -68,7 +69,7 @@ pub fn resolve(ast: Ast<(), Ident, Ident>) -> Result<(Vec<ExecItem<(), AdtId, Va
         .execs
         .into_iter()
         .map(|exec| resolve_exec_item(&mut adt_table, &adt_scope, &mut var_table, &var_scope, exec))
-        .collect::<Result<_>>()?;
+        .try_collect()?;
 
     let var_table = var_table.finalise();
 
@@ -85,7 +86,7 @@ fn resolve_adt_item(
     adt_table: &mut PartialAdtTable,
     adt_scope: &Scope<AdtId>,
     //var_scope: &mut Scope<VarId>,
-    item: AdtItem<Ident>,
+    item: AdtItem<SpanIdent>,
 ) -> Result<()> {
     let &id = adt_scope.get(&item.ident.ident).expect(
         "all ast idents, including this one, should have already been inserted into the scope",
@@ -94,61 +95,66 @@ fn resolve_adt_item(
     let generics: SmallVec<_> = item
         .generics
         .iter()
-        .map(|&g| adt_table.insert(AdtInfo::Param(g)))
+        .map(|&g| adt_table.insert(AdtInfo::param(g)))
         .collect();
 
     let mut scope = adt_scope.clone();
-    scope.extend(iter::zip(item.generics, generics.iter().copied()));
+    scope.extend(iter::zip(
+        item.generics.iter().map(|i| i.ident),
+        generics.iter().copied(),
+    ));
 
-    let kind = match item.kind {
+    match item.kind {
         AdtKind::Record(fields) => {
             let fields = resolve_fields(&scope, fields)?;
 
             //todo!("Constructors");
-            // let fn_type = TyKind::Fn {
+            // let fn_type = Ty::Fn {
             //     generics: generics.clone(),
             //     params: (),
-            //     result: Box::new(TyKind::Adt(res.id(), generics.iter().map(|p|)).span(item.ident.span)),
+            //     result: Box::new(Ty::Adt(res.id(), generics.iter().map(|p|)).span(item.ident.span)),
             // };
 
-            AdtKind::Record(fields)
+            adt_table.fulfill(
+                id,
+                AdtInfo {
+                    ident: item.ident,
+                    kind: AdtInfoKind::Record { generics, fields },
+                },
+            );
         }
         AdtKind::Enum(variants) => {
             let variants = variants
                 .into_iter()
-                .map(|variant| {
-                    Ok(Variant {
-                        ident: variant.ident,
-                        fields: resolve_fields(&scope, variant.fields)?,
-                    })
-                })
-                .collect::<Result<_>>()?;
-            AdtKind::Enum(variants)
+                .map(|variant| Ok((variant.ident.ident, resolve_fields(&scope, variant.fields)?)))
+                .try_collect()?;
+            adt_table.fulfill(
+                id,
+                AdtInfo {
+                    ident: item.ident,
+                    kind: AdtInfoKind::Enum { generics, variants },
+                },
+            );
         }
-    };
-
-    adt_table.fulfill(
-        id,
-        AdtInfo::Item(AdtItem {
-            ident: item.ident,
-            generics,
-            span: item.span,
-            kind,
-        }),
-    );
+    }
 
     Ok(())
 }
 
-fn resolve_fields(scope: &Scope<AdtId>, fields: Vec<Field<Ident>>) -> Result<Vec<Field<AdtId>>> {
+fn resolve_fields(
+    scope: &Scope<AdtId>,
+    fields: Vec<Field<SpanIdent>>,
+) -> Result<HashMap<Ident, FieldInfo>> {
     fields
         .into_iter()
         .map(|field| {
-            Ok(Field {
-                ident: field.ident,
-                ty: resolve_ty(scope, field.ty)?,
-                span: field.span,
-            })
+            Ok((
+                field.ident,
+                FieldInfo {
+                    ty: resolve_ty(scope, field.ty)?,
+                    span: field.span,
+                },
+            ))
         })
         .collect()
 }
@@ -158,7 +164,7 @@ fn resolve_exec_item(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    item: ExecItem<(), Ident, Ident>,
+    item: ExecItem<(), SpanIdent, Ident>,
 ) -> Result<ExecItem<(), AdtId, VarId>> {
     let &id = var_scope.get(&item.ident).expect(
         "all exec item idents, including this one, should have already been inserted into the scope",
@@ -188,7 +194,8 @@ fn resolve_exec_item(
         ExecKind::Fn {
             generics: old_generics,
             params,
-            result,
+            ret_mut,
+            ret_ty,
             body,
         } => {
             let mut adt_scope = adt_scope.clone();
@@ -196,11 +203,14 @@ fn resolve_exec_item(
 
             let generics: SmallVec<_> = old_generics
                 .iter()
-                .map(|&g| adt_table.insert(AdtInfo::Param(g)))
+                .map(|&g| adt_table.insert(AdtInfo::param(g)))
                 .collect();
-            adt_scope.extend(iter::zip(old_generics, generics.iter().copied()));
+            adt_scope.extend(iter::zip(
+                old_generics.iter().map(|i| i.ident),
+                generics.iter().copied(),
+            ));
 
-            let params = params
+            let params: Vec<_> = params
                 .into_iter()
                 .map(|p| {
                     let ty = resolve_ty(&adt_scope, p.ty)?;
@@ -219,26 +229,25 @@ fn resolve_exec_item(
                         ty,
                     })
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .try_collect()?;
 
-            let result = Return {
-                mutable: result.mutable,
-                ty: resolve_ty(&adt_scope, result.ty)?,
-            };
+            let ret_ty = resolve_ty(&adt_scope, ret_ty)?;
 
             let body = resolve_expr(adt_table, &adt_scope, var_table, &var_scope, body)?;
 
-            let ty = TyKind::Fn {
-                params: params
+            let ty = Ty::Fn(
+                params
                     .iter()
                     .map(|p| ParamTy {
                         mutable: p.mutable,
                         ty: p.ty.clone(),
                     })
                     .collect(),
-                result: Box::new(result.ty.clone()),
-            }
-            .span(item.ident_span.end..result.ty.span.end);
+                Box::new(Return {
+                    mutable: ret_mut,
+                    ty: ret_ty.clone(),
+                }),
+            );
 
             var_table.fulfill(
                 id,
@@ -256,7 +265,8 @@ fn resolve_exec_item(
                 kind: ExecKind::Fn {
                     generics,
                     params,
-                    result,
+                    ret_mut,
+                    ret_ty,
                     body,
                 },
             })
@@ -269,7 +279,7 @@ fn resolve_expr(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    expr: Expr<(), Ident, Ident>,
+    expr: Expr<(), SpanIdent, Ident>,
 ) -> Result<Expr<(), AdtId, VarId>> {
     let kind = match expr.kind {
         ExprKind::Path(path) => {
@@ -333,14 +343,10 @@ fn resolve_expr(
                         val: resolve_expr(adt_table, adt_scope, var_table, var_scope, arg.val)?,
                     })
                 })
-                .collect::<Result<_>>()?;
+                .try_collect()?;
             ExprKind::Call { func, args }
         }
-        ExprKind::Lambda {
-            params,
-            return_ty,
-            body,
-        } => {
+        ExprKind::Lambda { params, body } => {
             let mut var_scope = var_scope.clone();
 
             // Rebind all mutable captures as immutable within the lambda body
@@ -368,17 +374,12 @@ fn resolve_expr(
                 .map(|param| {
                     resolve_binding(adt_table, adt_scope, var_table, &mut var_scope, param)
                 })
-                .collect::<Result<Vec<_>>>()?;
-            let return_ty = return_ty.map(|ty| resolve_ty(adt_scope, ty)).transpose()?;
+                .try_collect()?;
             let body = Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, &var_scope, *body,
             )?);
 
-            ExprKind::Lambda {
-                params,
-                return_ty,
-                body,
-            }
+            ExprKind::Lambda { params, body }
         }
         ExprKind::If { cond, th, el } => ExprKind::If {
             cond: Box::new(resolve_expr(
@@ -418,7 +419,7 @@ fn resolve_expr(
                         span: arm.span,
                     })
                 })
-                .collect::<Result<_>>()?;
+                .try_collect()?;
             ExprKind::Match { scrutinee, arms }
         }
         ExprKind::For { pat, iter, body } => {
@@ -457,7 +458,7 @@ fn resolve_expr(
                 stmts
                     .into_iter()
                     .map(|stmt| resolve_stmt(adt_table, adt_scope, var_table, &mut var_scope, stmt))
-                    .collect::<Result<_>>()?,
+                    .try_collect()?,
             )
         }
     };
@@ -465,7 +466,7 @@ fn resolve_expr(
     Ok(kind.span(expr.span))
 }
 
-fn collect_captures(captures: &mut HashSet<Ident>, expr: &Expr<(), Ident, Ident>) {
+fn collect_captures(captures: &mut HashSet<Ident>, expr: &Expr<(), SpanIdent, Ident>) {
     match &expr.kind {
         ExprKind::Path(path) => {
             if !path.prefix.is_empty() {
@@ -529,7 +530,7 @@ fn resolve_exprs(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    exprs: Vec<Expr<(), Ident, Ident>>,
+    exprs: Vec<Expr<(), SpanIdent, Ident>>,
 ) -> Result<Vec<Expr<(), AdtId, VarId>>> {
     exprs
         .into_iter()
@@ -542,7 +543,7 @@ fn resolve_stmt(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &mut Scope<VarId>,
-    stmt: Stmt<(), Ident, Ident>,
+    stmt: Stmt<(), SpanIdent, Ident>,
 ) -> Result<Stmt<(), AdtId, VarId>> {
     match stmt {
         Stmt::Decl { binding, val, span } => {
@@ -563,7 +564,7 @@ fn resolve_binding(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &mut Scope<VarId>,
-    binding: Binding<Ident, Ident>,
+    binding: Binding<SpanIdent, Ident>,
 ) -> Result<Binding<AdtId, VarId>> {
     let ty = binding.ty.map(|ty| resolve_ty(adt_scope, ty)).transpose()?;
     let pat = resolve_pat(
@@ -583,16 +584,16 @@ fn resolve_binding(
     })
 }
 
-fn resolve_ty(adt_scope: &Scope<AdtId>, ty: Ty<Ident>) -> Result<Ty<AdtId>> {
-    let kind = match ty.kind {
-        TyKind::Int => TyKind::Int,
-        TyKind::UInt => TyKind::UInt,
-        TyKind::Byte => TyKind::Byte,
-        TyKind::Float => TyKind::Float,
-        TyKind::Char => TyKind::Char,
-        TyKind::Bool => TyKind::Bool,
-        TyKind::Tuple(tys) => TyKind::Tuple(resolve_tys(adt_scope, tys)?),
-        TyKind::Fn { params, result } => {
+fn resolve_ty(adt_scope: &Scope<AdtId>, ty: Ty<SpanIdent>) -> Result<Ty<AdtId>> {
+    let ty = match ty {
+        Ty::Int => Ty::Int,
+        Ty::UInt => Ty::UInt,
+        Ty::Byte => Ty::Byte,
+        Ty::Float => Ty::Float,
+        Ty::Char => Ty::Char,
+        Ty::Bool => Ty::Bool,
+        Ty::Tuple(tys) => Ty::Tuple(resolve_tys(adt_scope, tys)?),
+        Ty::Fn(params, ret) => {
             let params = params
                 .into_iter()
                 .map(|param| {
@@ -601,23 +602,25 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: Ty<Ident>) -> Result<Ty<AdtId>> {
                         ty: resolve_ty(adt_scope, param.ty)?,
                     })
                 })
-                .collect::<Result<_>>()?;
-            let result = Box::new(resolve_ty(adt_scope, *result)?);
-            TyKind::Fn { params, result }
+                .try_collect()?;
+            let ret = Box::new(Return {
+                mutable: ret.mutable,
+                ty: resolve_ty(adt_scope, ret.ty)?,
+            });
+            Ty::Fn(params, ret)
         }
-        TyKind::Adt(ident, args) => {
-            let Some(id) = adt_scope.get(&ident).copied() else {
-                return Err(ErrorKind::UnknownType(TyKind::Adt(ident, args)).span(ty.span));
+        Ty::Adt(ident, args) => {
+            let Some(id) = adt_scope.get(&ident.ident).copied() else {
+                return Err(ErrorKind::UnknownType(Ty::Adt(ident, args)).span(ident.span));
             };
             let args = resolve_tys(adt_scope, args)?;
-            TyKind::Adt(id, args)
+            Ty::Adt(id, args)
         }
     };
-
-    Ok(kind.span(ty.span))
+    Ok(ty)
 }
 
-fn resolve_tys(adt_scope: &Scope<AdtId>, tys: Vec<Ty<Ident>>) -> Result<Vec<Ty<AdtId>>> {
+fn resolve_tys(adt_scope: &Scope<AdtId>, tys: Vec<Ty<SpanIdent>>) -> Result<Vec<Ty<AdtId>>> {
     tys.into_iter()
         .map(|ty| resolve_ty(adt_scope, ty))
         .collect()
@@ -647,11 +650,7 @@ fn resolve_pat(
         }
         PatKind::Constructor(ident, pats) => todo!(),
         PatKind::Tuple(old_pats) => {
-            let tys = if let Some(Ty {
-                kind: TyKind::Tuple(tys),
-                ..
-            }) = ty
-            {
+            let tys = if let Some(Ty::Tuple(tys)) = ty {
                 tys
             } else {
                 vec![]

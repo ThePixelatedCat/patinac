@@ -1,17 +1,30 @@
 use ident::Ident;
-use span::impl_span;
+use span::Span;
 
 use crate::exprs::LitExpr;
 
-impl_span!(PatKind<VarIdent> as Pat<VarIdent>);
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pat<VarIdent> {
+    pub kind: PatKind<VarIdent>,
+    pub span: Span,
+}
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PatKind<VarIdent> {
+pub enum PatKind<V> {
     Literal { negate: bool, lit: LitExpr },
     Wildcard,
-    Ident(VarIdent),
-    Constructor(Ident, Vec<Pat<VarIdent>>),
-    Tuple(Vec<Pat<VarIdent>>),
+    Ident(V),
+    Constructor(Ident, Vec<Pat<V>>),
+    Tuple(Vec<Pat<V>>),
+}
+
+impl<V> PatKind<V> {
+    pub fn span(self, span: impl Into<Span>) -> Pat<V> {
+        Pat {
+            kind: self,
+            span: span.into(),
+        }
+    }
 }
 
 impl PatKind<Ident> {

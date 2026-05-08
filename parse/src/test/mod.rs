@@ -7,12 +7,12 @@ use smallvec::smallvec;
 
 use ast::{
     exprs::{Arg, Binding, ExprKind, InfixOp, Stmt},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
     patterns::PatKind,
-    types::{Param as TyParam, TyKind},
 };
 use ident::Ident;
 use span::Span;
+use types::{Param as ParamTy, Return, Ty};
 
 use crate::Parser;
 
@@ -45,48 +45,41 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                     Param {
                         mutable: true,
                         pat: PatKind::ident("x").span(18..19),
-                        ty: TyKind::Bool.span(21..25)
+                        ty: Ty::Bool
                     },
                     Param {
                         mutable: false,
                         pat: PatKind::ident("bar").span(27..30),
-                        ty: TyKind::Adt(
-                            Ident::new("Bar"),
+                        ty: Ty::Adt(
+                            Ident::new("Bar").span(32..35),
                             vec![
-                                TyKind::Adt(
-                                    Ident::new("Baz"),
-                                    vec![TyKind::named("T").span(40..41)],
-                                )
-                                .span(36..42),
-                                TyKind::named("U").span(44..45)
+                                Ty::Adt(
+                                    Ident::new("Baz").span(36..39),
+                                    vec![Ty::named_span("T", 40..41)],
+                                ),
+                                Ty::named_span("U", 44..45)
                             ]
                         )
-                        .span(32..46)
                     }
                 ],
-                result: Return {
-                    mutable: true,
-                    ty: TyKind::Fn {
-                        params: vec![TyParam {
-                            mutable: true,
-                            ty: TyKind::Int.span(60..63)
-                        }],
-                        result: TyKind::Tuple(vec![]).span(68..71).into()
+                ret_mut: true,
+                ret_ty: Ty::Fn(
+                    vec![ParamTy {
+                        mutable: true,
+                        ty: Ty::Int
+                    }],
+                    Return {
+                        mutable: false,
+                        ty: Ty::unit()
                     }
-                    .span(53..71)
-                },
+                    .into()
+                ),
                 body: ExprKind::Block(vec![
                     Stmt::Decl {
                         binding: Binding {
                             mutable: true,
                             pat: PatKind::ident("x").span(88..89),
-                            ty: Some(
-                                TyKind::Tuple(vec![
-                                    TyKind::Bool.span(93..97),
-                                    TyKind::named("T").span(99..100)
-                                ])
-                                .span(91..101)
-                            )
+                            ty: Some(Ty::Tuple(vec![Ty::Bool, Ty::named_span("T", 99..100)]))
                         },
                         val: ExprKind::Infix {
                             op: InfixOp::Add,
@@ -198,25 +191,29 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
         items.adts[0],
         AdtItem {
             ident: Ident::new("Foo").span(252..255),
-            generics: smallvec![Ident::new("T"), Ident::new("U"),],
+            generics: smallvec![
+                Ident::new("T").span(256..257),
+                Ident::new("U").span(259..260),
+            ],
             span: Span::from(245..300),
             kind: AdtKind::Record(vec![
                 Field {
                     ident: Ident::new("x"),
-                    ty: TyKind::string().span(265..271),
+                    ty: Ty::string_span(265..271),
                     span: Span::from(262..271)
                 },
                 Field {
                     ident: Ident::new("bar"),
-                    ty: TyKind::Adt(
-                        Ident::new("Bar"),
+                    ty: Ty::Adt(
+                        Ident::new("Bar").span(278..281),
                         vec![
-                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(286..287)])
-                                .span(282..288),
-                            TyKind::array(TyKind::named("U").span(296..297)).span(290..298),
+                            Ty::Adt(
+                                Ident::new("Baz").span(282..285),
+                                vec![Ty::named_span("T", 286..287)]
+                            ),
+                            Ty::array_span(Ty::named_span("U", 296..297), 290..295),
                         ]
-                    )
-                    .span(278..299),
+                    ),
                     span: Span::from(273..299)
                 }
             ])

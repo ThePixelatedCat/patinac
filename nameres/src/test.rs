@@ -1,21 +1,22 @@
+use foldhash::{HashMap, HashMapExt};
 use pretty_assertions::assert_eq;
 
 use ast::{
     exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
+    items::{ExecItem, ExecKind, Param},
     patterns::PatKind,
-    types::{Param as ParamTy, TyKind},
 };
 use ident::Ident;
 use parse::Parser;
 use smallvec::smallvec;
 use span::Span;
+use types::{Param as ParamTy, Return, Ty};
 
 use crate::{
     AdtId, AdtInfo, NameTable, Result, Scope, VarId, VarInfo,
     error::ErrorKind,
     resolve, resolve_expr,
-    table::{AdtTable, PartialAdtTable, PartialVarTable, VarTable},
+    table::{AdtInfoKind, AdtTable, FieldInfo, PartialAdtTable, PartialVarTable, VarTable},
 };
 
 fn test_resolve_expr(input: &str) -> Result<(Expr<(), AdtId, VarId>, NameTable)> {
@@ -106,7 +107,6 @@ fn lambda() {
                             pat: PatKind::Ident(c).span(41..42),
                             ty: None
                         }],
-                        return_ty: None,
                         body: ExprKind::Infix {
                             op: InfixOp::Add,
                             lhs: ExprKind::Infix {
@@ -253,7 +253,7 @@ fn shadowing() {
     let id_1 = expected_table.vars.insert(VarInfo {
         ident: Ident::new("a"),
         mutable: false,
-        ty: Some(TyKind::UInt.span(14..18)),
+        ty: Some(Ty::UInt),
         span: Span::from(11..12),
     });
     let id_2 = expected_table.vars.insert(VarInfo {
@@ -277,7 +277,7 @@ fn shadowing() {
                     binding: Binding {
                         mutable: false,
                         pat: PatKind::Ident(id_1).span(11..12),
-                        ty: Some(TyKind::UInt.span(14..18))
+                        ty: Some(Ty::UInt)
                     },
                     val: ExprKind::int(5).span(21..22).into(),
                     span: Span::from(7..22)
@@ -325,22 +325,23 @@ fn fib() {
     let fib = expected_table.vars.insert(VarInfo {
         ident: Ident::new("fib"),
         mutable: false,
-        ty: Some(
-            TyKind::Fn {
-                params: vec![ParamTy {
-                    mutable: false,
-                    ty: TyKind::UInt.span(15..19),
-                }],
-                result: TyKind::UInt.span(22..26).into(),
+        ty: Some(Ty::Fn(
+            vec![ParamTy {
+                mutable: false,
+                ty: Ty::UInt,
+            }],
+            Return {
+                mutable: false,
+                ty: Ty::UInt,
             }
-            .span(11..26),
-        ),
+            .into(),
+        )),
         span: Span::from(8..11),
     });
     let n = expected_table.vars.insert(VarInfo {
         ident: Ident::new("n"),
         mutable: false,
-        ty: Some(TyKind::UInt.span(15..19)),
+        ty: Some(Ty::UInt),
         span: Span::from(12..13),
     });
 
@@ -355,12 +356,10 @@ fn fib() {
                     params: vec![Param {
                         mutable: false,
                         pat: PatKind::Ident(n).span(12..13),
-                        ty: TyKind::UInt.span(15..19)
+                        ty: Ty::UInt
                     }],
-                    result: Return {
-                        mutable: false,
-                        ty: TyKind::UInt.span(22..26).into()
-                    },
+                    ret_mut: false,
+                    ret_ty: Ty::UInt.into(),
                     body: ExprKind::If {
                         cond: ExprKind::Infix {
                             op: InfixOp::Leq,
@@ -491,54 +490,58 @@ fn list() {
     let list_adt = adt_table.reserve();
     let link = adt_table.reserve();
 
-    let list_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
-    let link_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
+    let list_t = adt_table.insert(AdtInfo::param(Ident::new("T").span(17..18)));
+    let link_t = adt_table.insert(AdtInfo::param(Ident::new("T").span(50..51)));
 
     adt_table.fulfill(
         list_adt,
-        AdtInfo::Item(AdtItem {
+        AdtInfo {
             ident: Ident::new("List").span(12..16),
-            generics: smallvec![list_t],
-            span: Span::from(5..34),
-            kind: AdtKind::Record(vec![Field {
-                ident: Ident::new("head"),
-                ty: TyKind::Adt(link, vec![TyKind::Adt(list_t, vec![]).span(31..32)]).span(26..33),
-                span: Span::from(20..33),
-            }]),
-        }),
+            kind: AdtInfoKind::Record {
+                generics: smallvec![list_t],
+                fields: HashMap::from_iter([(
+                    Ident::new("head"),
+                    FieldInfo {
+                        ty: Ty::Adt(link, vec![Ty::Adt(list_t, vec![])]),
+                        span: Span::from(20..33),
+                    },
+                )]),
+            },
+        },
     );
     adt_table.fulfill(
         link,
-        AdtInfo::Item(AdtItem {
+        AdtInfo {
             ident: Ident::new("Link").span(45..49),
-            generics: smallvec![link_t],
-            span: Span::from(40..99),
-            kind: AdtKind::Enum(vec![
-                Variant {
-                    ident: Ident::new("Cons").span(59..63),
-                    fields: vec![
-                        Field {
-                            ident: Ident::new("elem"),
-                            ty: TyKind::Adt(link_t, vec![]).span(70..71),
-                            span: Span::from(64..71),
-                        },
-                        Field {
-                            ident: Ident::new("next"),
-                            ty: TyKind::Adt(link, vec![TyKind::Adt(link_t, vec![]).span(84..85)])
-                                .span(79..86),
-                            span: Span::from(73..86),
-                        },
-                    ],
-                },
-                Variant {
-                    ident: Ident::new("Nil").span(94..97),
-                    fields: vec![],
-                },
-            ]),
-        }),
+            kind: AdtInfoKind::Enum {
+                generics: smallvec![link_t],
+                variants: HashMap::from_iter([
+                    (
+                        Ident::new("Cons"),
+                        HashMap::from_iter([
+                            (
+                                Ident::new("elem"),
+                                FieldInfo {
+                                    ty: Ty::Adt(link_t, vec![]),
+                                    span: Span::from(64..71),
+                                },
+                            ),
+                            (
+                                Ident::new("next"),
+                                FieldInfo {
+                                    ty: Ty::Adt(link, vec![Ty::Adt(link_t, vec![])]),
+                                    span: Span::from(73..86),
+                                },
+                            ),
+                        ]),
+                    ),
+                    (Ident::new("Nil"), HashMap::new()),
+                ]),
+            },
+        },
     );
 
-    let fn_t = adt_table.insert(AdtInfo::Param(Ident::new("T")));
+    let fn_t = adt_table.insert(AdtInfo::param(Ident::new("T").span(113..114)));
 
     let mut table = NameTable {
         adts: adt_table.finalise(),
@@ -548,39 +551,35 @@ fn list() {
     let cons = table.vars.insert(VarInfo {
         ident: Ident::new("cons"),
         mutable: false,
-        ty: Some(
-            TyKind::Fn {
-                params: vec![
-                    ParamTy {
-                        mutable: false,
-                        ty: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(127..128)])
-                            .span(122..129),
-                    },
-                    ParamTy {
-                        mutable: false,
-                        ty: TyKind::Adt(fn_t, vec![]).span(137..138),
-                    },
-                ],
-                result: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(146..147)])
-                    .span(141..148)
-                    .into(),
+        ty: Some(Ty::Fn(
+            vec![
+                ParamTy {
+                    mutable: false,
+                    ty: Ty::Adt(list_adt, vec![Ty::Adt(fn_t, vec![])]),
+                },
+                ParamTy {
+                    mutable: false,
+                    ty: Ty::Adt(fn_t, vec![]),
+                },
+            ],
+            Return {
+                mutable: false,
+                ty: Ty::Adt(list_adt, vec![Ty::Adt(fn_t, vec![])]),
             }
-            .span(112..148),
-        ),
+            .into(),
+        )),
         span: Span::from(108..112),
     });
     let list = table.vars.insert(VarInfo {
         ident: Ident::new("list"),
         mutable: false,
-        ty: Some(
-            TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(127..128)]).span(122..129),
-        ),
+        ty: Some(Ty::Adt(list_adt, vec![Ty::Adt(fn_t, vec![])])),
         span: Span::from(116..120),
     });
     let elem = table.vars.insert(VarInfo {
         ident: Ident::new("elem"),
         mutable: false,
-        ty: Some(TyKind::Adt(fn_t, vec![]).span(137..138)),
+        ty: Some(Ty::Adt(fn_t, vec![])),
         span: Span::from(131..135),
     });
 
@@ -596,23 +595,16 @@ fn list() {
                         Param {
                             mutable: false,
                             pat: PatKind::Ident(list).span(116..120),
-                            ty: TyKind::Adt(
-                                list_adt,
-                                vec![TyKind::Adt(fn_t, vec![]).span(127..128)]
-                            )
-                            .span(122..129),
+                            ty: Ty::Adt(list_adt, vec![Ty::Adt(fn_t, vec![])]),
                         },
                         Param {
                             mutable: false,
                             pat: PatKind::Ident(elem).span(131..135),
-                            ty: TyKind::Adt(fn_t, vec![]).span(137..138),
+                            ty: Ty::Adt(fn_t, vec![]),
                         },
                     ],
-                    result: Return {
-                        mutable: false,
-                        ty: TyKind::Adt(list_adt, vec![TyKind::Adt(fn_t, vec![]).span(146..147)])
-                            .span(141..148)
-                    },
+                    ret_mut: false,
+                    ret_ty: Ty::Adt(list_adt, vec![Ty::Adt(fn_t, vec![])]),
                     body: ExprKind::string("todo").span(152..158)
                 }
             }],
@@ -625,7 +617,7 @@ fn list() {
 fn unknown_type() {
     assert_eq!(
         test_resolve_expr(r#"{let x: String = "Hello, World!"}"#),
-        Err(ErrorKind::UnknownType(TyKind::string()).span(8..14))
+        Err(ErrorKind::UnknownType(Ty::string_span(8..14)).span(8..14))
     );
 }
 

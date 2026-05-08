@@ -1,225 +1,197 @@
-use ast::{
-    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, UnaryOp},
-    patterns::{Pat, PatKind},
-    types::Ty as AstTy,
-};
-use ident::Ident;
 use itertools::Itertools;
+
+use ast::{
+    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+    patterns::Pat,
+};
+use ident::SpanIdent;
+use nameres::{AdtId, AdtInfoKind, NameTable, VarId};
 use span::Span;
 
 use crate::{
-    ErrorKind, Result, Ty, TypeChecker,
-    env::{BindingInfo, Ctx, TyEnv},
-    types::Param,
+    ErrorKind, PartialTy, Result, TypeChecker,
+    type_vars::{Param, Return},
 };
 
 impl TypeChecker {
-    pub(super) fn infer(
+    pub(super) fn infer_expr(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
-        expr: Expr<()>,
-    ) -> Result<Expr<Ty>> {
+        name_table: &NameTable,
+        expr: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
         let span = expr.span;
         match expr.kind {
-            ExprKind::Ident(ident) => Self::infer_ident(ctx, span, ident),
-            ExprKind::Lit(lit) => {
-                let ty = self.infer_lit(&lit);
-                Ok(ExprKind::Lit(lit).span_ty(span, ty))
+            ExprKind::Path(path) => {
+                if !path.prefix.is_empty() {
+                    todo!("handle paths")
+                }
+
+                Ok(self.infer_ident(name_table, span, path.end))
             }
-            ExprKind::Array(exprs) => self.infer_array(ty_env, ctx, span, exprs),
-            ExprKind::Tuple(exprs) => self.infer_tuple(ty_env, ctx, span, exprs),
-            ExprKind::CallExpr { func, args } => self.infer_call(ty_env, ctx, span, *func, args),
-            ExprKind::InfixExpr { op, lhs, rhs } => {
-                self.infer_binop(ty_env, ctx, span, op, *lhs, *rhs)
-            }
-            ExprKind::UnaryExpr { op, expr } => self.infer_unop(ty_env, ctx, span, op, *expr),
-            ExprKind::IndexExpr { arr, idx } => self.infer_indexing(ty_env, ctx, span, *arr, *idx),
-            ExprKind::FieldExpr { base, field } => {
-                self.infer_field(ty_env, ctx, span, *base, field)
-            }
-            ExprKind::Let { binding, val } => self.infer_let(ty_env, ctx, span, binding, *val),
-            ExprKind::LambdaExpr {
-                params,
-                return_ty,
-                body,
-            } => self.infer_lambda(ty_env, ctx, span, params, return_ty, *body),
+            ExprKind::Lit(lit) => Ok(self.infer_lit(span, lit)),
+            ExprKind::Array(exprs) => self.infer_array(name_table, span, exprs),
+            ExprKind::Tuple(exprs) => self.infer_tuple(name_table, span, exprs),
+            ExprKind::Call { func, args } => self.infer_call(name_table, span, *func, args),
+            ExprKind::Infix { op, lhs, rhs } => self.infer_binop(name_table, span, op, *lhs, *rhs),
+            ExprKind::Unary { op, expr } => self.infer_unop(name_table, span, op, *expr),
+            ExprKind::Index { arr, idx } => self.infer_indexing(name_table, span, *arr, *idx),
+            ExprKind::Field { base, field } => self.infer_field(name_table, span, *base, field),
+            ExprKind::Lambda { params, body } => self.infer_lambda(name_table, span, params, *body),
             ExprKind::If { cond, th, el } => {
-                self.infer_if(ty_env, ctx, span, *cond, *th, el.map(|v| *v))
+                self.infer_if(name_table, span, *cond, *th, el.map(|v| *v))
             }
             ExprKind::Match { scrutinee, arms } => {
-                self.infer_match(ty_env, ctx, span, *scrutinee, arms)
+                self.infer_match(name_table, span, *scrutinee, arms)
             }
-            ExprKind::For {
-                pattern,
-                iter,
-                body,
-            } => todo!(),
-            ExprKind::While { cond, body } => todo!(),
+            ExprKind::For { pat, iter, body } => {
+                self.infer_for(name_table, span, pat, *iter, *body)
+            }
+            ExprKind::Loop(body) => self.infer_loop(name_table, span, *body),
             ExprKind::Break => todo!(),
             ExprKind::Continue => todo!(),
             ExprKind::Return(expr) => todo!(),
-            ExprKind::Block(exprs) => self.infer_block(ty_env, ctx, span, exprs),
+            ExprKind::Block(stmts) => self.infer_block(name_table, span, stmts),
         }
     }
 
     fn infer_multi(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
-        exprs: Vec<Expr<()>>,
-    ) -> Result<Vec<Expr<Ty>>> {
+        name_table: &NameTable,
+        exprs: Vec<Expr<(), AdtId, VarId>>,
+    ) -> Result<Vec<Expr<PartialTy, AdtId, VarId>>> {
         exprs
             .into_iter()
-            .map(|e| self.infer(ty_env, ctx, e))
+            .map(|e| self.infer_expr(name_table, e))
             .collect()
     }
 
     fn types_of(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
-        exprs: Vec<Expr<()>>,
-    ) -> Result<(Vec<Expr<Ty>>, Vec<Ty>)> {
+        name_table: &NameTable,
+        exprs: Vec<Expr<(), AdtId, VarId>>,
+    ) -> Result<(Vec<Expr<PartialTy, AdtId, VarId>>, Vec<PartialTy>)> {
         exprs
             .into_iter()
             .map(|e| {
-                let e = self.infer(ty_env, ctx, e)?;
+                let e = self.infer_expr(name_table, e)?;
                 let ty = e.ty.clone();
                 Ok((e, ty))
             })
             .collect()
     }
 
-    fn bind(
+    fn infer_ident(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
-        pat: &Pat,
-        mutable: bool,
-        ty: Ty,
+        name_table: &NameTable,
+        span: Span,
+        ident: VarId,
+    ) -> Expr<PartialTy, AdtId, VarId> {
+        let ty = self.convert(name_table.vars[ident].ty.as_ref());
+        ExprKind::ident_id(ident).span_ty(span, ty)
+    }
+
+    fn check_place_mut(
+        &mut self,
+        name_table: &NameTable,
+        place: &Expr<PartialTy, AdtId, VarId>,
     ) -> Result<()> {
-        match &pat.kind {
-            PatKind::Literal { negate, lit } => {
-                let ty = self.infer_lit(lit);
-                if *negate {
-                    self.constrain_either_eq(a, tys, pat.span);
-                }
-            }
-            PatKind::Wildcard => {}
-            PatKind::Ident { ident, subpat } => {
-                ctx.insert(*ident, ty, mutable);
-            }
-            _ => {
-                todo!("tuple patterns are unimplemented")
-            }
-        }
-
-        Ok(())
-    }
-
-    fn infer_ident(ctx: &Ctx, span: Span, ident: Ident) -> Result<Expr<Ty>> {
-        ctx.get(ident, span)
-            .map(|info| ExprKind::Ident(ident).span_ty(span, info.ty))
-    }
-
-    fn check_place_mut(&mut self, ty_env: &TyEnv, ctx: &mut Ctx, place: &Expr<Ty>) -> Result<()> {
         let span = place.span;
-        match place.kind {
-            ExprKind::Ident(ident) => ctx.get(ident, span).and_then(|info| {
-                info.mutable
+        match &place.kind {
+            ExprKind::Path(path) => {
+                if !path.prefix.is_empty() {
+                    todo!("handle paths")
+                }
+
+                name_table.vars[path.end]
+                    .mutable
                     .then_some(())
                     .ok_or_else(|| ErrorKind::Mutation.span(span))
-            }),
-            ExprKind::FieldExpr { ref base, .. } | ExprKind::IndexExpr { arr: ref base, .. } => {
-                self.check_place_mut(ty_env, ctx, &base)
             }
+            ExprKind::Field { base, .. } | ExprKind::Index { arr: base, .. } => {
+                self.check_place_mut(name_table, base)
+            }
+            ExprKind::Call { .. } => todo!("Projections"),
             _ => Err(ErrorKind::NotPlaceExpr.span(span)),
         }
     }
 
     fn check_places_unique(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
-        place_a: &Expr<Ty>,
-        place_b: &Expr<Ty>,
+        place_a: &Expr<PartialTy, AdtId, VarId>,
+        place_b: &Expr<PartialTy, AdtId, VarId>,
     ) -> Result<()> {
         match &place_b.kind {
-            ExprKind::Ident(_) => (place_a == place_b)
+            ExprKind::Path(_) => (place_a != place_b)
                 .then_some(())
                 .ok_or_else(|| ErrorKind::OverlappingPlace(place_a.span).span(place_b.span)),
-            ExprKind::FieldExpr { base, .. } | ExprKind::IndexExpr { arr: base, .. } => {
-                self.check_places_unique(ty_env, ctx, place_a, base)
+            ExprKind::Field { base, .. } | ExprKind::Index { arr: base, .. } => {
+                self.check_places_unique(place_a, base)
             }
+            ExprKind::Call { .. } => todo!("Projections"),
             _ => Err(ErrorKind::NotPlaceExpr.span(place_b.span)),
         }
     }
 
-    fn infer_lit(&mut self, lit: &LitExpr) -> Ty {
-        match lit {
+    fn infer_lit(&mut self, span: Span, lit: LitExpr) -> Expr<PartialTy, AdtId, VarId> {
+        let ty = match &lit {
             LitExpr::Int(_) => self.fresh_int_var(),
-            LitExpr::Float(_) => Ty::Float,
-            LitExpr::String(_) => Ty::string(),
-            LitExpr::Char(_) => Ty::Char,
-            LitExpr::Bool(_) => Ty::Bool,
-        }
+            LitExpr::Float(_) => PartialTy::Float,
+            LitExpr::String(_) => PartialTy::string(),
+            LitExpr::Char(_) => PartialTy::Char,
+            LitExpr::Bool(_) => PartialTy::Bool,
+        };
+        ExprKind::Lit(lit).span_ty(span, ty)
     }
 
     fn infer_array(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        exprs: Vec<Expr<()>>,
-    ) -> Result<Expr<Ty>> {
-        let exprs = self.infer_multi(ty_env, ctx, exprs)?;
+        exprs: Vec<Expr<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let exprs = self.infer_multi(name_table, exprs)?;
 
         let inner_ty = self.fresh_var();
-
         for expr in &exprs {
             self.constrain_eq(&expr, inner_ty.clone());
         }
 
-        Ok(ExprKind::Array(exprs).span_ty(span, Ty::Array(Box::new(inner_ty))))
+        Ok(ExprKind::Array(exprs).span_ty(span, PartialTy::array(inner_ty)))
     }
 
     fn infer_tuple(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        exprs: Vec<Expr<()>>,
-    ) -> Result<Expr<Ty>> {
-        let (exprs, tys) = self.types_of(ty_env, ctx, exprs)?;
-        Ok(ExprKind::Tuple(exprs).span_ty(span, Ty::Tuple(tys)))
+        exprs: Vec<Expr<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let (exprs, tys) = self.types_of(name_table, exprs)?;
+        Ok(ExprKind::Tuple(exprs).span_ty(span, PartialTy::Tuple(tys)))
     }
 
     fn infer_call(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        func: Expr<()>,
-        args: Vec<Arg<()>>,
-    ) -> Result<Expr<Ty>> {
-        let func = self.infer(ty_env, ctx, func)?;
+        func: Expr<(), AdtId, VarId>,
+        args: Vec<Arg<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let func = self.infer_expr(name_table, func)?;
 
-        let (args, arg_tys) = args
+        let (args, arg_tys): (Vec<_>, Vec<_>) = args
             .into_iter()
             .map(|arg| {
-                let val = self.infer(ty_env, ctx, arg.val)?;
+                let val = self.infer_expr(name_table, arg.val)?;
 
                 if arg.mutable {
-                    self.check_place_mut(ty_env, ctx, &val)?;
+                    self.check_place_mut(name_table, &val)?;
                 }
 
                 let ty = val.ty.clone();
                 Ok((
                     Arg {
-                        val,
                         mutable: arg.mutable,
-                        label: arg.label,
+                        val,
                     },
                     Param {
                         mutable: arg.mutable,
@@ -227,22 +199,31 @@ impl TypeChecker {
                     },
                 ))
             })
-            .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+            .try_collect()?;
 
         for vec in (0..args.len()).permutations(2) {
             let [i, j] = vec[..] else { unreachable!() };
             let (a, b) = (&args[i], &args[j]);
 
             if a.mutable || b.mutable {
-                self.check_places_unique(ty_env, ctx, &a.val, &b.val)?;
+                self.check_places_unique(&a.val, &b.val)?;
             }
         } // TODO optimise???
 
         let return_ty = self.fresh_var();
 
-        self.constrain_eq(&func, Ty::Func(arg_tys, Box::new(return_ty.clone())));
+        self.constrain_eq(
+            &func,
+            PartialTy::Fn(
+                arg_tys,
+                Box::new(Return {
+                    mutable: false,
+                    ty: return_ty.clone(),
+                }),
+            ),
+        );
 
-        Ok(ExprKind::CallExpr {
+        Ok(ExprKind::Call {
             func: Box::new(func),
             args,
         }
@@ -251,58 +232,61 @@ impl TypeChecker {
 
     fn infer_binop(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
         op: InfixOp,
-        lhs: Expr<()>,
-        rhs: Expr<()>,
-    ) -> Result<Expr<Ty>> {
-        let lhs = self.infer(ty_env, ctx, lhs)?;
-        let rhs = self.infer(ty_env, ctx, rhs)?;
+        lhs: Expr<(), AdtId, VarId>,
+        rhs: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let lhs = self.infer_expr(name_table, lhs)?;
+        let rhs = self.infer_expr(name_table, rhs)?;
 
         let ty = match op {
             InfixOp::Assign => {
-                self.check_place_mut(ty_env, ctx, &lhs)?;
+                self.check_place_mut(name_table, &lhs)?;
                 self.constrain_eq(&rhs, lhs.ty.clone());
 
-                Ty::unit()
+                PartialTy::unit()
             }
             InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div | InfixOp::Rem => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
+                self.constrain_either_eq(lhs.ty.clone(), (PartialTy::Float, int_var), lhs.span);
                 self.constrain_eq(&rhs, lhs.ty.clone());
 
                 lhs.ty.clone()
             }
             InfixOp::Exp => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var.clone()), lhs.span);
+                self.constrain_either_eq(
+                    lhs.ty.clone(),
+                    (PartialTy::Float, int_var.clone()),
+                    lhs.span,
+                );
                 self.constrain_eq(&rhs, int_var);
 
                 lhs.ty.clone()
             }
             InfixOp::And | InfixOp::Or | InfixOp::Xor => {
-                self.constrain_eq(&lhs, Ty::Bool);
-                self.constrain_eq(&rhs, Ty::Bool);
+                self.constrain_eq(&lhs, PartialTy::Bool);
+                self.constrain_eq(&rhs, PartialTy::Bool);
 
-                Ty::Bool
+                PartialTy::Bool
             }
             InfixOp::Eqq | InfixOp::Neq => {
                 self.constrain_eq(&rhs, lhs.ty.clone());
 
-                Ty::Bool
+                PartialTy::Bool
             }
             InfixOp::Gt | InfixOp::Lt | InfixOp::Geq | InfixOp::Leq => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (Ty::Float, int_var), lhs.span);
+                self.constrain_either_eq(lhs.ty.clone(), (PartialTy::Float, int_var), lhs.span);
                 self.constrain_eq(&rhs, lhs.ty.clone());
 
-                Ty::Bool
+                PartialTy::Bool
             }
         };
 
-        Ok(ExprKind::InfixExpr {
+        Ok(ExprKind::Infix {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -312,29 +296,28 @@ impl TypeChecker {
 
     fn infer_unop(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
         op: UnaryOp,
-        expr: Expr<()>,
-    ) -> Result<Expr<Ty>> {
-        let expr = self.infer(ty_env, ctx, expr)?;
+        expr: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let expr = self.infer_expr(name_table, expr)?;
 
         let ty = match op {
             UnaryOp::Not => {
-                self.constrain_eq(&expr, Ty::Bool);
+                self.constrain_eq(&expr, PartialTy::Bool);
 
-                Ty::Bool
+                PartialTy::Bool
             }
             UnaryOp::Neg => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(expr.ty.clone(), (int_var, Ty::Float), expr.span);
+                self.constrain_either_eq(expr.ty.clone(), (int_var, PartialTy::Float), expr.span);
 
                 expr.ty.clone()
             }
         };
 
-        Ok(ExprKind::UnaryExpr {
+        Ok(ExprKind::Unary {
             op,
             expr: Box::new(expr),
         }
@@ -343,21 +326,30 @@ impl TypeChecker {
 
     fn infer_field(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        base: Expr<()>,
-        field: Ident,
-    ) -> Result<Expr<Ty>> {
-        let base = self.infer(ty_env, ctx, base)?;
+        base: Expr<(), AdtId, VarId>,
+        field: SpanIdent,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let base = self.infer_expr(name_table, base)?;
 
-        let Ty::Adt(base_ty, _) = base.ty else {
+        let PartialTy::Adt(base_ty, _) = base.ty else {
             return Err(ErrorKind::PrimitiveTypeNoField(base.ty).span(span));
         };
 
-        let field_ty = ty_env.get_field(base_ty, field, span)?;
+        let AdtInfoKind::Record { fields, .. } = &name_table.adts[base_ty].kind else {
+            return Err(ErrorKind::MissingField.span(span));
+        };
 
-        Ok(ExprKind::FieldExpr {
+        let field_ty = PartialTy::from(
+            &fields
+                .get(&field.ident)
+                .cloned()
+                .ok_or_else(|| ErrorKind::MissingField.span(span))?
+                .ty,
+        );
+
+        Ok(ExprKind::Field {
             base: Box::new(base),
             field,
         }
@@ -366,21 +358,20 @@ impl TypeChecker {
 
     fn infer_indexing(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        arr: Expr<()>,
-        idx: Expr<()>,
-    ) -> Result<Expr<Ty>> {
-        let arr = self.infer(ty_env, ctx, arr)?;
+        arr: Expr<(), AdtId, VarId>,
+        idx: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let arr = self.infer_expr(name_table, arr)?;
 
         let inner_ty = self.fresh_var();
-        self.constrain_eq(&arr, Ty::Array(Box::new(inner_ty.clone())));
+        self.constrain_eq(&arr, PartialTy::array(inner_ty.clone()));
 
-        let idx = self.infer(ty_env, ctx, idx)?;
-        self.constrain_eq(&idx, Ty::UInt);
+        let idx = self.infer_expr(name_table, idx)?;
+        self.constrain_eq(&idx, PartialTy::UInt);
 
-        Ok(ExprKind::IndexExpr {
+        Ok(ExprKind::Index {
             arr: Box::new(arr),
             idx: Box::new(idx),
         }
@@ -389,25 +380,24 @@ impl TypeChecker {
 
     fn infer_if(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        cond: Expr<()>,
-        th: Expr<()>,
-        el: Option<Expr<()>>,
-    ) -> Result<Expr<Ty>> {
-        let cond = self.infer(ty_env, ctx, cond)?;
-        self.constrain_eq(&cond, Ty::Bool);
+        cond: Expr<(), AdtId, VarId>,
+        th: Expr<(), AdtId, VarId>,
+        el: Option<Expr<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let cond = self.infer_expr(name_table, cond)?;
+        self.constrain_eq(&cond, PartialTy::Bool);
 
-        let th = self.infer(ty_env, ctx, th)?;
+        let th = self.infer_expr(name_table, th)?;
 
         let el = el
-            .map(|el| self.infer(ty_env, ctx, el))
+            .map(|el| self.infer_expr(name_table, el))
             .transpose()?
             .map(Box::new);
         match &el {
             Some(el) => self.constrain_eq(&el, th.ty.clone()),
-            None => self.constrain_eq(&th, Ty::unit()),
+            None => self.constrain_eq(&th, PartialTy::unit()),
         }
 
         let th_ty = th.ty.clone();
@@ -421,148 +411,126 @@ impl TypeChecker {
 
     fn infer_match(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        scrutinee: Expr<()>,
-        arms: Vec<MatchArm<()>>,
-    ) -> Result<Expr<Ty>> {
-        let scrutinee = self.infer(ty_env, ctx, scrutinee)?;
+        scrutinee: Expr<(), AdtId, VarId>,
+        arms: Vec<MatchArm<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let scrutinee = Box::new(self.infer_expr(name_table, scrutinee)?);
 
         let ty = self.fresh_var();
-
         let arms = arms
             .into_iter()
             .map(|arm| {
-                match arm.pattern.kind {
-                    PatKind::Literal { negate, lit } => todo!(),
-                    PatKind::Wildcard => todo!(),
-                    PatKind::Ident { ident, subpat } => todo!(),
-                    PatKind::Constructor(ident, pats) => todo!(),
-                    PatKind::Tuple(pats) => todo!(),
-                }
-
-                let body = self.infer(ty_env, ctx, *arm.body)?;
+                let body = self.infer_expr(name_table, arm.body)?;
                 self.constrain_eq(&body, ty.clone());
 
                 Ok(MatchArm {
-                    pattern: arm.pattern,
-                    guard: None,
-                    body: Box::new(body),
+                    pat: arm.pat,
+                    body,
                     span: arm.span,
                 })
             })
-            .collect()?;
+            .try_collect()?;
 
-        Ok(ExprKind::Match {
-            scrutinee: Box::new(scrutinee),
-            arms,
-        }
-        .span_ty(span, ty))
+        Ok(ExprKind::Match { scrutinee, arms }.span_ty(span, ty))
     }
 
-    fn infer_let(
+    fn infer_for(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &mut Ctx,
+        name_table: &NameTable,
         span: Span,
-        binding: Binding,
-        val: Expr<()>,
-    ) -> Result<Expr<Ty>> {
-        let val = self.infer(ty_env, ctx, val)?;
+        pat: Pat<VarId>,
+        iter: Expr<(), AdtId, VarId>,
+        body: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let iter = Box::new(self.infer_expr(name_table, iter)?);
+        let body = Box::new(self.infer_expr(name_table, body)?);
+        Ok(ExprKind::For { pat, iter, body }.span_ty(span, PartialTy::unit()))
+    }
 
-        if let Some(ty) = &binding.ty {
-            self.constrain_eq(&val, ty.into());
-        }
-
-        self.bind(ty_env, ctx, &binding.pat, binding.mutable, val.ty.clone())?;
-
-        // match &binding.pat {
-        //     Pat::Ident { ident, subpat } => {
-        //         ctx.insert(*ident, val.ty.clone(), binding.mutable);
-        //     }
-        //     Pat::Wildcard => {}
-        //     _ => {
-        //         todo!("tuple patterns are unimplemented")
-        //     }
-        // }
-
-        let ty = val.ty.clone();
-        Ok(ExprKind::Let {
-            binding,
-            val: Box::new(val),
-        }
-        .span_ty(span, ty))
+    fn infer_loop(
+        &mut self,
+        name_table: &NameTable,
+        span: Span,
+        body: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let body = Box::new(self.infer_expr(name_table, body)?);
+        Ok(ExprKind::Loop(body).span_ty(span, PartialTy::unit()))
     }
 
     fn infer_lambda(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &Ctx,
+        name_table: &NameTable,
         span: Span,
-        params: Vec<Binding>,
-        return_ty: Option<AstTy>,
-        body: Expr<()>,
-    ) -> Result<Expr<Ty>> {
-        let mut ctx: Ctx = ctx
-            .clone()
-            .into_iter()
-            .map(|(ident, info)| {
-                (
-                    ident,
-                    BindingInfo {
-                        mutable: false,
-                        ..info
-                    },
-                )
+        params: Vec<Binding<AdtId, VarId>>,
+        body: Expr<(), AdtId, VarId>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let param_tys = params
+            .iter()
+            .map(|p| Param {
+                mutable: p.mutable,
+                ty: self.convert(p.ty.as_ref()),
             })
             .collect();
 
-        let mut param_tys = Vec::new();
-        for param in &params {
-            let param_ty = self.convert(param.ty.as_ref());
+        let body = self.infer_expr(name_table, body)?;
 
-            match &param.pat {
-                Pat::Ident { ident, subpat } => {
-                    ctx.insert(*ident, param_ty.clone(), param.mutable);
-                }
-                Pat::Wildcard => {}
-                _ => todo!("tuple patterns are unimplemented"),
-            }
+        let body_ty = body.ty.clone();
 
-            param_tys.push(Param {
-                mutable: param.mutable,
-                ty: param_ty,
-            });
-        }
-
-        let body = self.infer(ty_env, &mut ctx, body)?;
-
-        if let Some(return_ty) = &return_ty {
-            self.constrain_eq(&body, return_ty.into());
-        }
-
-        let body_ty = Box::new(body.ty.clone());
-
-        Ok(ExprKind::LambdaExpr {
+        Ok(ExprKind::Lambda {
             params,
-            return_ty,
             body: Box::new(body),
         }
-        .span_ty(span, Ty::Func(param_tys, body_ty)))
+        .span_ty(
+            span,
+            PartialTy::Fn(
+                param_tys,
+                Box::new(Return {
+                    mutable: false,
+                    ty: body_ty,
+                }),
+            ),
+        ))
     }
 
     fn infer_block(
         &mut self,
-        ty_env: &TyEnv,
-        ctx: &Ctx,
+        name_table: &NameTable,
         span: Span,
-        exprs: Vec<Expr<()>>,
-    ) -> Result<Expr<Ty>> {
-        let exprs = self.infer_multi(ty_env, &mut ctx.clone(), exprs)?;
+        stmts: Vec<Stmt<(), AdtId, VarId>>,
+    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+        let stmts: Vec<_> = stmts
+            .into_iter()
+            .map(|s| self.infer_stmt(name_table, s))
+            .try_collect()?;
 
-        let ty = exprs.last().map_or_else(Ty::unit, |e| e.ty.clone());
+        let ty = stmts
+            .last()
+            .and_then(|s| match s {
+                Stmt::Decl { .. } => None,
+                Stmt::Expr(expr) => Some(expr.ty.clone()),
+            })
+            .unwrap_or_else(PartialTy::unit);
 
-        Ok(ExprKind::Block(exprs).span_ty(span, ty))
+        Ok(ExprKind::Block(stmts).span_ty(span, ty))
+    }
+
+    fn infer_stmt(
+        &mut self,
+        name_table: &NameTable,
+        stmt: Stmt<(), AdtId, VarId>,
+    ) -> Result<Stmt<PartialTy, AdtId, VarId>> {
+        match stmt {
+            Stmt::Decl { binding, val, span } => {
+                let val = self.infer_expr(name_table, val)?;
+                if let Some(ty) = &binding.ty {
+                    self.constrain_eq(&val, ty.into());
+                }
+
+                Ok(Stmt::Decl { binding, val, span })
+            }
+            Stmt::Expr(expr) => self.infer_expr(name_table, expr).map(Stmt::Expr),
+        }
     }
 }

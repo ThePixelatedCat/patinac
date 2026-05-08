@@ -3,6 +3,7 @@ use std::{
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
+use derive_more::Display;
 use span::Span;
 
 type Symbol = string_interner::symbol::SymbolU32;
@@ -50,7 +51,8 @@ impl Ident {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
+#[display("{ident}")]
 pub struct SpanIdent {
     pub ident: Ident,
     pub span: Span,

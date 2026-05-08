@@ -1,9 +1,11 @@
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 
-use ast::{items::AdtItem, types::Ty};
+use foldhash::HashMap;
+use smallvec::SmallVec;
 
-use ident::Ident;
+use ident::{Ident, SpanIdent};
 use span::Span;
+use types::Ty;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VarId(u32);
@@ -30,31 +32,37 @@ impl From<AdtId> for u32 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AdtInfo {
-    Item(AdtItem<AdtId>),
-    Param(Ident),
+pub struct AdtInfo {
+    pub ident: SpanIdent,
+    pub kind: AdtInfoKind,
 }
 
-#[derive(Debug, Default, PartialEq)]
-pub struct NameTable {
-    pub adts: AdtTable,
-    pub vars: VarTable,
-}
-
-impl Index<VarId> for NameTable {
-    type Output = VarInfo;
-
-    fn index(&self, index: VarId) -> &Self::Output {
-        &self.vars[index]
+impl AdtInfo {
+    pub fn param(ident: SpanIdent) -> Self {
+        Self {
+            ident,
+            kind: AdtInfoKind::Param,
+        }
     }
 }
 
-impl Index<AdtId> for NameTable {
-    type Output = AdtInfo;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdtInfoKind {
+    Record {
+        generics: SmallVec<[AdtId; 4]>,
+        fields: HashMap<Ident, FieldInfo>,
+    },
+    Enum {
+        generics: SmallVec<[AdtId; 4]>,
+        variants: HashMap<Ident, HashMap<Ident, FieldInfo>>,
+    },
+    Param,
+}
 
-    fn index(&self, index: AdtId) -> &Self::Output {
-        &self.adts[index]
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldInfo {
+    pub ty: Ty<AdtId>,
+    pub span: Span,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -165,10 +173,22 @@ impl Index<VarId> for VarTable {
     }
 }
 
+impl IndexMut<VarId> for VarTable {
+    fn index_mut(&mut self, index: VarId) -> &mut Self::Output {
+        &mut self.0[index.0 as usize]
+    }
+}
+
 impl VarTable {
     pub(crate) fn insert(&mut self, info: VarInfo) -> VarId {
         let id = VarId(self.0.len().try_into().unwrap());
         self.0.push(info);
         id
     }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct NameTable {
+    pub adts: AdtTable,
+    pub vars: VarTable,
 }

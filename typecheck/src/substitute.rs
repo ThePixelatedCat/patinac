@@ -1,22 +1,24 @@
-use ast::exprs::{Arg, Expr, ExprKind, MatchArm};
+use itertools::Itertools;
+
+use ast::exprs::{Arg, Expr, ExprKind, MatchArm, Stmt};
+use nameres::{AdtId, VarId, VarTable};
+use types::{Param, Return, Ty};
 
 use crate::error::{Error, ErrorKind};
 
-use crate::types::Param;
-use crate::{ConcreteTy, Ty, TypeChecker};
+use crate::{PartialTy, TypeChecker};
 
 impl TypeChecker {
-    fn sub_ty(&mut self, ty: Ty) -> Result<ConcreteTy, ErrorKind> {
+    fn sub_ty(&mut self, ty: PartialTy) -> Result<Ty<AdtId>, ErrorKind> {
         match ty {
-            Ty::Int => Ok(ConcreteTy::Int),
-            Ty::UInt => Ok(ConcreteTy::UInt),
-            Ty::Byte => Ok(ConcreteTy::Byte),
-            Ty::Float => Ok(ConcreteTy::Float),
-            Ty::Bool => Ok(ConcreteTy::Bool),
-            Ty::Char => Ok(ConcreteTy::Char),
-            Ty::Array(ty) => Ok(ConcreteTy::Array(Box::new(self.sub_ty(*ty)?))),
-            Ty::Tuple(tys) => Ok(ConcreteTy::Tuple(self.sub_ty_all(tys)?)),
-            Ty::Func(params, return_ty) => {
+            PartialTy::Int => Ok(Ty::Int),
+            PartialTy::UInt => Ok(Ty::UInt),
+            PartialTy::Byte => Ok(Ty::Byte),
+            PartialTy::Float => Ok(Ty::Float),
+            PartialTy::Bool => Ok(Ty::Bool),
+            PartialTy::Char => Ok(Ty::Char),
+            PartialTy::Tuple(tys) => Ok(Ty::Tuple(self.sub_tys(tys)?)),
+            PartialTy::Fn(params, ret) => {
                 let params = params
                     .into_iter()
                     .map(|param| {
@@ -25,12 +27,15 @@ impl TypeChecker {
                             ty,
                         })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let return_ty = Box::new(self.sub_ty(*return_ty)?);
-                Ok(ConcreteTy::Func(params, return_ty))
+                    .try_collect()?;
+                let ret = Box::new(Return {
+                    mutable: ret.mutable,
+                    ty: self.sub_ty(ret.ty)?,
+                });
+                Ok(Ty::Fn(params, ret))
             }
-            Ty::Adt(ident, arg_tys) => Ok(ConcreteTy::Adt(ident, self.sub_ty_all(arg_tys)?)),
-            Ty::Var(var) | Ty::IntVar(var) => {
+            PartialTy::Adt(ident, arg_tys) => Ok(Ty::Adt(ident, self.sub_tys(arg_tys)?)),
+            PartialTy::Var(var) | PartialTy::IntVar(var) => {
                 let root = self.table.find(var);
                 self.table
                     .probe_value(root)
@@ -39,109 +44,133 @@ impl TypeChecker {
         }
     }
 
-    fn sub_ty_all(&mut self, tys: Vec<Ty>) -> Result<Vec<ConcreteTy>, ErrorKind> {
+    fn sub_tys(&mut self, tys: Vec<PartialTy>) -> Result<Vec<Ty<AdtId>>, ErrorKind> {
         tys.into_iter().map(|ty| self.sub_ty(ty)).collect()
     }
 
-    pub(super) fn sub_expr(&mut self, expr: Expr<Ty>) -> Result<Expr<ConcreteTy>, Error> {
+    pub(super) fn sub_expr(
+        &mut self,
+        var_table: &mut VarTable,
+        expr: Expr<PartialTy, AdtId, VarId>,
+    ) -> Result<Expr<Ty<AdtId>, AdtId, VarId>, Error> {
         let ty = self.sub_ty(expr.ty).map_err(|err| err.span(expr.span))?;
         let kind = match expr.kind {
-            ExprKind::Ident(ident) => ExprKind::Ident(ident),
+            ExprKind::Path(path) => {
+                if !path.prefix.is_empty() {
+                    todo!("handle paths")
+                }
+
+                var_table[path.end].ty = Some(ty.clone());
+                ExprKind::Path(path)
+            }
             ExprKind::Lit(lit) => ExprKind::Lit(lit),
-            ExprKind::Array(exprs) => ExprKind::Array(self.sub_expr_all(exprs)?),
-            ExprKind::Tuple(exprs) => ExprKind::Tuple(self.sub_expr_all(exprs)?),
-            ExprKind::CallExpr { func, args } => ExprKind::CallExpr {
-                func: self.sub_expr_box(func)?,
+            ExprKind::Array(exprs) => ExprKind::Array(self.sub_exprs(var_table, exprs)?),
+            ExprKind::Tuple(exprs) => ExprKind::Tuple(self.sub_exprs(var_table, exprs)?),
+            ExprKind::Call { func, args } => ExprKind::Call {
+                func: self.sub_expr_box(var_table, func)?,
                 args: args
                     .into_iter()
                     .map(|arg| {
-                        self.sub_expr(arg.val).map(|val| Arg {
-                            label: arg.label,
+                        self.sub_expr(var_table, arg.val).map(|val| Arg {
                             mutable: arg.mutable,
                             val,
                         })
                     })
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .try_collect()?,
             },
-            ExprKind::InfixExpr { op, lhs, rhs } => ExprKind::InfixExpr {
+            ExprKind::Infix { op, lhs, rhs } => ExprKind::Infix {
                 op,
-                lhs: self.sub_expr_box(lhs)?,
-                rhs: self.sub_expr_box(rhs)?,
+                lhs: self.sub_expr_box(var_table, lhs)?,
+                rhs: self.sub_expr_box(var_table, rhs)?,
             },
-            ExprKind::UnaryExpr { op, expr } => ExprKind::UnaryExpr {
+            ExprKind::Unary { op, expr } => ExprKind::Unary {
                 op,
-                expr: self.sub_expr_box(expr)?,
+                expr: self.sub_expr_box(var_table, expr)?,
             },
-            ExprKind::Let { binding, val } => ExprKind::Let {
-                binding,
-                val: self.sub_expr_box(val)?,
-            },
-            ExprKind::LambdaExpr {
+            ExprKind::Lambda { params, body } => ExprKind::Lambda {
                 params,
-                return_ty,
-                body,
-            } => ExprKind::LambdaExpr {
-                params,
-                return_ty,
-                body: self.sub_expr_box(body)?,
+                body: self.sub_expr_box(var_table, body)?,
             },
-            ExprKind::IndexExpr { arr, idx } => ExprKind::IndexExpr {
-                arr: self.sub_expr_box(arr)?,
-                idx: self.sub_expr_box(idx)?,
+            ExprKind::Index { arr, idx } => ExprKind::Index {
+                arr: self.sub_expr_box(var_table, arr)?,
+                idx: self.sub_expr_box(var_table, idx)?,
             },
-            ExprKind::FieldExpr { base, field } => ExprKind::FieldExpr {
-                base: self.sub_expr_box(base)?,
+            ExprKind::Field { base, field } => ExprKind::Field {
+                base: self.sub_expr_box(var_table, base)?,
                 field,
             },
             ExprKind::If { cond, th, el } => ExprKind::If {
-                cond: self.sub_expr_box(cond)?,
-                th: self.sub_expr_box(th)?,
-                el: el.map(|el| self.sub_expr(*el)).transpose()?.map(Box::new),
+                cond: self.sub_expr_box(var_table, cond)?,
+                th: self.sub_expr_box(var_table, th)?,
+                el: el
+                    .map(|el| self.sub_expr(var_table, *el))
+                    .transpose()?
+                    .map(Box::new),
             },
             ExprKind::Match { scrutinee, arms } => {
-                let scrutinee = self.sub_expr_box(scrutinee)?;
+                let scrutinee = self.sub_expr_box(var_table, scrutinee)?;
                 let arms = arms
                     .into_iter()
                     .map(|arm| {
                         Ok(MatchArm {
-                            pattern: arm.pattern,
-                            guard: arm
-                                .guard
-                                .map(|guard| self.sub_expr_box(guard))
-                                .transpose()?,
-                            body: self.sub_expr_box(arm.body)?,
+                            pat: arm.pat,
+                            body: self.sub_expr(var_table, arm.body)?,
                             span: arm.span,
                         })
                     })
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .try_collect()?;
                 ExprKind::Match { scrutinee, arms }
             }
-            ExprKind::For {
-                pattern,
-                iter,
-                body,
-            } => ExprKind::For {
-                pattern,
-                iter: self.sub_expr_box(iter)?,
-                body: self.sub_expr_box(body)?,
+            ExprKind::For { pat, iter, body } => ExprKind::For {
+                pat,
+                iter: self.sub_expr_box(var_table, iter)?,
+                body: self.sub_expr_box(var_table, body)?,
             },
-            ExprKind::While { cond, body } => ExprKind::While {
-                cond: self.sub_expr_box(cond)?,
-                body: self.sub_expr_box(body)?,
-            },
+            ExprKind::Loop(body) => ExprKind::Loop(self.sub_expr_box(var_table, body)?),
             ExprKind::Break => ExprKind::Break,
             ExprKind::Continue => ExprKind::Continue,
-            ExprKind::Return(expr) => ExprKind::Return(self.sub_expr_box(expr)?),
-            ExprKind::Block(exprs) => ExprKind::Block(self.sub_expr_all(exprs)?),
+            ExprKind::Return(expr) => ExprKind::Return(self.sub_expr_box(var_table, expr)?),
+            ExprKind::Block(stmts) => ExprKind::Block(
+                stmts
+                    .into_iter()
+                    .map(|s| self.sub_stmt(var_table, s))
+                    .try_collect()?,
+            ),
         };
         Ok(kind.span_ty(expr.span, ty))
     }
 
-    fn sub_expr_all(&mut self, exprs: Vec<Expr<Ty>>) -> Result<Vec<Expr<ConcreteTy>>, Error> {
-        exprs.into_iter().map(|expr| self.sub_expr(expr)).collect()
+    fn sub_exprs(
+        &mut self,
+        var_table: &mut VarTable,
+        exprs: Vec<Expr<PartialTy, AdtId, VarId>>,
+    ) -> Result<Vec<Expr<Ty<AdtId>, AdtId, VarId>>, Error> {
+        exprs
+            .into_iter()
+            .map(|expr| self.sub_expr(var_table, expr))
+            .collect()
     }
 
-    fn sub_expr_box(&mut self, expr: Box<Expr<Ty>>) -> Result<Box<Expr<ConcreteTy>>, Error> {
-        self.sub_expr(*expr).map(Box::new)
+    fn sub_expr_box(
+        &mut self,
+        var_table: &mut VarTable,
+        expr: Box<Expr<PartialTy, AdtId, VarId>>,
+    ) -> Result<Box<Expr<Ty<AdtId>, AdtId, VarId>>, Error> {
+        self.sub_expr(var_table, *expr).map(Box::new)
+    }
+
+    fn sub_stmt(
+        &mut self,
+        var_table: &mut VarTable,
+        stmt: Stmt<PartialTy, AdtId, VarId>,
+    ) -> Result<Stmt<Ty<AdtId>, AdtId, VarId>, Error> {
+        match stmt {
+            Stmt::Decl { binding, val, span } => Ok(Stmt::Decl {
+                binding,
+                val: self.sub_expr(var_table, val)?,
+                span,
+            }),
+            Stmt::Expr(expr) => self.sub_expr(var_table, expr).map(Stmt::Expr),
+        }
     }
 }

@@ -5,11 +5,12 @@ members = [
     "span",
     "ident",
     "errors",
+    "types",
     "lex",
     "parse",
     "ast",
     "nameres",
-    # "typecheck",
+    "typecheck",
 ]
 
 [workspace.lints.clippy]
@@ -17,5 +18,5 @@ must_use_candidate = "allow"
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 
-[workspace.lints.rustc]
-missing_docs = "warn"
+[workspace.lints.rust]
+# missing_docs = "warn"

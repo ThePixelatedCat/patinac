@@ -3,13 +3,13 @@ use smallvec::smallvec;
 
 use ast::{
     exprs::{Binding, ExprKind, InfixOp},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Return, Variant},
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
     patterns::PatKind,
-    types::TyKind,
 };
 use ident::Ident;
 use lex::TokKind;
 use span::Span;
+use types::Ty;
 
 use crate::{ErrorKind, Parser, items::Item};
 
@@ -21,7 +21,7 @@ fn const_items() {
             ident: Ident::new("hello_world"),
             ident_span: Span::from(6..17),
             kind: ExecKind::Const {
-                ty: Some(TyKind::string().span(19..25),),
+                ty: Some(Ty::string_span(19..25)),
                 val: ExprKind::string("Hello, World!").span(28..43)
             },
         }))
@@ -40,7 +40,6 @@ fn const_items() {
                         pat: PatKind::ident("x").span(14..15),
                         ty: None
                     }],
-                    return_ty: None,
                     body: ExprKind::ident("x").span(20..21).into()
                 }
                 .span(11..21)
@@ -60,12 +59,12 @@ fn record_items() {
             kind: AdtKind::Record(vec![
                 Field {
                     ident: Ident::new("x"),
-                    ty: TyKind::Int.span(16..19),
+                    ty: Ty::Int,
                     span: Span::from(13..19)
                 },
                 Field {
                     ident: Ident::new("y"),
-                    ty: TyKind::Int.span(24..27),
+                    ty: Ty::Int,
                     span: Span::from(21..27)
                 }
             ])
@@ -81,24 +80,23 @@ record Foo[T, U](
         Parser::parse_item(input),
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Foo").span(8..11),
-            generics: smallvec![Ident::new("T"), Ident::new("U"),],
+            generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
             span: Span::from(1..60),
             kind: AdtKind::Record(vec![
                 Field {
                     ident: Ident::new("x"),
-                    ty: TyKind::Char.span(26..30),
+                    ty: Ty::Char,
                     span: Span::from(23..30)
                 },
                 Field {
                     ident: Ident::new("bar"),
-                    ty: TyKind::Adt(
-                        Ident::new("Bar"),
-                        vec![
-                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(51..52)])
-                                .span(47..53),
-                        ]
-                    )
-                    .span(43..54),
+                    ty: Ty::Adt(
+                        Ident::new("Bar").span(43..46),
+                        vec![Ty::Adt(
+                            Ident::new("Baz").span(47..50),
+                            vec![Ty::named_span("T", 51..52)]
+                        )]
+                    ),
                     span: Span::from(38..54)
                 }
             ])
@@ -130,7 +128,7 @@ enum Foo
                     ident: Ident::new("Y").span(30..31),
                     fields: vec![Field {
                         ident: Ident::new("v"),
-                        ty: TyKind::named("Bar").span(35..38),
+                        ty: Ty::named_span("Bar", 35..38),
                         span: Span::from(32..38)
                     }],
                 },
@@ -139,12 +137,12 @@ enum Foo
                     fields: vec![
                         Field {
                             ident: Ident::new("baz"),
-                            ty: TyKind::named("Baz").span(49..52),
+                            ty: Ty::named_span("Baz", 49..52),
                             span: Span::from(44..52)
                         },
                         Field {
                             ident: Ident::new("fizz"),
-                            ty: TyKind::named("Buzz").span(60..64),
+                            ty: Ty::named_span("Buzz", 60..64),
                             span: Span::from(54..64)
                         },
                     ]
@@ -167,18 +165,16 @@ fn function_items() {
                     Param {
                         mutable: true,
                         pat: PatKind::ident("a").span(11..12),
-                        ty: TyKind::Byte.span(14..18)
+                        ty: Ty::Byte
                     },
                     Param {
                         mutable: false,
                         pat: PatKind::ident("b").span(20..21),
-                        ty: TyKind::Byte.span(23..27)
+                        ty: Ty::Byte
                     }
                 ],
-                result: Return {
-                    mutable: false,
-                    ty: TyKind::unit().span(28..29)
-                },
+                ret_mut: false,
+                ret_ty: Ty::unit(),
                 body: ExprKind::Infix {
                     op: InfixOp::Assign,
                     lhs: ExprKind::ident("a").span(32..33).into(),

@@ -3,11 +3,11 @@ use pretty_assertions::assert_eq;
 use ast::{
     exprs::{Arg, Binding, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
     patterns::PatKind,
-    types::TyKind,
 };
 use ident::Ident;
 use lex::TokKind;
 use span::Span;
+use types::Ty;
 
 use crate::{ErrorKind, Parser};
 
@@ -272,10 +272,9 @@ fn compound_expressions() {
                         Binding {
                             mutable: false,
                             pat: PatKind::ident("b").span(11..12),
-                            ty: Some(TyKind::Int.span(14..17))
+                            ty: Some(Ty::Int)
                         }
                     ],
-                    return_ty: None,
                     body: ExprKind::Infix {
                         op: InfixOp::Add,
                         lhs: ExprKind::ident("a").span(22..23).into(),
@@ -368,7 +367,7 @@ fn var_expressions() {
             binding: Binding {
                 mutable: true,
                 pat: PatKind::ident("y").span(8..9),
-                ty: Some(TyKind::Float.span(11..16))
+                ty: Some(Ty::Float)
             },
             val: ExprKind::float(7.0).span(19..22).into(),
             span: Span::from(0..22)
