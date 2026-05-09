@@ -7,12 +7,10 @@ use crate::{Error, ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     pub fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
-        let token = match self.next() {
-            Ok(token) => token,
-            Err(err) => return err,
-        };
-
-        f(token.kind).span(token.span)
+        match self.next() {
+            Ok(token) => f(token.kind).span(token.span),
+            Err(err) => err,
+        }
     }
 
     pub fn binding(&mut self) -> Result<Binding<SpanIdent, Ident>> {

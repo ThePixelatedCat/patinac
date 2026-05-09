@@ -38,7 +38,7 @@ pub struct AdtInfo {
 }
 
 impl AdtInfo {
-    pub fn param(ident: SpanIdent) -> Self {
+    pub const fn param(ident: SpanIdent) -> Self {
         Self {
             ident,
             kind: AdtInfoKind::Param,
@@ -65,7 +65,7 @@ pub struct FieldInfo {
     pub span: Span,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct PartialAdtTable(Vec<Option<AdtInfo>>);
 
 impl Index<AdtId> for PartialAdtTable {
@@ -103,7 +103,7 @@ impl PartialAdtTable {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct AdtTable(Vec<AdtInfo>);
 
 impl Index<AdtId> for AdtTable {
@@ -122,7 +122,7 @@ impl AdtTable {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct PartialVarTable(Vec<Option<VarInfo>>);
 
 impl Index<VarId> for PartialVarTable {
@@ -162,7 +162,7 @@ impl PartialVarTable {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct VarTable(Vec<VarInfo>);
 
 impl Index<VarId> for VarTable {
@@ -187,7 +187,7 @@ impl VarTable {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct NameTable {
     pub adts: AdtTable,
     pub vars: VarTable,

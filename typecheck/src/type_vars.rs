@@ -29,10 +29,10 @@ pub struct Param {
 
 impl Display for Param {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
+        match self.mutable {
+            true => write!(f, "mut {}", self.ty),
+            false => self.ty.fmt(f),
         }
-        self.ty.fmt(f)
     }
 }
 
@@ -44,10 +44,10 @@ pub struct Return {
 
 impl Display for Return {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
+        match self.mutable {
+            true => write!(f, "mut {}", self.ty),
+            false => self.ty.fmt(f),
         }
-        self.ty.fmt(f)
     }
 }
 

@@ -235,8 +235,7 @@ proptest! {
     fn reverse(in_toks in vec(T::arb(), 8..=512)) {
         let raw = in_toks.iter().map(T::reverse).join(" ");
 
-        let Ok(toks) = lex(&raw) else {return Err(TestCaseError::Fail("lexer errored".into()))};
-        let out_toks: Vec<_> = toks.into_iter().map(|tok| tok.kind).collect();
+        let out_toks: Vec<_> = lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();
 
         prop_assert_eq!(in_toks, out_toks)
     }

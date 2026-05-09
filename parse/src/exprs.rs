@@ -44,7 +44,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         self.expr_inner(0)
     }
 
-    fn expr_inner(&mut self, binding_power: u8) -> Result<Expr<(), SpanIdent, Ident>> {
+    fn expr_inner(&mut self, ref_binding_power: u8) -> Result<Expr<(), SpanIdent, Ident>> {
         let mut lhs = match self.peek()? {
             TokKind::Ident => self.path_expr(),
             TokKind::IntLit
@@ -67,18 +67,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Break => self.break_expr(),
             TokKind::Continue => self.continue_expr(),
             TokKind::Return => self.return_expr(),
-            _ => {
-                let err_tok = self.next()?;
-                let mut err = ErrorKind::Unexpected(err_tok.kind)
-                    .span(err_tok.span)
-                    .context("At start of expression");
-
-                if err_tok.kind == TokKind::Let {
-                    err = err.context("`let` is a statement, and can only be used within a block");
-                }
-
-                Err(err)
-            }
+            TokKind::Let => Err(self
+                .err_next(ErrorKind::Unexpected)
+                .context("`let` is a statement, and can only be used within a block")),
+            _ => Err(self.err_next(ErrorKind::Unexpected)),
         }?;
 
         loop {
@@ -113,7 +105,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
             let (left_binding_power, right_binding_power) = op.binding_power();
 
-            if left_binding_power < binding_power {
+            if left_binding_power < ref_binding_power {
                 break;
             }
 

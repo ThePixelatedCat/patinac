@@ -34,9 +34,7 @@ pub fn resolve(
     let mut spans: HashMap<AdtId, Span> = HashMap::default();
     for item in &ast.adts {
         if let Some(id) = adt_scope.get(&item.ident.ident) {
-            return Err(
-                ErrorKind::DupItem(item.ident.ident, *spans.get(id).unwrap()).span(item.ident.span),
-            );
+            return Err(ErrorKind::DupItem(item.ident.ident, spans[id]).span(item.ident.span));
         }
 
         let id = adt_table.reserve();
@@ -56,9 +54,7 @@ pub fn resolve(
     let mut spans: HashMap<VarId, Span> = HashMap::default();
     for item in &ast.execs {
         if let Some(id) = var_scope.get(&item.ident) {
-            return Err(
-                ErrorKind::DupItem(item.ident, *spans.get(id).unwrap()).span(item.ident_span)
-            );
+            return Err(ErrorKind::DupItem(item.ident, spans[id]).span(item.ident_span));
         }
 
         let id = var_table.reserve();
@@ -287,13 +283,13 @@ fn resolve_expr(
                 todo!("handle paths")
             }
 
-            let Some(&ident) = var_scope.get(&path.end) else {
-                return Err(ErrorKind::UnboundVariable(path.end).span(expr.span));
-            };
-            ExprKind::Path(Path {
-                prefix: smallvec![],
-                end: ident,
-            })
+            match var_scope.get(&path.end) {
+                Some(&ident) => ExprKind::Path(Path {
+                    prefix: smallvec![],
+                    end: ident,
+                }),
+                None => return Err(ErrorKind::UnboundVariable(path.end).span(expr.span)),
+            }
         }
         ExprKind::Lit(lit) => ExprKind::Lit(lit),
         ExprKind::Array(exprs) => ExprKind::Array(resolve_exprs(
@@ -360,11 +356,10 @@ fn resolve_expr(
                     && info.mutable
                 {
                     let ident = info.ident;
-                    let info = VarInfo {
+                    let id = var_table.insert(VarInfo {
                         mutable: false,
                         ..info.clone()
-                    };
-                    let id = var_table.insert(info);
+                    });
                     var_scope.insert(ident, id);
                 }
             }
@@ -504,9 +499,7 @@ fn collect_captures(captures: &mut HashSet<Ident>, expr: &Expr<(), SpanIdent, Id
         ExprKind::If { cond, th, el } => {
             collect_captures(captures, cond);
             collect_captures(captures, th);
-            if let Some(el) = el {
-                collect_captures(captures, el);
-            }
+            el.as_ref().inspect(|el| collect_captures(captures, el));
         }
         ExprKind::Match { scrutinee, arms } => {
             collect_captures(captures, scrutinee);
@@ -547,7 +540,7 @@ fn resolve_stmt(
 ) -> Result<Stmt<(), AdtId, VarId>> {
     match stmt {
         Stmt::Decl { binding, val, span } => {
-            // Val must be resolved before binding, to ensure the declared variable isn't in scope during val
+            // val must be resolved before binding, to ensure the declared variable isn't in scope within it's own declaration
             let val = resolve_expr(adt_table, adt_scope, var_table, var_scope, val)?;
             let binding = resolve_binding(adt_table, adt_scope, var_table, var_scope, binding)?;
 
@@ -585,14 +578,14 @@ fn resolve_binding(
 }
 
 fn resolve_ty(adt_scope: &Scope<AdtId>, ty: Ty<SpanIdent>) -> Result<Ty<AdtId>> {
-    let ty = match ty {
-        Ty::Int => Ty::Int,
-        Ty::UInt => Ty::UInt,
-        Ty::Byte => Ty::Byte,
-        Ty::Float => Ty::Float,
-        Ty::Char => Ty::Char,
-        Ty::Bool => Ty::Bool,
-        Ty::Tuple(tys) => Ty::Tuple(resolve_tys(adt_scope, tys)?),
+    match ty {
+        Ty::Int => Ok(Ty::Int),
+        Ty::UInt => Ok(Ty::UInt),
+        Ty::Byte => Ok(Ty::Byte),
+        Ty::Float => Ok(Ty::Float),
+        Ty::Char => Ok(Ty::Char),
+        Ty::Bool => Ok(Ty::Bool),
+        Ty::Tuple(tys) => Ok(Ty::Tuple(resolve_tys(adt_scope, tys)?)),
         Ty::Fn(params, ret) => {
             let params = params
                 .into_iter()
@@ -607,17 +600,13 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: Ty<SpanIdent>) -> Result<Ty<AdtId>> 
                 mutable: ret.mutable,
                 ty: resolve_ty(adt_scope, ret.ty)?,
             });
-            Ty::Fn(params, ret)
+            Ok(Ty::Fn(params, ret))
         }
-        Ty::Adt(ident, args) => {
-            let Some(id) = adt_scope.get(&ident.ident).copied() else {
-                return Err(ErrorKind::UnknownType(Ty::Adt(ident, args)).span(ident.span));
-            };
-            let args = resolve_tys(adt_scope, args)?;
-            Ty::Adt(id, args)
-        }
-    };
-    Ok(ty)
+        Ty::Adt(ident, args) => match adt_scope.get(&ident.ident).copied() {
+            Some(id) => Ok(Ty::Adt(id, resolve_tys(adt_scope, args)?)),
+            None => Err(ErrorKind::UnknownType(Ty::Adt(ident, args)).span(ident.span)),
+        },
+    }
 }
 
 fn resolve_tys(adt_scope: &Scope<AdtId>, tys: Vec<Ty<SpanIdent>>) -> Result<Vec<Ty<AdtId>>> {
@@ -650,21 +639,19 @@ fn resolve_pat(
         }
         PatKind::Constructor(ident, pats) => todo!(),
         PatKind::Tuple(old_pats) => {
-            let tys = if let Some(Ty::Tuple(tys)) = ty {
-                tys
-            } else {
-                vec![]
+            let tys = match ty {
+                Some(Ty::Tuple(tys)) => tys,
+                _ => vec![],
             };
 
-            let mut pats = Vec::new();
-            for (pat, ty) in iter::zip(
+            let pats = iter::zip(
                 old_pats,
                 tys.into_iter().map(Some).chain(iter::repeat(None)),
-            ) {
-                pats.push(resolve_pat(
-                    adt_table, adt_scope, var_table, var_scope, pat, mutable, ty,
-                ));
-            }
+            )
+            .map(|(pat, ty)| {
+                resolve_pat(adt_table, adt_scope, var_table, var_scope, pat, mutable, ty)
+            })
+            .collect();
 
             PatKind::Tuple(pats)
         }

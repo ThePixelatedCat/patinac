@@ -201,13 +201,12 @@ impl TypeChecker {
             })
             .try_collect()?;
 
-        for vec in (0..args.len()).permutations(2) {
-            let [i, j] = vec[..] else { unreachable!() };
-            let (a, b) = (&args[i], &args[j]);
-
-            if a.mutable || b.mutable {
-                self.check_places_unique(&a.val, &b.val)?;
-            }
+        for (a, b) in (0..args.len())
+            .permutations(2)
+            .map(|p| (&args[p[0]], &args[p[1]]))
+            .filter(|(a, b)| a.mutable || b.mutable)
+        {
+            self.check_places_unique(&a.val, &b.val)?;
         } // TODO optimise???
 
         let return_ty = self.fresh_var();
@@ -524,9 +523,10 @@ impl TypeChecker {
         match stmt {
             Stmt::Decl { binding, val, span } => {
                 let val = self.infer_expr(name_table, val)?;
-                if let Some(ty) = &binding.ty {
-                    self.constrain_eq(&val, ty.into());
-                }
+                binding
+                    .ty
+                    .as_ref()
+                    .inspect(|&ty| self.constrain_eq(&val, ty.into()));
 
                 Ok(Stmt::Decl { binding, val, span })
             }

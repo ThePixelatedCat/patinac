@@ -22,13 +22,10 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
             occurs_check(&ret.ty, var)
         }
         PartialTy::Adt(_, args) => args.iter().try_for_each(|ty| occurs_check(ty, var)),
-        PartialTy::Var(this_var) | PartialTy::IntVar(this_var) => {
-            if *this_var == var {
-                Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)))
-            } else {
-                Ok(())
-            }
+        PartialTy::Var(this_var) | PartialTy::IntVar(this_var) if *this_var == var => {
+            Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)))
         }
+        PartialTy::Var(_) | PartialTy::IntVar(_) => Ok(()),
     }
 }
 
@@ -182,26 +179,4 @@ impl TypeChecker {
             }
         }
     }
-
-    // pub(super) fn unify_either(&self, ty: &Ty, opt_a: &Ty, opt_b: &Ty) -> Result<(), TypeError> {
-    //     let snapshot = self.table.snapshot();
-
-    //     match self.unify(opt_a, ty) {
-    //         Ok(()) => {
-    //             self.table.commit(snapshot);
-    //             Ok(())
-    //         }
-    //         Err(TypeError::MismatchedTypes { expected, found })
-    //             if expected == *opt_a && found == *ty =>
-    //         {
-    //             self.table.rollback_to(snapshot);
-    //             self.unify(opt_b, ty)?;
-    //             Ok(())
-    //         }
-    //         Err(e) => {
-    //             self.table.rollback_to(snapshot);
-    //             Err(e)
-    //         }
-    //     }
-    // }
 }

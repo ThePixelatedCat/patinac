@@ -16,11 +16,11 @@ pub enum Ty<A> {
     Char,
     Bool,
     #[display("{{{}}}", _0.iter().join(", "))]
-    Tuple(Vec<Ty<A>>),
+    Tuple(Vec<Self>),
     #[display("fn({}) -> {_1}", _0.iter().join(", "))]
     Fn(Vec<Param<A>>, Box<Return<A>>),
     #[display("{_0}[{}]", _1.iter().join(", "))]
-    Adt(A, Vec<Ty<A>>),
+    Adt(A, Vec<Self>),
 }
 
 impl<A> Ty<A> {
@@ -42,7 +42,7 @@ impl Ty<Ident> {
     }
 
     /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
-    pub fn array(inner: Ty<Ident>) -> Self {
+    pub fn array(inner: Self) -> Self {
         Self::Adt(Ident::new("Array"), vec![inner])
     }
 }
@@ -58,7 +58,7 @@ impl Ty<SpanIdent> {
     }
 
     /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
-    pub fn array_span(inner: Ty<SpanIdent>, span: impl Into<Span>) -> Self {
+    pub fn array_span(inner: Self, span: impl Into<Span>) -> Self {
         Self::Adt(Ident::new("Array").span(span), vec![inner])
     }
 }
