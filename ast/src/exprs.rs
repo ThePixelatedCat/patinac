@@ -56,8 +56,8 @@ pub enum ExprKind<T, A, V> {
     },
     If {
         cond: Box<Expr<T, A, V>>,
-        th: Box<Expr<T, A, V>>,
-        el: Option<Box<Expr<T, A, V>>>,
+        th: BlockExpr<T, A, V>,
+        el: Option<BlockExpr<T, A, V>>,
     },
     Match {
         scrutinee: Box<Expr<T, A, V>>,
@@ -66,13 +66,13 @@ pub enum ExprKind<T, A, V> {
     For {
         pat: Pat<V>,
         iter: Box<Expr<T, A, V>>,
-        body: Box<Expr<T, A, V>>,
+        body: BlockExpr<T, A, V>,
     },
-    Loop(Box<Expr<T, A, V>>),
+    Loop(BlockExpr<T, A, V>),
     Break,
     Continue,
     Return(Box<Expr<T, A, V>>),
-    Block(Vec<Stmt<T, A, V>>),
+    Block(BlockExpr<T, A, V>),
 }
 
 impl<A, V> ExprKind<(), A, V> {
@@ -159,6 +159,9 @@ pub struct MatchArm<T, A, V> {
     pub body: Expr<T, A, V>,
     pub span: Span,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockExpr<T, A, V>(pub Vec<Stmt<T, A, V>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {

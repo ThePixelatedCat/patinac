@@ -121,9 +121,9 @@ fn test(var: Type, var2_: Bool): Int -> {
  
     let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2 ** 4
     let mut chars = x.chars()
-    if let Some(c) = chars.next() then
+    if let Some(c) = chars.next() 
         x = x + c
-    else if !var2_ then 
+    else if !var2_  
         x = x + ","
 }
 "#;
@@ -183,26 +183,24 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Ident.span(src, 189..193),
             T::LParen.span(src, 193..194),
             T::RParen.span(src, 194..195),
-            T::Then.span(src, 196..200),
             // `x` re-assignment
+            T::Ident.span(src, 205..206),
+            T::Eq.span(src, 207..208),
             T::Ident.span(src, 209..210),
-            T::Eq.span(src, 211..212),
+            T::Plus.span(src, 211..212),
             T::Ident.span(src, 213..214),
-            T::Plus.span(src, 215..216),
-            T::Ident.span(src, 217..218),
             // else if
-            T::Else.span(src, 223..227),
-            T::If.span(src, 228..230),
-            T::Bang.span(src, 231..232),
-            T::Ident.span(src, 232..237),
-            T::Then.span(src, 238..242),
+            T::Else.span(src, 219..223),
+            T::If.span(src, 224..226),
+            T::Bang.span(src, 227..228),
+            T::Ident.span(src, 228..233),
             // `x` re-assignment
-            T::Ident.span(src, 252..253),
-            T::Eq.span(src, 254..255),
-            T::Ident.span(src, 256..257),
-            T::Plus.span(src, 258..259),
-            T::StringLit.span(src, 260..263),
-            T::RBrace.span(src, 264..265),
+            T::Ident.span(src, 244..245),
+            T::Eq.span(src, 246..247),
+            T::Ident.span(src, 248..249),
+            T::Plus.span(src, 250..251),
+            T::StringLit.span(src, 252..255),
+            T::RBrace.span(src, 256..257),
         ]),
     );
 }

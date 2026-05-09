@@ -176,27 +176,18 @@ pub enum TokKind {
     /// `if`
     #[token("if")]
     If,
-    /// `then`
-    #[token("then")]
-    Then,
     /// `else`
     #[token("else")]
     Else,
     /// `match`
     #[token("match")]
     Match,
-    /// `with`
-    #[token("with")]
-    With,
     /// `for`
     #[token("for")]
     For,
     /// `in`
     #[token("in")]
     In,
-    /// `do`
-    #[token("do")]
-    Do,
     /// `loop`
     #[token("loop")]
     Loop,

@@ -176,7 +176,7 @@ impl TypeChecker {
         func: Expr<(), AdtId, VarId>,
         args: Vec<Arg<(), AdtId, VarId>>,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let func = self.infer_expr(name_table, func)?;
+        let func = Box::new(self.infer_expr(name_table, func)?);
 
         let (args, arg_tys): (Vec<_>, Vec<_>) = args
             .into_iter()
@@ -222,11 +222,7 @@ impl TypeChecker {
             ),
         );
 
-        Ok(ExprKind::Call {
-            func: Box::new(func),
-            args,
-        }
-        .span_ty(span, return_ty))
+        Ok(ExprKind::Call { func, args }.span_ty(span, return_ty))
     }
 
     fn infer_binop(
@@ -237,8 +233,8 @@ impl TypeChecker {
         lhs: Expr<(), AdtId, VarId>,
         rhs: Expr<(), AdtId, VarId>,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let lhs = self.infer_expr(name_table, lhs)?;
-        let rhs = self.infer_expr(name_table, rhs)?;
+        let lhs = Box::new(self.infer_expr(name_table, lhs)?);
+        let rhs = Box::new(self.infer_expr(name_table, rhs)?);
 
         let ty = match op {
             InfixOp::Assign => {
@@ -285,12 +281,7 @@ impl TypeChecker {
             }
         };
 
-        Ok(ExprKind::Infix {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
-        }
-        .span_ty(span, ty))
+        Ok(ExprKind::Infix { op, lhs, rhs }.span_ty(span, ty))
     }
 
     fn infer_unop(
@@ -300,7 +291,7 @@ impl TypeChecker {
         op: UnaryOp,
         expr: Expr<(), AdtId, VarId>,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let expr = self.infer_expr(name_table, expr)?;
+        let expr = Box::new(self.infer_expr(name_table, expr)?);
 
         let ty = match op {
             UnaryOp::Not => {
@@ -316,11 +307,7 @@ impl TypeChecker {
             }
         };
 
-        Ok(ExprKind::Unary {
-            op,
-            expr: Box::new(expr),
-        }
-        .span_ty(span, ty))
+        Ok(ExprKind::Unary { op, expr }.span_ty(span, ty))
     }
 
     fn infer_field(
@@ -330,12 +317,11 @@ impl TypeChecker {
         base: Expr<(), AdtId, VarId>,
         field: SpanIdent,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let base = self.infer_expr(name_table, base)?;
+        let base = Box::new(self.infer_expr(name_table, base)?);
 
         let PartialTy::Adt(base_ty, _) = base.ty else {
             return Err(ErrorKind::PrimitiveTypeNoField(base.ty).span(span));
         };
-
         let AdtInfoKind::Record { fields, .. } = &name_table.adts[base_ty].kind else {
             return Err(ErrorKind::MissingField.span(span));
         };
@@ -348,11 +334,7 @@ impl TypeChecker {
                 .ty,
         );
 
-        Ok(ExprKind::Field {
-            base: Box::new(base),
-            field,
-        }
-        .span_ty(span, field_ty))
+        Ok(ExprKind::Field { base, field }.span_ty(span, field_ty))
     }
 
     fn infer_indexing(
@@ -362,19 +344,15 @@ impl TypeChecker {
         arr: Expr<(), AdtId, VarId>,
         idx: Expr<(), AdtId, VarId>,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let arr = self.infer_expr(name_table, arr)?;
+        let arr = Box::new(self.infer_expr(name_table, arr)?);
 
         let inner_ty = self.fresh_var();
         self.constrain_eq(&arr, PartialTy::array(inner_ty.clone()));
 
-        let idx = self.infer_expr(name_table, idx)?;
+        let idx = Box::new(self.infer_expr(name_table, idx)?);
         self.constrain_eq(&idx, PartialTy::UInt);
 
-        Ok(ExprKind::Index {
-            arr: Box::new(arr),
-            idx: Box::new(idx),
-        }
-        .span_ty(span, inner_ty))
+        Ok(ExprKind::Index { arr, idx }.span_ty(span, inner_ty))
     }
 
     fn infer_if(
@@ -385,10 +363,10 @@ impl TypeChecker {
         th: Expr<(), AdtId, VarId>,
         el: Option<Expr<(), AdtId, VarId>>,
     ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let cond = self.infer_expr(name_table, cond)?;
+        let cond = Box::new(self.infer_expr(name_table, cond)?);
         self.constrain_eq(&cond, PartialTy::Bool);
 
-        let th = self.infer_expr(name_table, th)?;
+        let th = Box::new(self.infer_expr(name_table, th)?);
 
         let el = el
             .map(|el| self.infer_expr(name_table, el))
@@ -400,12 +378,7 @@ impl TypeChecker {
         }
 
         let th_ty = th.ty.clone();
-        Ok(ExprKind::If {
-            cond: Box::new(cond),
-            th: Box::new(th),
-            el,
-        }
-        .span_ty(span, th_ty))
+        Ok(ExprKind::If { cond, th, el }.span_ty(span, th_ty))
     }
 
     fn infer_match(
@@ -473,24 +446,17 @@ impl TypeChecker {
             })
             .collect();
 
-        let body = self.infer_expr(name_table, body)?;
+        let body = Box::new(self.infer_expr(name_table, body)?);
 
-        let body_ty = body.ty.clone();
+        let ty = PartialTy::Fn(
+            param_tys,
+            Box::new(Return {
+                mutable: false,
+                ty: body.ty.clone(),
+            }),
+        );
 
-        Ok(ExprKind::Lambda {
-            params,
-            body: Box::new(body),
-        }
-        .span_ty(
-            span,
-            PartialTy::Fn(
-                param_tys,
-                Box::new(Return {
-                    mutable: false,
-                    ty: body_ty,
-                }),
-            ),
-        ))
+        Ok(ExprKind::Lambda { params, body }.span_ty(span, ty))
     }
 
     fn infer_block(

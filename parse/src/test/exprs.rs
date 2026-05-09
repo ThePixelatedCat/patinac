@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use ast::{
-    exprs::{Arg, Binding, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
     patterns::PatKind,
 };
 use ident::Ident;
@@ -515,8 +515,8 @@ fn control_exprs() {
     );
 
     assert_eq!(
-        Parser::parse_expr(r#"loop break"#),
-        Ok(ExprKind::Loop(ExprKind::Break.span(5..10).into()).span(0..10))
+        Parser::parse_expr("loop { break }"),
+        Ok(ExprKind::Loop(BlockExpr(vec![Stmt::Expr(ExprKind::Break.span(7..12))])).span(0..14))
     );
 }
 
@@ -526,15 +526,15 @@ fn block_expressions() {
 let mut y = 5
 3 + 1 - 2
 y = 1
-if y < 3 then {
+if y < 3 {
     let a = 5
     a
-} else 32
+} else { 32 }
 }";
 
     assert_eq!(
         Parser::parse_expr(input),
-        Ok(ExprKind::Block(vec![
+        Ok(ExprKind::Block(BlockExpr(vec![
             Stmt::Decl {
                 binding: Binding {
                     mutable: true,
@@ -575,26 +575,24 @@ if y < 3 then {
                     }
                     .span(34..39)
                     .into(),
-                    th: ExprKind::Block(vec![
+                    th: BlockExpr(vec![
                         Stmt::Decl {
                             binding: Binding {
                                 mutable: false,
-                                pat: PatKind::ident("a").span(55..56),
+                                pat: PatKind::ident("a").span(50..51),
                                 ty: None
                             },
-                            val: ExprKind::int(5).span(59..60).into(),
-                            span: Span::from(51..60)
+                            val: ExprKind::int(5).span(54..55).into(),
+                            span: Span::from(46..55)
                         },
-                        Stmt::Expr(ExprKind::ident("a").span(65..66))
-                    ])
-                    .span(45..68)
-                    .into(),
-                    el: Some(ExprKind::int(32).span(74..76).into())
+                        Stmt::Expr(ExprKind::ident("a").span(60..61))
+                    ]),
+                    el: Some(BlockExpr(vec![Stmt::Expr(ExprKind::int(32).span(71..72))]))
                 }
-                .span(31..76)
+                .span(31..75)
             )
-        ])
-        .span(0..78))
+        ]))
+        .span(0..77))
     );
 }
 

@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use ast::{
     Path,
-    exprs::{Arg, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+    exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
 };
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
@@ -57,7 +57,6 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 .map(|(lit, span)| ExprKind::Lit(lit).span(span)),
             TokKind::LBracket => self.array_lit_expr(),
             TokKind::Hash => self.tuple_lit_expr(),
-            TokKind::LBrace => self.block_expr(),
             TokKind::Minus | TokKind::Bang => self.unop_expr(),
             TokKind::Fn => self.lambda_expr(),
             TokKind::If => self.if_expr(),
@@ -67,6 +66,9 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Break => self.break_expr(),
             TokKind::Continue => self.continue_expr(),
             TokKind::Return => self.return_expr(),
+            TokKind::LBrace => self
+                .block_expr()
+                .map(|(block, span)| ExprKind::Block(block).span(span)),
             TokKind::Let => Err(self
                 .err_next(ErrorKind::Unexpected)
                 .context("`let` is a statement, and can only be used within a block")),
@@ -212,97 +214,59 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             .map(|(exprs, span)| ExprKind::Tuple(exprs).span(start..span.end))
     }
 
-    fn block_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
-        let start = self.consume(TokKind::LBrace)?.span.start;
-
-        let mut stmts = vec![];
-        while !self.at(TokKind::RBrace) {
-            stmts.push(self.stmt()?);
-        }
-
-        let end = self.consume(TokKind::RBrace)?.span.end;
-
-        Ok(ExprKind::Block(stmts).span(start..end))
-    }
-
     fn if_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
         let start = self.consume(TokKind::If)?.span.start;
 
-        let cond = self.expr()?;
-
-        self.consume(TokKind::Then)?;
-
-        let th = self.expr()?;
-
-        let el = self
+        let cond = Box::new(self.expr()?);
+        let (th, th_span) = self.block_expr()?;
+        let (el, el_span) = self
             .consume_at(TokKind::Else)
-            .map(|_| self.expr())
+            .map(|_| self.block_expr())
             .transpose()?
-            .map(Box::new);
+            .unzip();
 
-        let end = el.as_ref().map_or(th.span.end, |e| e.span.end);
+        let end = el_span.unwrap_or(th_span).end;
 
-        Ok(ExprKind::If {
-            cond: Box::new(cond),
-            th: Box::new(th),
-            el,
-        }
-        .span(start..end))
+        Ok(ExprKind::If { cond, th, el }.span(start..end))
     }
 
     fn for_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
         let start = self.consume(TokKind::For)?.span.start;
 
         let pat = self.pattern()?;
-
         self.consume(TokKind::In)?;
+        let iter = Box::new(self.expr()?);
+        let (body, body_span) = self.block_expr()?;
 
-        let iter = self.expr()?;
+        let span = start..body_span.end;
 
-        self.consume(TokKind::Do)?;
-
-        let body = self.expr()?;
-
-        let span = start..body.span.end;
-
-        Ok(ExprKind::For {
-            pat,
-            iter: Box::new(iter),
-            body: Box::new(body),
-        }
-        .span(span))
+        Ok(ExprKind::For { pat, iter, body }.span(span))
     }
 
     fn loop_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
         let start = self.consume(TokKind::Loop)?.span.start;
 
-        let body = self.expr()?;
+        let (body, body_span) = self.block_expr()?;
 
-        let span = start..body.span.end;
+        let span = start..body_span.end;
 
-        Ok(ExprKind::Loop(Box::new(body)).span(span))
+        Ok(ExprKind::Loop(body).span(span))
     }
 
     fn match_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
         let start = self.consume(TokKind::Match)?.span.start;
 
-        let scrutinee = self.expr()?;
-
-        let with_end = self.consume(TokKind::With)?.span.end;
+        let scrutinee = Box::new(self.expr()?);
+        let with_end = self.consume(TokKind::LBrace)?.span.end;
 
         let mut arms = Vec::new();
-        while self.at(TokKind::Pipe) {
+        while self.consume_at(TokKind::RBrace).is_none() {
             arms.push(self.match_arm()?);
         }
+
         let end = arms.last().map_or(with_end, |arm| arm.span.end);
 
-        let span = start..end;
-
-        Ok(ExprKind::Match {
-            scrutinee: Box::new(scrutinee),
-            arms,
-        }
-        .span(span))
+        Ok(ExprKind::Match { scrutinee, arms }.span(start..end))
     }
 
     fn match_arm(&mut self) -> Result<MatchArm<(), SpanIdent, Ident>> {
@@ -326,15 +290,11 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             _ => unreachable!("should only be called when next token is Minus or Bang"),
         };
 
-        let expr = self.expr_inner(op.binding_power())?;
+        let expr = Box::new(self.expr_inner(op.binding_power())?);
 
         let span = op_token.span.start..expr.span.end;
 
-        Ok(ExprKind::Unary {
-            op,
-            expr: Box::new(expr),
-        }
-        .span(span))
+        Ok(ExprKind::Unary { op, expr }.span(span))
     }
 
     fn lambda_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
@@ -363,6 +323,19 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     fn continue_expr(&mut self) -> Result<Expr<(), SpanIdent, Ident>> {
         let span = self.consume(TokKind::Continue)?.span;
         Ok(ExprKind::Continue.span(span))
+    }
+
+    fn block_expr(&mut self) -> Result<(BlockExpr<(), SpanIdent, Ident>, Span)> {
+        let start = self.consume(TokKind::LBrace)?.span.start;
+
+        let mut stmts = vec![];
+        while !self.at(TokKind::RBrace) {
+            stmts.push(self.stmt()?);
+        }
+
+        let end = self.consume(TokKind::RBrace)?.span.end;
+
+        Ok((BlockExpr(stmts), Span::from(start..end)))
     }
 
     fn dot_suffixes(
