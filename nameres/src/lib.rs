@@ -29,9 +29,9 @@ use hir::{
     patterns::{Pat as HirPat, PatKind as HirPatKind},
     types::{Param as ParamTy, Return, Ty as HirTy, TyKind as HirTyKind},
 };
-
-use error::{ErrorKind, Result};
 use ident::{Ident, SpanIdent};
+
+use crate::error::{ErrorKind, Result};
 
 type Scope<Id> = im::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
