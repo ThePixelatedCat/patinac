@@ -2,9 +2,27 @@ use std::fmt::Display;
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
+use hir::{AdtId, types::Ty};
 use ident::Ident;
-use nameres::AdtId;
-use types::Ty;
+
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TyVar(u32);
+
+impl UnifyKey for TyVar {
+    type Value = Option<PartialTy>;
+
+    fn index(&self) -> u32 {
+        self.0
+    }
+
+    fn from_index(u: u32) -> Self {
+        Self(u)
+    }
+
+    fn tag() -> &'static str {
+        "TypeVar"
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PartialTy {
@@ -15,46 +33,16 @@ pub enum PartialTy {
     Bool,
     Char,
     Tuple(Vec<Self>),
-    Fn(Vec<Param>, Box<Return>),
+    Fn(Vec<Param>, Return),
     Adt(AdtId, Vec<Self>),
     Var(TyVar),
     IntVar(TyVar),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Param {
-    pub mutable: bool,
-    pub ty: PartialTy,
-}
-
-impl Display for Param {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.mutable {
-            true => write!(f, "mut {}", self.ty),
-            false => self.ty.fmt(f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return {
-    pub mutable: bool,
-    pub ty: PartialTy,
-}
-
-impl Display for Return {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.mutable {
-            true => write!(f, "mut {}", self.ty),
-            false => self.ty.fmt(f),
-        }
-    }
-}
-
 impl EqUnifyValue for PartialTy {}
 
-impl From<&Ty<AdtId>> for PartialTy {
-    fn from(value: &Ty<AdtId>) -> Self {
+impl From<&Ty> for PartialTy {
+    fn from(value: &Ty) -> Self {
         match &value {
             Ty::Int => Self::Int,
             Ty::UInt => Self::UInt,
@@ -71,27 +59,19 @@ impl From<&Ty<AdtId>> for PartialTy {
                         ty: (&param.ty).into(),
                     })
                     .collect(),
-                Box::new(Return {
+                Return {
                     mutable: ret.mutable,
-                    ty: Self::from(&ret.ty),
-                }),
+                    ty: Box::new(Self::from(&*ret.ty)),
+                },
             ),
             Ty::Adt(id, args) => Self::Adt(*id, args.iter().map(PartialTy::from).collect()),
         }
     }
 }
 
-impl PartialTy {
-    pub const fn unit() -> Self {
-        Self::Tuple(vec![])
-    }
-
-    pub fn string() -> Self {
-        Self::Adt(Ident::new("String"), vec![])
-    }
-
-    pub fn array(inner: PartialTy) -> Self {
-        Self::Adt(Ident::new("Array"), vec![inner])
+impl From<Ty> for PartialTy {
+    fn from(value: Ty) -> Self {
+        Self::from(&value)
     }
 }
 
@@ -121,21 +101,46 @@ impl Display for PartialTy {
     }
 }
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TyVar(u32);
-
-impl UnifyKey for TyVar {
-    type Value = Option<PartialTy>;
-
-    fn index(&self) -> u32 {
-        self.0
+impl PartialTy {
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
     }
 
-    fn from_index(u: u32) -> Self {
-        Self(u)
+    pub fn string() -> Self {
+        Self::Adt(Ident::new("String"), vec![])
     }
 
-    fn tag() -> &'static str {
-        "TypeVar"
+    pub fn array(inner: PartialTy) -> Self {
+        Self::Adt(Ident::new("Array"), vec![inner])
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Param {
+    pub mutable: bool,
+    pub ty: PartialTy,
+}
+
+impl Display for Param {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.mutable {
+            true => write!(f, "mut {}", self.ty),
+            false => self.ty.fmt(f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Return {
+    pub mutable: bool,
+    pub ty: Box<PartialTy>,
+}
+
+impl Display for Return {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.mutable {
+            true => write!(f, "mut {}", self.ty),
+            false => self.ty.fmt(f),
+        }
     }
 }

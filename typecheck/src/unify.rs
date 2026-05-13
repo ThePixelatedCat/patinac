@@ -103,9 +103,9 @@ impl TypeChecker {
                     self.unify_ty_ty(l.ty, r.ty)
                 })?;
                 if lhs_return.mutable != rhs_return.mutable {
-                    return Err(ErrorKind::ReturnMutability(*lhs_return, *rhs_return));
+                    return Err(ErrorKind::ReturnMutability(lhs_return, rhs_return));
                 }
-                self.unify_ty_ty(lhs_return.ty, rhs_return.ty)
+                self.unify_ty_ty(*lhs_return.ty, *rhs_return.ty)
             }
 
             (PartialTy::Adt(name_a, args_a), PartialTy::Adt(name_b, args_b))
@@ -156,10 +156,10 @@ impl TypeChecker {
                         ..param
                     })
                     .collect();
-                let ret = Box::new(Return {
+                let ret = Return {
                     mutable: ret.mutable,
-                    ty: self.normalize_ty(ret.ty),
-                });
+                    ty: Box::new(self.normalize_ty(*ret.ty)),
+                };
                 PartialTy::Fn(params, ret)
             }
             PartialTy::Var(v) => match self.table.probe_value(v) {

@@ -8,14 +8,15 @@ mod unify;
 
 use ena::unify::InPlaceUnificationTable;
 
-use ast::{
-    exprs::Expr,
+use hir::{
+    AdtId, Hir, VarId,
+    exprs::{Expr, ExprId},
     items::{ExecItem, ExecKind},
+    types::Ty,
 };
 use itertools::Itertools;
-use nameres::{AdtId, NameTable, VarId};
+use slotmap::SecondaryMap;
 use span::Span;
-use types::Ty;
 
 pub use crate::error::{Error, ErrorKind, Result};
 use crate::type_vars::{PartialTy, TyVar};
@@ -34,6 +35,7 @@ enum ConstraintKind {
 pub struct TypeChecker {
     table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
+    substitution: SecondaryMap<ExprId, PartialTy>,
 }
 
 impl TypeChecker {
@@ -43,66 +45,29 @@ impl TypeChecker {
 }
 
 impl TypeChecker {
-    pub fn type_program(
-        &mut self,
-        name_table: &mut NameTable,
-        execs: Vec<ExecItem<(), AdtId, VarId>>,
-    ) -> Result<Vec<ExecItem<Ty<AdtId>, AdtId, VarId>>> {
-        let execs = execs
-            .into_iter()
-            .map(|exec| {
-                let kind = match exec.kind {
-                    ExecKind::Const { ty, val } => {
-                        // Constraint generation
-                        let val = self.infer_expr(name_table, val)?;
-
-                        {
-                            let ty = self.convert(ty.as_ref());
-                            self.constrain_eq(&val, ty);
-                        }
-
-                        self.unify()?;
-
-                        ExecKind::Const {
-                            ty,
-                            val: self.sub_expr(&mut name_table.vars, val)?,
-                        }
-                    }
-                    ExecKind::Fn {
-                        generics,
-                        params,
-                        ret_mut,
-                        ret_ty,
-                        body,
-                    } => {
-                        let body = self.infer_expr(name_table, body)?;
-
-                        {
-                            let ret_ty = self.convert(Some(&ret_ty));
-                            self.constrain_eq(&body, ret_ty);
-                        }
-
-                        self.unify()?;
-
-                        ExecKind::Fn {
-                            generics,
-                            params,
-                            ret_mut,
-                            ret_ty,
-                            body: self.sub_expr(&mut name_table.vars, body)?,
-                        }
-                    }
-                };
-
-                Ok(ExecItem {
-                    ident: exec.ident,
-                    ident_span: exec.ident_span,
-                    kind,
-                })
-            })
-            .try_collect()?;
-
-        Ok(execs)
+    pub fn type_program(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
+        for exec in &hir.execs {
+            match &exec.kind {
+                ExecKind::Const { ty, val } => {
+                    let val_ty = self.infer_expr(hir, *val)?;
+                    let annot_ty = self.convert(ty.as_ref());
+                    self.constrain_eq(val_ty, annot_ty, hir.expr_span(*val));
+                }
+                ExecKind::Fn {
+                    generics,
+                    params,
+                    ret_mut,
+                    ret_ty,
+                    body,
+                } => {
+                    let body_ty = self.infer_expr(hir, *body)?;
+                    let ret_ty = ret_ty.into();
+                    self.constrain_eq(body_ty, ret_ty, hir.expr_span(*body));
+                }
+            }
+        }
+        self.unify();
+        self.sub_all(hir)
     }
 
     fn fresh_var(&mut self) -> PartialTy {
@@ -113,10 +78,10 @@ impl TypeChecker {
         PartialTy::IntVar(self.table.new_key(None))
     }
 
-    fn constrain_eq(&mut self, a: &Expr<PartialTy, AdtId, VarId>, b: PartialTy) {
+    fn constrain_eq(&mut self, a: PartialTy, b: PartialTy, span: Span) {
         self.constraints.push(Constraint {
-            kind: ConstraintKind::TypeEqual(a.ty.clone(), b),
-            span: a.span,
+            kind: ConstraintKind::TypeEqual(a, b),
+            span,
         });
     }
 
@@ -127,11 +92,7 @@ impl TypeChecker {
         });
     }
 
-    fn clear_constraints(&mut self) {
-        self.constraints.clear();
-    }
-
-    fn convert(&mut self, ast_ty: Option<&Ty<AdtId>>) -> PartialTy {
+    fn convert(&mut self, ast_ty: Option<&Ty>) -> PartialTy {
         ast_ty.map_or_else(|| self.fresh_var(), PartialTy::from)
     }
 }

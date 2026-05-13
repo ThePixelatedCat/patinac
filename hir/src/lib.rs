@@ -61,7 +61,7 @@ impl Hir {
         id
     }
 
-    pub fn expr(&self, id: ExprId) -> &Expr {
+    pub fn expr_info(&self, id: ExprId) -> &Expr {
         &self.exprs[id]
     }
 
@@ -108,11 +108,11 @@ new_key_type! {
 pub enum AdtInfo {
     Record {
         generics: SmallVec<[AdtId; 4]>,
-        fields: HashMap<SpanIdent, FieldInfo>,
+        fields: HashMap<Ident, FieldInfo>,
     },
     Enum {
         generics: SmallVec<[AdtId; 4]>,
-        variants: HashMap<Ident, HashMap<SpanIdent, FieldInfo>>,
+        variants: HashMap<Ident, HashMap<Ident, FieldInfo>>,
     },
     Param,
 }

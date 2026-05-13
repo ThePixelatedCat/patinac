@@ -786,6 +786,7 @@ dependencies = [
  "itertools",
  "lex",
  "parse",
+ "slotmap",
  "span",
 ]
 

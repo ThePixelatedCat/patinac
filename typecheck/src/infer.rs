@@ -1,12 +1,11 @@
 use itertools::Itertools;
 
-use ast::{
-    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+use hir::{
+    AdtInfo, Hir, VarId,
+    exprs::{Arg, Binding, BlockExpr, Expr, ExprId, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt},
     patterns::Pat,
 };
 use ident::SpanIdent;
-use nameres::{AdtId, AdtInfoKind, NameTable, VarId};
-use span::Span;
 
 use crate::{
     ErrorKind, PartialTy, Result, TypeChecker,
@@ -14,430 +13,311 @@ use crate::{
 };
 
 impl TypeChecker {
-    pub(super) fn infer_expr(
-        &mut self,
-        name_table: &NameTable,
-        expr: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let span = expr.span;
-        match expr.kind {
-            ExprKind::Path(path) => {
-                if !path.prefix.is_empty() {
-                    todo!("handle paths")
-                }
-
-                Ok(self.infer_ident(name_table, span, path.end))
-            }
-            ExprKind::Lit(lit) => Ok(self.infer_lit(span, lit)),
-            ExprKind::Array(exprs) => self.infer_array(name_table, span, exprs),
-            ExprKind::Tuple(exprs) => self.infer_tuple(name_table, span, exprs),
-            ExprKind::Call { func, args } => self.infer_call(name_table, span, *func, args),
-            ExprKind::Infix { op, lhs, rhs } => self.infer_binop(name_table, span, op, *lhs, *rhs),
-            ExprKind::Unary { op, expr } => self.infer_unop(name_table, span, op, *expr),
-            ExprKind::Index { arr, idx } => self.infer_indexing(name_table, span, *arr, *idx),
-            ExprKind::Field { base, field } => self.infer_field(name_table, span, *base, field),
-            ExprKind::Lambda { params, body } => self.infer_lambda(name_table, span, params, *body),
-            ExprKind::If { cond, th, el } => {
-                self.infer_if(name_table, span, *cond, *th, el.map(|v| *v))
-            }
-            ExprKind::Match { scrutinee, arms } => {
-                self.infer_match(name_table, span, *scrutinee, arms)
-            }
-            ExprKind::For { pat, iter, body } => {
-                self.infer_for(name_table, span, pat, *iter, *body)
-            }
-            ExprKind::Loop(body) => self.infer_loop(name_table, span, *body),
-            ExprKind::Break => todo!(),
-            ExprKind::Continue => todo!(),
-            ExprKind::Return(expr) => todo!(),
-            ExprKind::Block(stmts) => self.infer_block(name_table, span, stmts),
+    pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> Result<PartialTy> {
+        let span = hir.expr_span(expr);
+        match hir.expr_info(expr) {
+            Expr::Ident(id) => Ok(self.infer_ident(hir, *id)),
+            Expr::Lit(lit) => Ok(self.infer_lit(lit)),
+            Expr::Array(exprs) => self.infer_array(hir, exprs),
+            Expr::Tuple(exprs) => self.infer_tuple(hir, exprs),
+            Expr::Call { func, args } => self.infer_call(hir, *func, args),
+            Expr::Infix { op, lhs, rhs } => self.infer_infix(hir, *op, *lhs, *rhs),
+            Expr::Prefix { op, expr } => self.infer_prefix(hir, *op, *expr),
+            Expr::Index { arr, idx } => self.infer_indexing(hir, *arr, *idx),
+            Expr::Field { base, field } => self.infer_field(hir, *base, *field),
+            Expr::Lambda { params, body } => self.infer_lambda(hir, params, *body),
+            Expr::If { cond, th, el } => self.infer_if(hir, *cond, th, el.as_ref()),
+            Expr::Match { scrutinee, arms } => self.infer_match(hir, *scrutinee, arms),
+            Expr::For { pat, iter, body } => self.infer_for(hir, pat, *iter, body),
+            Expr::Loop(body) => self.infer_loop(hir, body),
+            Expr::Break => todo!(),
+            Expr::Continue => todo!(),
+            Expr::Return(expr) => todo!(),
+            Expr::Block(block) => self.infer_block_expr(hir, block),
         }
+        .inspect(|ty| {
+            self.substitution.insert(expr, ty.clone());
+        })
     }
 
-    fn infer_multi(
-        &mut self,
-        name_table: &NameTable,
-        exprs: Vec<Expr<(), AdtId, VarId>>,
-    ) -> Result<Vec<Expr<PartialTy, AdtId, VarId>>> {
-        exprs
-            .into_iter()
-            .map(|e| self.infer_expr(name_table, e))
-            .collect()
+    fn infer_exprs(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<Vec<PartialTy>> {
+        exprs.iter().map(|&e| self.infer_expr(hir, e)).collect()
     }
 
-    fn types_of(
-        &mut self,
-        name_table: &NameTable,
-        exprs: Vec<Expr<(), AdtId, VarId>>,
-    ) -> Result<(Vec<Expr<PartialTy, AdtId, VarId>>, Vec<PartialTy>)> {
-        exprs
-            .into_iter()
-            .map(|e| {
-                let e = self.infer_expr(name_table, e)?;
-                let ty = e.ty.clone();
-                Ok((e, ty))
-            })
-            .collect()
+    fn infer_ident(&mut self, hir: &Hir, id: VarId) -> PartialTy {
+        self.convert(hir.var_info(id).ty.as_ref())
     }
 
-    fn infer_ident(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        ident: VarId,
-    ) -> Expr<PartialTy, AdtId, VarId> {
-        let ty = self.convert(name_table.vars[ident].ty.as_ref());
-        ExprKind::ident_id(ident).span_ty(span, ty)
-    }
-
-    fn check_place_mut(
-        &mut self,
-        name_table: &NameTable,
-        place: &Expr<PartialTy, AdtId, VarId>,
-    ) -> Result<()> {
-        let span = place.span;
-        match &place.kind {
-            ExprKind::Path(path) => {
-                if !path.prefix.is_empty() {
-                    todo!("handle paths")
+    fn check_place_mut(&mut self, hir: &Hir, place: ExprId) -> Result<()> {
+        let span = hir.expr_span(place);
+        match hir.expr_info(place) {
+            Expr::Ident(id) => {
+                if hir.var_info(*id).mutable {
+                    Ok(())
+                } else {
+                    Err(ErrorKind::Mutation.span(span))
                 }
-
-                name_table.vars[path.end]
-                    .mutable
-                    .then_some(())
-                    .ok_or_else(|| ErrorKind::Mutation.span(span))
             }
-            ExprKind::Field { base, .. } | ExprKind::Index { arr: base, .. } => {
-                self.check_place_mut(name_table, base)
+            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
+                self.check_place_mut(hir, *base)
             }
-            ExprKind::Call { .. } => todo!("Projections"),
+            Expr::Call { .. } => todo!("Projections"),
             _ => Err(ErrorKind::NotPlaceExpr.span(span)),
         }
     }
 
-    fn check_places_unique(
-        &mut self,
-        place_a: &Expr<PartialTy, AdtId, VarId>,
-        place_b: &Expr<PartialTy, AdtId, VarId>,
-    ) -> Result<()> {
-        match &place_b.kind {
-            ExprKind::Path(_) => (place_a != place_b)
-                .then_some(())
-                .ok_or_else(|| ErrorKind::OverlappingPlace(place_a.span).span(place_b.span)),
-            ExprKind::Field { base, .. } | ExprKind::Index { arr: base, .. } => {
-                self.check_places_unique(place_a, base)
+    fn check_places_unique(&mut self, hir: &Hir, place_a: ExprId, place_b: ExprId) -> Result<()> {
+        match hir.expr_info(place_b) {
+            info @ Expr::Ident(_) => {
+                if hir.expr_info(place_a) != info {
+                    Ok(())
+                } else {
+                    Err(ErrorKind::OverlappingPlace(hir.expr_span(place_a))
+                        .span(hir.expr_span(place_b)))
+                }
             }
-            ExprKind::Call { .. } => todo!("Projections"),
-            _ => Err(ErrorKind::NotPlaceExpr.span(place_b.span)),
+            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
+                self.check_places_unique(hir, place_a, *base)
+            }
+            Expr::Call { .. } => todo!("Projections"),
+            _ => Err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b))),
         }
     }
 
-    fn infer_lit(&mut self, span: Span, lit: LitExpr) -> Expr<PartialTy, AdtId, VarId> {
-        let ty = match &lit {
+    fn infer_lit(&mut self, lit: &LitExpr) -> PartialTy {
+        match &lit {
             LitExpr::Int(_) => self.fresh_int_var(),
             LitExpr::Float(_) => PartialTy::Float,
             LitExpr::String(_) => PartialTy::string(),
             LitExpr::Char(_) => PartialTy::Char,
             LitExpr::Bool(_) => PartialTy::Bool,
-        };
-        ExprKind::Lit(lit).span_ty(span, ty)
-    }
-
-    fn infer_array(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        exprs: Vec<Expr<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let exprs = self.infer_multi(name_table, exprs)?;
-
-        let inner_ty = self.fresh_var();
-        for expr in &exprs {
-            self.constrain_eq(&expr, inner_ty.clone());
         }
-
-        Ok(ExprKind::Array(exprs).span_ty(span, PartialTy::array(inner_ty)))
     }
 
-    fn infer_tuple(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        exprs: Vec<Expr<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let (exprs, tys) = self.types_of(name_table, exprs)?;
-        Ok(ExprKind::Tuple(exprs).span_ty(span, PartialTy::Tuple(tys)))
+    fn infer_array(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<PartialTy> {
+        let inner_ty = self.fresh_var();
+        for &expr in exprs {
+            let ty = self.infer_expr(hir, expr)?;
+            self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(expr));
+        }
+        Ok(PartialTy::array(inner_ty))
     }
 
-    fn infer_call(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        func: Expr<(), AdtId, VarId>,
-        args: Vec<Arg<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let func = Box::new(self.infer_expr(name_table, func)?);
+    fn infer_tuple(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<PartialTy> {
+        let tys = self.infer_exprs(hir, exprs)?;
+        Ok(PartialTy::Tuple(tys))
+    }
 
-        let (args, arg_tys): (Vec<_>, Vec<_>) = args
-            .into_iter()
+    fn infer_call(&mut self, hir: &Hir, func: ExprId, args: &[Arg]) -> Result<PartialTy> {
+        // Verify uniqueness of mutable arguments
+        args.iter()
+            .permutations(2)
+            .map(|p| (p[0], p[1]))
+            .filter(|(a, b)| a.mutable || b.mutable)
+            .try_for_each(|(a, b)| self.check_places_unique(hir, a.val, b.val))?; // TODO optimise???
+
+        let func_ty = self.infer_expr(hir, func)?;
+        let arg_tys = args
+            .iter()
             .map(|arg| {
-                let val = self.infer_expr(name_table, arg.val)?;
+                let ty = self.infer_expr(hir, arg.val)?;
 
                 if arg.mutable {
-                    self.check_place_mut(name_table, &val)?;
+                    self.check_place_mut(hir, arg.val)?;
                 }
 
-                let ty = val.ty.clone();
-                Ok((
-                    Arg {
-                        mutable: arg.mutable,
-                        val,
-                    },
-                    Param {
-                        mutable: arg.mutable,
-                        ty,
-                    },
-                ))
+                Ok(Param {
+                    mutable: arg.mutable,
+                    ty,
+                })
             })
             .try_collect()?;
-
-        for (a, b) in (0..args.len())
-            .permutations(2)
-            .map(|p| (&args[p[0]], &args[p[1]]))
-            .filter(|(a, b)| a.mutable || b.mutable)
-        {
-            self.check_places_unique(&a.val, &b.val)?;
-        } // TODO optimise???
-
         let return_ty = self.fresh_var();
 
         self.constrain_eq(
-            &func,
+            func_ty,
             PartialTy::Fn(
                 arg_tys,
-                Box::new(Return {
+                Return {
                     mutable: false,
-                    ty: return_ty.clone(),
-                }),
+                    ty: Box::new(return_ty.clone()),
+                },
             ),
+            hir.expr_span(func),
         );
 
-        Ok(ExprKind::Call { func, args }.span_ty(span, return_ty))
+        Ok(return_ty)
     }
 
-    fn infer_binop(
+    fn infer_infix(
         &mut self,
-        name_table: &NameTable,
-        span: Span,
+        hir: &Hir,
         op: InfixOp,
-        lhs: Expr<(), AdtId, VarId>,
-        rhs: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let lhs = Box::new(self.infer_expr(name_table, lhs)?);
-        let rhs = Box::new(self.infer_expr(name_table, rhs)?);
-
-        let ty = match op {
+        lhs: ExprId,
+        rhs: ExprId,
+    ) -> Result<PartialTy> {
+        let lhs_ty = self.infer_expr(hir, lhs)?;
+        let rhs_ty = self.infer_expr(hir, rhs)?;
+        match op {
             InfixOp::Assign => {
-                self.check_place_mut(name_table, &lhs)?;
-                self.constrain_eq(&rhs, lhs.ty.clone());
-
-                PartialTy::unit()
+                self.check_place_mut(hir, lhs)?;
+                self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
+                Ok(PartialTy::unit())
             }
             InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div | InfixOp::Rem => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (PartialTy::Float, int_var), lhs.span);
-                self.constrain_eq(&rhs, lhs.ty.clone());
-
-                lhs.ty.clone()
+                self.constrain_either_eq(
+                    lhs_ty.clone(),
+                    (PartialTy::Float, int_var),
+                    hir.expr_span(lhs),
+                );
+                self.constrain_eq(rhs_ty, lhs_ty.clone(), hir.expr_span(rhs));
+                Ok(lhs_ty)
             }
             InfixOp::Exp => {
                 let int_var = self.fresh_int_var();
                 self.constrain_either_eq(
-                    lhs.ty.clone(),
+                    lhs_ty.clone(),
                     (PartialTy::Float, int_var.clone()),
-                    lhs.span,
+                    hir.expr_span(lhs),
                 );
-                self.constrain_eq(&rhs, int_var);
-
-                lhs.ty.clone()
+                self.constrain_eq(rhs_ty, int_var, hir.expr_span(rhs));
+                Ok(lhs_ty)
             }
             InfixOp::And | InfixOp::Or | InfixOp::Xor => {
-                self.constrain_eq(&lhs, PartialTy::Bool);
-                self.constrain_eq(&rhs, PartialTy::Bool);
-
-                PartialTy::Bool
+                self.constrain_eq(lhs_ty, PartialTy::Bool, hir.expr_span(lhs));
+                self.constrain_eq(rhs_ty, PartialTy::Bool, hir.expr_span(rhs));
+                Ok(PartialTy::Bool)
             }
             InfixOp::Eqq | InfixOp::Neq => {
-                self.constrain_eq(&rhs, lhs.ty.clone());
-
-                PartialTy::Bool
+                self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
+                Ok(PartialTy::Bool)
             }
             InfixOp::Gt | InfixOp::Lt | InfixOp::Geq | InfixOp::Leq => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(lhs.ty.clone(), (PartialTy::Float, int_var), lhs.span);
-                self.constrain_eq(&rhs, lhs.ty.clone());
-
-                PartialTy::Bool
+                self.constrain_either_eq(
+                    lhs_ty.clone(),
+                    (PartialTy::Float, int_var),
+                    hir.expr_span(lhs),
+                );
+                self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
+                Ok(PartialTy::Bool)
             }
-        };
-
-        Ok(ExprKind::Infix { op, lhs, rhs }.span_ty(span, ty))
+        }
     }
 
-    fn infer_unop(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        op: UnaryOp,
-        expr: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let expr = Box::new(self.infer_expr(name_table, expr)?);
-
-        let ty = match op {
-            UnaryOp::Not => {
-                self.constrain_eq(&expr, PartialTy::Bool);
-
-                PartialTy::Bool
+    fn infer_prefix(&mut self, hir: &Hir, op: PrefixOp, expr: ExprId) -> Result<PartialTy> {
+        let expr_ty = self.infer_expr(hir, expr)?;
+        match op {
+            PrefixOp::Not => {
+                self.constrain_eq(expr_ty, PartialTy::Bool, hir.expr_span(expr));
+                Ok(PartialTy::Bool)
             }
-            UnaryOp::Neg => {
+            PrefixOp::Neg => {
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(expr.ty.clone(), (int_var, PartialTy::Float), expr.span);
-
-                expr.ty.clone()
+                self.constrain_either_eq(
+                    expr_ty.clone(),
+                    (int_var, PartialTy::Float),
+                    hir.expr_span(expr),
+                );
+                Ok(expr_ty)
             }
-        };
-
-        Ok(ExprKind::Unary { op, expr }.span_ty(span, ty))
+        }
     }
 
-    fn infer_field(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        base: Expr<(), AdtId, VarId>,
-        field: SpanIdent,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let base = Box::new(self.infer_expr(name_table, base)?);
+    fn infer_indexing(&mut self, hir: &Hir, arr: ExprId, idx: ExprId) -> Result<PartialTy> {
+        let arr_ty = self.infer_expr(hir, arr)?;
+        let inner_ty = self.fresh_var();
+        self.constrain_eq(
+            arr_ty,
+            PartialTy::array(inner_ty.clone()),
+            hir.expr_span(arr),
+        );
 
-        let PartialTy::Adt(base_ty, _) = base.ty else {
-            return Err(ErrorKind::PrimitiveTypeNoField(base.ty).span(span));
+        let idx_ty = self.infer_expr(hir, idx)?;
+        self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx));
+
+        Ok(inner_ty)
+    }
+
+    fn infer_field(&mut self, hir: &Hir, base: ExprId, field: SpanIdent) -> Result<PartialTy> {
+        let base_ty = self.infer_expr(hir, base)?;
+
+        let PartialTy::Adt(base_ty, _) = base_ty else {
+            return Err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base)));
         };
-        let AdtInfoKind::Record { fields, .. } = &name_table.adts[base_ty].kind else {
-            return Err(ErrorKind::MissingField.span(span));
+        let AdtInfo::Record { fields, .. } = &hir.adt_info(base_ty) else {
+            return Err(ErrorKind::MissingField.span(field.span));
         };
 
         let field_ty = PartialTy::from(
             &fields
                 .get(&field.ident)
-                .cloned()
-                .ok_or_else(|| ErrorKind::MissingField.span(span))?
+                .ok_or_else(|| ErrorKind::MissingField.span(field.span))?
                 .ty,
         );
 
-        Ok(ExprKind::Field { base, field }.span_ty(span, field_ty))
-    }
-
-    fn infer_indexing(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        arr: Expr<(), AdtId, VarId>,
-        idx: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let arr = Box::new(self.infer_expr(name_table, arr)?);
-
-        let inner_ty = self.fresh_var();
-        self.constrain_eq(&arr, PartialTy::array(inner_ty.clone()));
-
-        let idx = Box::new(self.infer_expr(name_table, idx)?);
-        self.constrain_eq(&idx, PartialTy::UInt);
-
-        Ok(ExprKind::Index { arr, idx }.span_ty(span, inner_ty))
+        Ok(field_ty)
     }
 
     fn infer_if(
         &mut self,
-        name_table: &NameTable,
-        span: Span,
-        cond: Expr<(), AdtId, VarId>,
-        th: Expr<(), AdtId, VarId>,
-        el: Option<Expr<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let cond = Box::new(self.infer_expr(name_table, cond)?);
-        self.constrain_eq(&cond, PartialTy::Bool);
+        hir: &Hir,
+        cond: ExprId,
+        th: &BlockExpr,
+        el: Option<&BlockExpr>,
+    ) -> Result<PartialTy> {
+        let cond_ty = self.infer_expr(hir, cond)?;
+        self.constrain_eq(cond_ty, PartialTy::Bool, hir.expr_span(cond));
 
-        let th = Box::new(self.infer_expr(name_table, th)?);
+        let th_ty = self.infer_block_expr(hir, th)?;
 
-        let el = el
-            .map(|el| self.infer_expr(name_table, el))
-            .transpose()?
-            .map(Box::new);
-        match &el {
-            Some(el) => self.constrain_eq(&el, th.ty.clone()),
-            None => self.constrain_eq(&th, PartialTy::unit()),
+        match el {
+            Some(el) => {
+                let el_ty = self.infer_block_expr(hir, el)?;
+                self.constrain_eq(el_ty, th_ty.clone(), hir.expr_span(el))
+            }
+            None => self.constrain_eq(th_ty.clone(), PartialTy::unit(), hir.expr_span(th)),
         }
 
-        let th_ty = th.ty.clone();
-        Ok(ExprKind::If { cond, th, el }.span_ty(span, th_ty))
+        Ok(th_ty)
     }
 
     fn infer_match(
         &mut self,
-        name_table: &NameTable,
-        span: Span,
-        scrutinee: Expr<(), AdtId, VarId>,
-        arms: Vec<MatchArm<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let scrutinee = Box::new(self.infer_expr(name_table, scrutinee)?);
+        hir: &Hir,
+        scrutinee: ExprId,
+        arms: &[MatchArm],
+    ) -> Result<PartialTy> {
+        let scrutinee_ty = self.infer_expr(hir, scrutinee)?;
 
         let ty = self.fresh_var();
-        let arms = arms
-            .into_iter()
-            .map(|arm| {
-                let body = self.infer_expr(name_table, arm.body)?;
-                self.constrain_eq(&body, ty.clone());
+        arms.iter().try_for_each(|arm| {
+            self.infer_expr(hir, arm.body)
+                .map(|body_ty| self.constrain_eq(body_ty, ty.clone(), hir.expr_span(arm.body)))
+        })?;
 
-                Ok(MatchArm {
-                    pat: arm.pat,
-                    body,
-                    span: arm.span,
-                })
-            })
-            .try_collect()?;
-
-        Ok(ExprKind::Match { scrutinee, arms }.span_ty(span, ty))
+        Ok(ty)
     }
 
     fn infer_for(
         &mut self,
-        name_table: &NameTable,
-        span: Span,
-        pat: Pat<VarId>,
-        iter: Expr<(), AdtId, VarId>,
-        body: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let iter = Box::new(self.infer_expr(name_table, iter)?);
-        let body = Box::new(self.infer_expr(name_table, body)?);
-        Ok(ExprKind::For { pat, iter, body }.span_ty(span, PartialTy::unit()))
+        hir: &Hir,
+        pat: &Pat,
+        iter: ExprId,
+        body: &BlockExpr,
+    ) -> Result<PartialTy> {
+        let iter_ty = self.infer_expr(hir, iter)?;
+        let body_ty = self.infer_block_expr(hir, body)?;
+        Ok(PartialTy::unit())
     }
 
-    fn infer_loop(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        body: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let body = Box::new(self.infer_expr(name_table, body)?);
-        Ok(ExprKind::Loop(body).span_ty(span, PartialTy::unit()))
+    fn infer_loop(&mut self, hir: &Hir, body: &BlockExpr) -> Result<PartialTy> {
+        let body_ty = self.infer_block_expr(hir, body)?;
+        Ok(PartialTy::unit())
     }
 
-    fn infer_lambda(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        params: Vec<Binding<AdtId, VarId>>,
-        body: Expr<(), AdtId, VarId>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
+    fn infer_lambda(&mut self, hir: &Hir, params: &[Binding], body: ExprId) -> Result<PartialTy> {
         let param_tys = params
             .iter()
             .map(|p| Param {
@@ -445,58 +325,35 @@ impl TypeChecker {
                 ty: self.convert(p.ty.as_ref()),
             })
             .collect();
+        let body_ty = self.infer_expr(hir, body)?;
 
-        let body = Box::new(self.infer_expr(name_table, body)?);
-
-        let ty = PartialTy::Fn(
+        Ok(PartialTy::Fn(
             param_tys,
-            Box::new(Return {
+            Return {
                 mutable: false,
-                ty: body.ty.clone(),
-            }),
-        );
-
-        Ok(ExprKind::Lambda { params, body }.span_ty(span, ty))
+                ty: Box::new(body_ty.clone()),
+            },
+        ))
     }
 
-    fn infer_block(
-        &mut self,
-        name_table: &NameTable,
-        span: Span,
-        stmts: Vec<Stmt<(), AdtId, VarId>>,
-    ) -> Result<Expr<PartialTy, AdtId, VarId>> {
-        let stmts: Vec<_> = stmts
-            .into_iter()
-            .map(|s| self.infer_stmt(name_table, s))
+    fn infer_block_expr(&mut self, hir: &Hir, block: &BlockExpr) -> Result<PartialTy> {
+        let mut stmt_tys: Vec<_> = block
+            .0
+            .iter()
+            .map(|s| self.infer_stmt(hir, s))
             .try_collect()?;
-
-        let ty = stmts
-            .last()
-            .and_then(|s| match s {
-                Stmt::Decl { .. } => None,
-                Stmt::Expr(expr) => Some(expr.ty.clone()),
-            })
-            .unwrap_or_else(PartialTy::unit);
-
-        Ok(ExprKind::Block(stmts).span_ty(span, ty))
+        Ok(stmt_tys.pop().unwrap_or_else(PartialTy::unit))
     }
 
-    fn infer_stmt(
-        &mut self,
-        name_table: &NameTable,
-        stmt: Stmt<(), AdtId, VarId>,
-    ) -> Result<Stmt<PartialTy, AdtId, VarId>> {
+    fn infer_stmt(&mut self, hir: &Hir, stmt: &Stmt) -> Result<PartialTy> {
         match stmt {
-            Stmt::Decl { binding, val, span } => {
-                let val = self.infer_expr(name_table, val)?;
-                binding
-                    .ty
-                    .as_ref()
-                    .inspect(|&ty| self.constrain_eq(&val, ty.into()));
-
-                Ok(Stmt::Decl { binding, val, span })
+            Stmt::Decl { binding, val, .. } => {
+                let val_ty = self.infer_expr(hir, *val)?;
+                let annot_ty = self.convert(binding.ty.as_ref());
+                self.constrain_eq(val_ty, annot_ty, hir.expr_span(*val));
+                Ok(PartialTy::unit())
             }
-            Stmt::Expr(expr) => self.infer_expr(name_table, expr).map(Stmt::Expr),
+            Stmt::Expr(expr) => self.infer_expr(hir, *expr),
         }
     }
 }

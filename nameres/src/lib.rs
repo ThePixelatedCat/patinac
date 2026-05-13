@@ -27,9 +27,9 @@ use hir::{
     },
     items::{ExecItem as HirExecItem, ExecKind as HirExecKind, Param},
     patterns::{Pat as HirPat, PatKind as HirPatKind},
-    types::{Param as ParamTy, Return, Ty as HirTy, TyKind as HirTyKind},
+    types::{Param as ParamTy, Return, Ty as HirTy},
 };
-use ident::{Ident, SpanIdent};
+use ident::Ident;
 
 use crate::error::{ErrorKind, Result};
 
@@ -122,15 +122,12 @@ fn resolve_adt_item(
     Ok(())
 }
 
-fn resolve_fields(
-    scope: &Scope<AdtId>,
-    fields: Vec<Field>,
-) -> Result<HashMap<SpanIdent, FieldInfo>> {
+fn resolve_fields(scope: &Scope<AdtId>, fields: Vec<Field>) -> Result<HashMap<Ident, FieldInfo>> {
     fields
         .into_iter()
         .map(|field| {
             Ok((
-                field.ident,
+                field.ident.ident,
                 FieldInfo {
                     ty: resolve_ty(scope, field.ty)?,
                 },
@@ -201,7 +198,7 @@ fn resolve_exec_item(
             let ret_ty = resolve_ty(&adt_scope, ret_ty)?;
             let body = resolve_expr(&adt_scope, &var_scope, hir, body)?;
 
-            let ty = HirTyKind::Fn(
+            let ty = HirTy::Fn(
                 params
                     .iter()
                     .map(|p| ParamTy {
@@ -213,8 +210,7 @@ fn resolve_exec_item(
                     mutable: ret_mut,
                     ty: Box::new(ret_ty.clone()),
                 },
-            )
-            .span(item.ident.span.end..ret_ty.span.end);
+            );
 
             hir.fulfill_var(
                 id,
@@ -478,14 +474,14 @@ fn resolve_binding(
 }
 
 fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
-    let kind = match ty.kind {
-        AstTyKind::Int => HirTyKind::Int,
-        AstTyKind::UInt => HirTyKind::UInt,
-        AstTyKind::Byte => HirTyKind::Byte,
-        AstTyKind::Float => HirTyKind::Float,
-        AstTyKind::Char => HirTyKind::Char,
-        AstTyKind::Bool => HirTyKind::Bool,
-        AstTyKind::Tuple(tys) => HirTyKind::Tuple(resolve_tys(adt_scope, tys)?),
+    match ty.kind {
+        AstTyKind::Int => Ok(HirTy::Int),
+        AstTyKind::UInt => Ok(HirTy::UInt),
+        AstTyKind::Byte => Ok(HirTy::Byte),
+        AstTyKind::Float => Ok(HirTy::Float),
+        AstTyKind::Char => Ok(HirTy::Char),
+        AstTyKind::Bool => Ok(HirTy::Bool),
+        AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(adt_scope, tys)?)),
         AstTyKind::Fn(params, ret) => {
             let params = params
                 .into_iter()
@@ -500,17 +496,15 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
                 mutable: ret.mutable,
                 ty: Box::new(resolve_ty(adt_scope, *ret.ty)?),
             };
-            HirTyKind::Fn(params, ret)
+            Ok(HirTy::Fn(params, ret))
         }
         AstTyKind::Adt(ident, args) => match adt_scope.get(&ident).copied() {
-            Some(id) => HirTyKind::Adt(id, resolve_tys(adt_scope, args)?),
+            Some(id) => Ok(HirTy::Adt(id, resolve_tys(adt_scope, args)?)),
             None => {
                 return Err(ErrorKind::UnknownType(AstTyKind::Adt(ident, args)).span(ty.span));
             }
         },
-    };
-
-    Ok(kind.span(ty.span))
+    }
 }
 
 fn resolve_tys(adt_scope: &Scope<AdtId>, tys: Vec<AstTy>) -> Result<Vec<HirTy>> {
@@ -540,10 +534,7 @@ fn resolve_pat(
         AstPatKind::Constructor(ident, pats) => todo!(),
         AstPatKind::Tuple(old_pats) => {
             let tys = match ty {
-                Some(HirTy {
-                    kind: HirTyKind::Tuple(tys),
-                    ..
-                }) => tys,
+                Some(HirTy::Tuple(tys)) => tys,
                 _ => vec![],
             };
 

@@ -1,42 +1,28 @@
-use span::Span;
-
 use crate::AdtId;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Ty {
-    pub kind: TyKind,
-    pub span: Span,
-}
 
 /// The kinds of types
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum TyKind {
+pub enum Ty {
     Int,
     UInt,
     Byte,
     Float,
     Char,
     Bool,
-    Tuple(Vec<Ty>),
+    Tuple(Vec<Self>),
     Fn(Vec<Param>, Return),
-    Adt(AdtId, Vec<Ty>),
+    Adt(AdtId, Vec<Self>),
 }
 
-impl TyKind {
-    pub fn span(self, span: impl Into<Span>) -> Ty {
-        Ty {
-            kind: self,
-            span: span.into(),
-        }
-    }
-
-    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
-    pub const fn unit() -> Self {
-        Self::Tuple(vec![])
-    }
+impl Ty {
+    // /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
+    // pub const fn unit() -> Self {
+    //     Self::Tuple(vec![])
+    // }
 
     // pub fn named(name: &str) -> Self {
-    //     Self::Adt(Ident::new(name), vec![])
+    //     //Self::Adt(Ident::new(name), vec![])
+    //     todo!()
     // }
 
     // /// Helper to create a new [`TyKind::Adt`] for a `String`
@@ -46,7 +32,8 @@ impl TyKind {
 
     // /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
     // pub fn array(inner: Ty) -> Self {
-    //     Self::Adt(Ident::new("Array"), vec![inner])
+    //     //Self::Adt(Ident::new("Array"), vec![inner])
+    //     todo!()
     // }
 }
 
