@@ -13,7 +13,7 @@ pub struct Pat {
 pub enum PatKind {
     Literal { negate: bool, lit: LitExpr },
     Wildcard,
-    Ident(Ident, VarId),
+    Ident(VarId),
     Constructor(Ident, Vec<Pat>),
     Tuple(Vec<Pat>),
 }
@@ -24,9 +24,5 @@ impl PatKind {
             kind: self,
             span: span.into(),
         }
-    }
-
-    pub fn ident(string: &str) -> Self {
-        Self::Ident(Ident::new(string), VarId::new())
     }
 }

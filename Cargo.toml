@@ -5,11 +5,11 @@ members = [
     "span",
     "ident",
     "errors",
-    "types",
     "lex",
     "parse",
     "ast",
     "nameres",
+    "hir",
     "typecheck",
 ]
 

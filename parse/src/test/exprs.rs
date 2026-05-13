@@ -1,7 +1,7 @@
 use pretty_assertions::assert_eq;
 
 use ast::{
-    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
+    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt},
     patterns::PatKind,
     types::TyKind,
 };
@@ -72,8 +72,8 @@ fn lit_expressions() {
 fn unop_expressions() {
     assert_eq!(
         Parser::parse_expr("!  is_visible"),
-        Ok(ExprKind::Unary {
-            op: UnaryOp::Not,
+        Ok(ExprKind::Prefix {
+            op: PrefixOp::Not,
             expr: ExprKind::ident("is_visible").span(3..13).into(),
         }
         .span(0..13))
@@ -81,11 +81,11 @@ fn unop_expressions() {
 
     assert_eq!(
         Parser::parse_expr("-{-13}"),
-        Ok(ExprKind::Unary {
-            op: UnaryOp::Neg,
+        Ok(ExprKind::Prefix {
+            op: PrefixOp::Neg,
             expr: ExprKind::Block(
-                ExprKind::Unary {
-                    op: UnaryOp::Neg,
+                ExprKind::Prefix {
+                    op: PrefixOp::Neg,
                     expr: ExprKind::int(13).span(3..5).into(),
                 }
                 .span(2..5)

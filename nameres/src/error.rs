@@ -1,8 +1,8 @@
 use derive_more::Display;
 
-use ident::{Ident, SpanIdent};
+use ast::types::TyKind;
+use ident::Ident;
 use span::Span;
-use types::Ty;
 
 pub type Result<T> = errors::Result<T, ErrorKind>;
 pub type Error = errors::Error<ErrorKind>;
@@ -14,7 +14,7 @@ pub enum ErrorKind {
     #[display("Duplicate item with name {_0} (first occurence at {_1})")]
     DupItem(Ident, Span),
     #[display("Unknown type {_0}")]
-    UnknownType(Ty<SpanIdent>),
+    UnknownType(TyKind),
 }
 
 impl std::error::Error for ErrorKind {}

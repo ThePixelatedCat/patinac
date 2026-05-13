@@ -1,10 +1,9 @@
 use slotmap::new_key_type;
 
-use ident::{Ident, SpanIdent};
+use ident::SpanIdent;
 use span::Span;
-use types::Ty;
 
-use crate::{VarId, patterns::Pat};
+use crate::{VarId, patterns::Pat, types::Ty};
 
 new_key_type! { pub struct ExprId; }
 
@@ -20,7 +19,7 @@ pub enum Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Ident(Ident, VarId),
+    Ident(VarId),
     Lit(LitExpr),
     Array(Vec<ExprId>),
     Tuple(Vec<ExprId>),
@@ -29,8 +28,8 @@ pub enum Expr {
         lhs: ExprId,
         rhs: ExprId,
     },
-    Unary {
-        op: UnaryOp,
+    Prefix {
+        op: PrefixOp,
         expr: ExprId,
     },
     Field {
@@ -71,14 +70,6 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn ident_str(string: &str) -> Self {
-        Self::Ident(Ident::new(string), VarId::new())
-    }
-
-    pub fn ident_id(ident: Ident) -> Self {
-        Self::Ident(ident, VarId::new())
-    }
-
     pub const fn int(i: u64) -> Self {
         Self::Lit(LitExpr::Int(i))
     }
@@ -116,7 +107,7 @@ pub struct Binding {
     pub ty: Option<Ty>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub mutable: bool,
     pub val: ExprId,
@@ -126,7 +117,6 @@ pub struct Arg {
 pub struct MatchArm {
     pub pat: Pat,
     pub body: ExprId,
-    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -169,12 +159,12 @@ impl InfixOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnaryOp {
+pub enum PrefixOp {
     Not,
     Neg,
 }
 
-impl UnaryOp {
+impl PrefixOp {
     pub const fn binding_power(self) -> u8 {
         match self {
             Self::Neg | Self::Not => 51,

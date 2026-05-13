@@ -1,5 +1,5 @@
 [package]
-name = "ast"
+name = "hir"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,7 +7,6 @@ edition = "2024"
 # Internal
 span.path = "../span"
 ident.path = "../ident"
-types.path = "../types"
 # External
 derive_more = { version = "2.1.1", features = ["display"] }
 itertools = "0.14.0"
@@ -17,6 +16,7 @@ smallvec = { version = "1.15.1", features = [
     "const_new",
 ] }
 slotmap = "1.1.1"
+foldhash = "0.2.0"
 
 [lints]
 workspace = true

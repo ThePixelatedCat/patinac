@@ -1,23 +1,19 @@
 use foldhash::{HashMap, HashMapExt};
 use pretty_assertions::assert_eq;
 
-use ast::{
-    exprs::{Arg, Binding, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt},
+use hir::{
+    AdtId, AdtInfo, FieldInfo, VarId, VarInfo,
+    exprs::{Arg, Binding, Expr, ExprId, InfixOp, LitExpr, MatchArm, Stmt},
     items::{ExecItem, ExecKind, Param},
     patterns::PatKind,
+    types::{Param as ParamTy, Return, Ty},
 };
 use ident::Ident;
 use parse::Parser;
 use smallvec::smallvec;
 use span::Span;
-use types::{Param as ParamTy, Return, Ty};
 
-use crate::{
-    AdtId, AdtInfo, NameTable, Result, Scope, VarId, VarInfo,
-    error::ErrorKind,
-    resolve, resolve_expr,
-    table::{AdtInfoKind, AdtTable, FieldInfo, PartialAdtTable, PartialVarTable, VarTable},
-};
+use crate::{Result, Scope, error::ErrorKind, resolve, resolve_expr};
 
 fn test_resolve_expr(input: &str) -> Result<(Expr<(), AdtId, VarId>, NameTable)> {
     let expr = Parser::parse_expr(input).unwrap();

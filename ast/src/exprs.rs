@@ -36,8 +36,8 @@ pub enum ExprKind {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
-    Unary {
-        op: UnaryOp,
+    Prefix {
+        op: PrefixOp,
         expr: Box<Expr>,
     },
     Field {
@@ -178,12 +178,12 @@ impl InfixOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UnaryOp {
+pub enum PrefixOp {
     Not,
     Neg,
 }
 
-impl UnaryOp {
+impl PrefixOp {
     pub const fn binding_power(self) -> u8 {
         match self {
             Self::Neg | Self::Not => 51,

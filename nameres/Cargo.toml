@@ -7,9 +7,9 @@ edition = "2024"
 # Internal
 span.path = "../span"
 ident.path = "../ident"
-types.path = "../types"
-ast.path = "../ast"
 errors.path = "../errors"
+ast.path = "../ast"
+hir.path = "../hir"
 # External
 im = "15.1.0"
 foldhash = "0.2.0"

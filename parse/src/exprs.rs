@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 
-use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp};
+use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
 use lex::{Tok, TokKind};
 use span::Span;
 
@@ -212,8 +212,8 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let op_token = self.next()?;
 
         let op = match op_token.kind {
-            TokKind::Minus => UnaryOp::Neg,
-            TokKind::Bang => UnaryOp::Not,
+            TokKind::Minus => PrefixOp::Neg,
+            TokKind::Bang => PrefixOp::Not,
             _ => unreachable!("should only be called when next token is Minus or Bang"),
         };
 
@@ -221,7 +221,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         let span = op_token.span.start..expr.span.end;
 
-        Ok(ExprKind::Unary { op, expr }.span(span))
+        Ok(ExprKind::Prefix { op, expr }.span(span))
     }
 
     fn lambda_expr(&mut self) -> Result<Expr> {
