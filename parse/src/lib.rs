@@ -10,7 +10,6 @@ mod types;
 use std::{iter::Peekable, result, vec};
 
 use ast::Ast;
-use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 
 pub use crate::error::{Error, ErrorKind, Result};
@@ -28,7 +27,7 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
         }
     }
 
-    pub fn parse(mut self) -> result::Result<Ast<(), SpanIdent, Ident>, Vec<Error>> {
+    pub fn parse(mut self) -> result::Result<Ast, Vec<Error>> {
         let mut ast = Ast::default();
         let mut errs = Vec::new();
 
@@ -53,12 +52,12 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
     }
 
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_stmt(src: &'src str) -> Result<ast::exprs::Stmt<(), SpanIdent, Ident>> {
+    pub fn parse_stmt(src: &'src str) -> Result<ast::exprs::Stmt> {
         Self::new(lex::lex(src).unwrap()).stmt()
     }
 
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr<(), SpanIdent, Ident>> {
+    pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr> {
         Self::new(lex::lex(src).unwrap()).expr()
     }
 

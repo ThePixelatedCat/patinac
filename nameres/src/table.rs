@@ -17,10 +17,9 @@ impl From<VarId> for u32 {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarInfo {
-    pub ident: Ident,
+    pub ident: SpanIdent,
     pub mutable: bool,
     pub ty: Option<Ty<AdtId>>,
-    pub span: Span,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

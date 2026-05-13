@@ -5,11 +5,11 @@ edition = "2024"
 
 [dependencies]
 # Internal
-span = { path = "../span" }
-ident = { path = "../ident" }
-types = { path = "../types" }
-ast = { path = "../ast" }
-errors = { path = "../errors" }
+span.path = "../span"
+ident.path = "../ident"
+types.path = "../types"
+ast.path = "../ast"
+errors.path = "../errors"
 # External
 im = "15.1.0"
 foldhash = "0.2.0"

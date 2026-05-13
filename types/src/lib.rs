@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use derive_more::Display;
 use itertools::Itertools;
@@ -8,7 +11,7 @@ use span::Span;
 
 /// The kinds of types
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
-pub enum Ty<A> {
+pub enum Ty {
     Int,
     UInt,
     Byte,
@@ -18,38 +21,42 @@ pub enum Ty<A> {
     #[display("{{{}}}", _0.iter().join(", "))]
     Tuple(Vec<Self>),
     #[display("fn({}) -> {_1}", _0.iter().join(", "))]
-    Fn(Vec<Param<A>>, Box<Return<A>>),
-    #[display("{_0}[{}]", _1.iter().join(", "))]
-    Adt(A, Vec<Self>),
+    Fn(Vec<Param>, Box<Return>),
+    #[display("{_0}[{}]", _2.iter().join(", "))]
+    Adt(SpanIdent, AdtId, Vec<Self>),
 }
 
-impl<A> Ty<A> {
+impl Ty {}
+
+// impl Ty {
+//     /// Helper to create a new [`TyKind::Adt`] with no generic parameters, and handling creating the [Ident] automatically
+//     pub fn named(name: &str) -> Self {
+//         Self::Adt(Ident::new(name), vec![])
+//     }
+
+//     /// Helper to create a new [`TyKind::Adt`] for a `String`
+//     pub fn string() -> Self {
+//         Self::named("String")
+//     }
+
+//     /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
+//     pub fn array(inner: Self) -> Self {
+//         Self::Adt(Ident::new("Array"), vec![inner])
+//     }
+// }
+
+impl Ty {
     /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
-}
 
-impl Ty<Ident> {
-    /// Helper to create a new [`TyKind::Adt`] with no generic parameters, and handling creating the [Ident] automatically
-    pub fn named(name: &str) -> Self {
-        Self::Adt(Ident::new(name), vec![])
+    pub fn adt(ident: SpanIdent, args: Vec<Self>) -> Self {
+        Self::Adt(ident, AdtId::new(), args)
     }
 
-    /// Helper to create a new [`TyKind::Adt`] for a `String`
-    pub fn string() -> Self {
-        Self::named("String")
-    }
-
-    /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
-    pub fn array(inner: Self) -> Self {
-        Self::Adt(Ident::new("Array"), vec![inner])
-    }
-}
-
-impl Ty<SpanIdent> {
     pub fn named_span(name: &str, span: impl Into<Span>) -> Self {
-        Self::Adt(Ident::new(name).span(span), vec![])
+        Self::Adt(Ident::new(name).span(span), AdtId::new(), vec![])
     }
 
     /// Helper to create a new [`TyKind::Adt`] for a `String`
@@ -59,18 +66,18 @@ impl Ty<SpanIdent> {
 
     /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
     pub fn array_span(inner: Self, span: impl Into<Span>) -> Self {
-        Self::Adt(Ident::new("Array").span(span), vec![inner])
+        Self::Adt(Ident::new("Array").span(span), AdtId::new(), vec![inner])
     }
 }
 
 /// A parameter of a function type
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Param<AdtIdent> {
+pub struct Param {
     pub mutable: bool,
-    pub ty: Ty<AdtIdent>,
+    pub ty: Ty,
 }
 
-impl<A: Display> Display for Param<A> {
+impl Display for Param {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;
@@ -80,16 +87,26 @@ impl<A: Display> Display for Param<A> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return<AdtIdent> {
+pub struct Return {
     pub mutable: bool,
-    pub ty: Ty<AdtIdent>,
+    pub ty: Ty,
 }
 
-impl<T: Display> Display for Return<T> {
+impl Display for Return {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;
         }
         self.ty.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AdtId(u32);
+static ADT_ID_CTR: AtomicU32 = AtomicU32::new(0);
+
+impl AdtId {
+    pub fn new() -> Self {
+        Self(ADT_ID_CTR.fetch_add(1, Ordering::Relaxed))
     }
 }

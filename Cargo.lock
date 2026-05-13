@@ -26,7 +26,6 @@ dependencies = [
  "itertools",
  "smallvec",
  "span",
- "types",
 ]
 
 [[package]]
@@ -431,7 +430,6 @@ dependencies = [
  "smallvec",
  "span",
  "string-interner 0.19.0",
- "types",
 ]
 
 [[package]]

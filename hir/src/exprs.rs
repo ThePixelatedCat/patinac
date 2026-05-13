@@ -1,92 +1,82 @@
+use slotmap::new_key_type;
+
 use ident::{Ident, SpanIdent};
 use span::Span;
+use types::Ty;
 
-use crate::{patterns::Pat, types::Ty};
+use crate::{VarId, patterns::Pat};
+
+new_key_type! { pub struct ExprId; }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Decl {
         binding: Binding,
-        val: Expr,
+        val: ExprId,
         span: Span,
     },
-    Expr(Expr),
+    Expr(ExprId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Expr {
-    pub kind: ExprKind,
-    pub span: Span,
-}
-
-impl Expr {
-    pub fn as_block(self) -> BlockExpr {
-        BlockExpr(vec![Stmt::Expr(self)])
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExprKind {
-    Ident(Ident),
+pub enum Expr {
+    Ident(Ident, VarId),
     Lit(LitExpr),
-    Array(Vec<Expr>),
-    Tuple(Vec<Expr>),
+    Array(Vec<ExprId>),
+    Tuple(Vec<ExprId>),
     Infix {
         op: InfixOp,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
+        lhs: ExprId,
+        rhs: ExprId,
     },
     Unary {
         op: UnaryOp,
-        expr: Box<Expr>,
+        expr: ExprId,
     },
     Field {
-        base: Box<Expr>,
+        base: ExprId,
         field: SpanIdent,
     },
     Index {
-        arr: Box<Expr>,
-        idx: Box<Expr>,
+        arr: ExprId,
+        idx: ExprId,
     },
     Call {
-        func: Box<Expr>,
+        func: ExprId,
         args: Vec<Arg>,
     },
     Lambda {
         params: Vec<Binding>,
-        body: Box<Expr>,
+        body: ExprId,
     },
     If {
-        cond: Box<Expr>,
+        cond: ExprId,
         th: BlockExpr,
         el: Option<BlockExpr>,
     },
     Match {
-        scrutinee: Box<Expr>,
+        scrutinee: ExprId,
         arms: Vec<MatchArm>,
     },
     For {
         pat: Pat,
-        iter: Box<Expr>,
+        iter: ExprId,
         body: BlockExpr,
     },
     Loop(BlockExpr),
     Break,
     Continue,
-    Return(Box<Expr>),
+    Return(ExprId),
     Block(BlockExpr),
 }
 
-impl ExprKind {
-    pub fn span(self, span: impl Into<Span>) -> Expr {
-        Expr {
-            kind: self,
-            span: span.into(),
-        }
+impl Expr {
+    pub fn ident_str(string: &str) -> Self {
+        Self::Ident(Ident::new(string), VarId::new())
     }
 
-    pub fn ident(string: &str) -> Self {
-        Self::Ident(Ident::new(string))
+    pub fn ident_id(ident: Ident) -> Self {
+        Self::Ident(ident, VarId::new())
     }
 
     pub const fn int(i: u64) -> Self {
@@ -129,13 +119,14 @@ pub struct Binding {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arg {
     pub mutable: bool,
-    pub val: Expr,
+    pub val: ExprId,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
     pub pat: Pat,
-    pub body: Expr,
+    pub body: ExprId,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

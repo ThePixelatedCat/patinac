@@ -3,11 +3,11 @@ use pretty_assertions::assert_eq;
 use ast::{
     exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, Stmt, UnaryOp},
     patterns::PatKind,
+    types::TyKind,
 };
 use ident::Ident;
 use lex::TokKind;
 use span::Span;
-use types::Ty;
 
 use crate::{ErrorKind, Parser};
 
@@ -83,13 +83,14 @@ fn unop_expressions() {
         Parser::parse_expr("-{-13}"),
         Ok(ExprKind::Unary {
             op: UnaryOp::Neg,
-            expr: ExprKind::Block(vec![Stmt::Expr(
+            expr: ExprKind::Block(
                 ExprKind::Unary {
                     op: UnaryOp::Neg,
                     expr: ExprKind::int(13).span(3..5).into(),
                 }
                 .span(2..5)
-            )])
+                .as_block()
+            )
             .span(1..6)
             .into()
         }
@@ -199,14 +200,15 @@ fn binop_expressions() {
         Parser::parse_expr("{3 >= 4} != true"),
         Ok(ExprKind::Infix {
             op: InfixOp::Neq,
-            lhs: ExprKind::Block(vec![Stmt::Expr(
+            lhs: ExprKind::Block(
                 ExprKind::Infix {
                     op: InfixOp::Geq,
                     lhs: ExprKind::int(3).span(1..2).into(),
                     rhs: ExprKind::int(4).span(6..7).into(),
                 }
                 .span(1..7)
-            )])
+                .as_block()
+            )
             .span(0..8)
             .into(),
             rhs: ExprKind::bool(true).span(12..16).into()
@@ -218,14 +220,15 @@ fn binop_expressions() {
         Parser::parse_expr("{4 > 3} == true"),
         Ok(ExprKind::Infix {
             op: InfixOp::Eqq,
-            lhs: ExprKind::Block(vec![Stmt::Expr(
+            lhs: ExprKind::Block(
                 ExprKind::Infix {
                     op: InfixOp::Gt,
                     lhs: ExprKind::int(4).span(1..2).into(),
                     rhs: ExprKind::int(3).span(5..6).into(),
                 }
                 .span(1..6)
-            )])
+                .as_block()
+            )
             .span(0..7)
             .into(),
             rhs: ExprKind::bool(true).span(11..15).into()
@@ -261,7 +264,7 @@ fn compound_expressions() {
     assert_eq!(
         Parser::parse_expr("{fn(mut a, b: Int) -> a + b}(mut 1, 2)"),
         Ok(ExprKind::Call {
-            func: ExprKind::Block(vec![Stmt::Expr(
+            func: ExprKind::Block(
                 ExprKind::Lambda {
                     params: vec![
                         Binding {
@@ -272,7 +275,7 @@ fn compound_expressions() {
                         Binding {
                             mutable: false,
                             pat: PatKind::ident("b").span(11..12),
-                            ty: Some(Ty::Int)
+                            ty: Some(TyKind::Int.span(14..17))
                         }
                     ],
                     body: ExprKind::Infix {
@@ -284,7 +287,8 @@ fn compound_expressions() {
                     .into()
                 }
                 .span(1..27)
-            )])
+                .as_block()
+            )
             .span(0..28)
             .into(),
             args: vec![
@@ -367,7 +371,7 @@ fn var_expressions() {
             binding: Binding {
                 mutable: true,
                 pat: PatKind::ident("y").span(8..9),
-                ty: Some(Ty::Float)
+                ty: Some(TyKind::Float.span(11..16))
             },
             val: ExprKind::float(7.0).span(19..22).into(),
             span: Span::from(0..22)
@@ -400,107 +404,86 @@ fn var_expressions() {
 #[test]
 fn control_exprs() {
     assert_eq!(
-        Parser::parse_expr("if 0.5 then foo()"),
+        Parser::parse_expr("if 0.5 { foo() }"),
         Ok(ExprKind::If {
             cond: ExprKind::float(0.5).span(3..6).into(),
             th: ExprKind::Call {
-                func: ExprKind::ident("foo").span(12..15).into(),
+                func: ExprKind::ident("foo").span(9..12).into(),
                 args: Vec::new()
             }
-            .span(12..17)
-            .into(),
+            .span(9..14)
+            .as_block(),
             el: None
         }
-        .span(0..17))
+        .span(0..16))
     );
 
     assert_eq!(
-        Parser::parse_expr("if 0.5 then foo else bar"),
+        Parser::parse_expr("if 0.5 { foo } else { bar }"),
         Ok(ExprKind::If {
             cond: ExprKind::float(0.5).span(3..6).into(),
-            th: ExprKind::ident("foo").span(12..15).into(),
-            el: Some(ExprKind::ident("bar").span(21..24).into())
+            th: ExprKind::ident("foo").span(9..12).as_block(),
+            el: Some(ExprKind::ident("bar").span(22..25).as_block())
         }
-        .span(0..24))
-    );
-
-    assert_eq!(
-        Parser::parse_expr("if a then if b then x else y"),
-        Ok(ExprKind::If {
-            cond: ExprKind::ident("a").span(3..4).into(),
-            th: ExprKind::If {
-                cond: ExprKind::ident("b").span(13..14).into(),
-                th: ExprKind::ident("x").span(20..21).into(),
-                el: Some(ExprKind::ident("y").span(27..28).into())
-            }
-            .span(10..28)
-            .into(),
-            el: None
-        }
-        .span(0..28))
+        .span(0..27))
     );
 
     let input = "
-    match maybe with 
-    | Some(v) -> v
-    | None() -> panic()
-    | -2 -> 2
-    | #(a, b) -> #(b, a)
+    maybe.match {
+        Some(v) -> v,
+        None() -> panic(),
+        -2 -> 2,
+        #(a, b) -> #(b, a),
+    }
 ";
     assert_eq!(
         Parser::parse_expr(input),
         Ok(ExprKind::Match {
-            scrutinee: ExprKind::ident("maybe").span(11..16).into(),
+            scrutinee: ExprKind::ident("maybe").span(5..10).into(),
             arms: vec![
                 MatchArm {
                     pat: PatKind::Constructor(
                         Ident::new("Some"),
-                        vec![PatKind::ident("v").span(34..35)]
+                        vec![PatKind::ident("v").span(32..33)]
                     )
-                    .span(29..36),
-                    body: ExprKind::ident("v").span(40..41).into(),
-                    span: Span::from(27..41)
+                    .span(27..34),
+                    body: ExprKind::ident("v").span(38..39),
                 },
                 MatchArm {
-                    pat: PatKind::Constructor(Ident::new("None"), vec![]).span(48..54),
+                    pat: PatKind::Constructor(Ident::new("None"), vec![]).span(49..55),
                     body: ExprKind::Call {
-                        func: ExprKind::ident("panic").span(58..63).into(),
+                        func: ExprKind::ident("panic").span(59..64).into(),
                         args: vec![]
                     }
-                    .span(58..65)
-                    .into(),
-                    span: Span::from(46..65)
+                    .span(59..66),
                 },
                 MatchArm {
                     pat: PatKind::Literal {
                         negate: true,
                         lit: LitExpr::Int(2)
                     }
-                    .span(72..74),
-                    body: ExprKind::int(2).span(78..79).into(),
-                    span: Span::from(70..79)
+                    .span(76..78),
+                    body: ExprKind::int(2).span(82..83),
                 },
                 MatchArm {
                     pat: PatKind::Tuple(vec![
-                        PatKind::ident("a").span(88..89),
-                        PatKind::ident("b").span(91..92)
+                        PatKind::ident("a").span(95..96),
+                        PatKind::ident("b").span(98..99)
                     ])
-                    .span(86..93),
+                    .span(93..100),
                     body: ExprKind::Tuple(vec![
-                        ExprKind::ident("b").span(99..100),
-                        ExprKind::ident("a").span(102..103)
+                        ExprKind::ident("b").span(106..107),
+                        ExprKind::ident("a").span(109..110)
                     ])
-                    .span(97..104)
-                    .into(),
-                    span: Span::from(84..104)
+                    .span(104..111),
                 }
             ]
         }
-        .span(5..104))
+        .span(5..118))
     );
 
     assert_eq!(
-        Parser::parse_expr(r#"for _ in ["Hello ", "World!"] do continue"#),
+        Parser::parse_expr(r#"for _ in ["Hello ", "World!"] { continue }"#),
         Ok(ExprKind::For {
             pat: PatKind::Wildcard.span(4..5),
             iter: ExprKind::Array(vec![
@@ -509,14 +492,14 @@ fn control_exprs() {
             ])
             .span(9..29)
             .into(),
-            body: ExprKind::Continue.span(33..41).into(),
+            body: ExprKind::Continue.span(32..40).as_block(),
         }
-        .span(0..41))
+        .span(0..42))
     );
 
     assert_eq!(
         Parser::parse_expr("loop { break }"),
-        Ok(ExprKind::Loop(BlockExpr(vec![Stmt::Expr(ExprKind::Break.span(7..12))])).span(0..14))
+        Ok(ExprKind::Loop(ExprKind::Break.span(7..12).as_block()).span(0..14))
     );
 }
 
@@ -587,7 +570,7 @@ if y < 3 {
                         },
                         Stmt::Expr(ExprKind::ident("a").span(60..61))
                     ]),
-                    el: Some(BlockExpr(vec![Stmt::Expr(ExprKind::int(32).span(71..72))]))
+                    el: Some(ExprKind::int(32).span(71..73).as_block())
                 }
                 .span(31..75)
             )
@@ -602,7 +585,6 @@ fn malformed_expressions() {
         Parser::parse_expr("let x = 7 + sin(3.0)"),
         Err(ErrorKind::Unexpected(TokKind::Let)
             .span(0..3)
-            .context("At start of expression")
             .context("`let` is a statement, and can only be used within a block"))
     );
     assert_eq!(
@@ -611,9 +593,7 @@ fn malformed_expressions() {
     );
     assert_eq!(
         Parser::parse_expr("*5"),
-        Err(ErrorKind::Unexpected(TokKind::Times)
-            .span(0..1)
-            .context("At start of expression"))
+        Err(ErrorKind::Unexpected(TokKind::Times).span(0..1))
     );
     assert_eq!(
         Parser::parse_stmt("let foo: fn(let UInt) -> UInt = fn()"),

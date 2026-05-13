@@ -5,12 +5,12 @@ edition = "2024"
 
 [dependencies]
 # Internal
-span = { path = "../span" }
-lex = { path = "../lex" }
-ast = { path = "../ast" }
-parse = { path = "../parse" }
-nameres = { path = "../nameres" }
-#typecheck = { path = "../typecheck" }
+span.path = "../span"
+lex.path = "../lex"
+ast.path = "../ast"
+parse.path = "../parse"
+nameres.path = "../nameres"
+#typecheck.path = "../typecheck"
 # External
 anyhow = "1.0.100"
 yansi = "1.0.1"

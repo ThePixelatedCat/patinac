@@ -6,9 +6,9 @@ pub type Result<T, E> = std::result::Result<T, Error<E>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error<E> {
-    pub kind: E,
-    pub span: Span,
-    pub ctx: Vec<Cow<'static, str>>,
+    kind: E,
+    span: Span,
+    ctx: Vec<Cow<'static, str>>,
 }
 
 impl<E> Error<E> {

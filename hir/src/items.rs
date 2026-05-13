@@ -1,8 +1,10 @@
 use smallvec::SmallVec;
 
-use ident::SpanIdent;
+use ident::{Ident, SpanIdent};
+use span::Span;
+use types::Ty;
 
-use crate::{exprs::Expr, patterns::Pat, types::Ty};
+use crate::{exprs::ExprId, patterns::Pat};
 
 #[derive(Debug, PartialEq)]
 pub struct ExecItem {
@@ -14,14 +16,14 @@ pub struct ExecItem {
 pub enum ExecKind {
     Const {
         ty: Option<Ty>,
-        val: Expr,
+        val: ExprId,
     },
     Fn {
         generics: SmallVec<[SpanIdent; 4]>,
         params: Vec<Param>,
         ret_mut: bool,
         ret_ty: Ty,
-        body: Expr,
+        body: ExprId,
     },
 }
 
@@ -36,6 +38,7 @@ pub struct Param {
 pub struct AdtItem {
     pub ident: SpanIdent,
     pub generics: SmallVec<[SpanIdent; 4]>,
+    pub span: Span,
     pub kind: AdtKind,
 }
 
@@ -53,6 +56,7 @@ pub struct Variant {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
-    pub ident: SpanIdent,
+    pub ident: Ident,
     pub ty: Ty,
+    pub span: Span,
 }

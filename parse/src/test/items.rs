@@ -5,11 +5,10 @@ use ast::{
     exprs::{Binding, ExprKind, InfixOp},
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
     patterns::PatKind,
+    types::TyKind,
 };
 use ident::Ident;
 use lex::TokKind;
-use span::Span;
-use types::Ty;
 
 use crate::{ErrorKind, Parser, items::Item};
 
@@ -18,10 +17,9 @@ fn const_items() {
     assert_eq!(
         Parser::parse_item(r#"const hello_world: String = "Hello, World!""#),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("hello_world"),
-            ident_span: Span::from(6..17),
+            ident: Ident::new("hello_world").span(6..17),
             kind: ExecKind::Const {
-                ty: Some(Ty::string_span(19..25)),
+                ty: Some(TyKind::string().span(19..25)),
                 val: ExprKind::string("Hello, World!").span(28..43)
             },
         }))
@@ -30,8 +28,7 @@ fn const_items() {
     assert_eq!(
         Parser::parse_item("const id = fn(x) -> x"),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("id"),
-            ident_span: Span::from(6..8),
+            ident: Ident::new("id").span(6..8),
             kind: ExecKind::Const {
                 ty: None,
                 val: ExprKind::Lambda {
@@ -55,17 +52,14 @@ fn record_items() {
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Point").span(7..12),
             generics: smallvec![],
-            span: Span::from(0..28),
             kind: AdtKind::Record(vec![
                 Field {
-                    ident: Ident::new("x"),
-                    ty: Ty::Int,
-                    span: Span::from(13..19)
+                    ident: Ident::new("x").span(13..14),
+                    ty: TyKind::Int.span(16..19),
                 },
                 Field {
-                    ident: Ident::new("y"),
-                    ty: Ty::Int,
-                    span: Span::from(21..27)
+                    ident: Ident::new("y").span(21..22),
+                    ty: TyKind::Int.span(24..27),
                 }
             ])
         }))
@@ -81,23 +75,21 @@ record Foo[T, U](
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Foo").span(8..11),
             generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
-            span: Span::from(1..60),
             kind: AdtKind::Record(vec![
                 Field {
-                    ident: Ident::new("x"),
-                    ty: Ty::Char,
-                    span: Span::from(23..30)
+                    ident: Ident::new("x").span(23..24),
+                    ty: TyKind::Char.span(26..30),
                 },
                 Field {
-                    ident: Ident::new("bar"),
-                    ty: Ty::Adt(
-                        Ident::new("Bar").span(43..46),
-                        vec![Ty::Adt(
-                            Ident::new("Baz").span(47..50),
-                            vec![Ty::named_span("T", 51..52)]
-                        )]
-                    ),
-                    span: Span::from(38..54)
+                    ident: Ident::new("bar").span(38..41),
+                    ty: TyKind::Adt(
+                        Ident::new("Bar"),
+                        vec![
+                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(51..52)])
+                                .span(47..53)
+                        ]
+                    )
+                    .span(43..54),
                 }
             ])
         }))
@@ -106,44 +98,41 @@ record Foo[T, U](
 
 #[test]
 fn enum_items() {
-    let input = r#"
-enum Foo
-    | X()
-        | Y(v: Bar)
-| Z(baz: Baz, fizz: Buzz)
-"#;
+    let input = "
+enum Foo {
+    X(),
+    Y(v: Bar),
+    Z(baz: Baz, fizz: Buzz),
+}
+";
 
     assert_eq!(
         Parser::parse_item(input),
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Foo").span(6..9),
             generics: smallvec![],
-            span: Span::from(1..65),
             kind: AdtKind::Enum(vec![
                 Variant {
                     ident: Ident::new("X").span(16..17),
                     fields: vec![]
                 },
                 Variant {
-                    ident: Ident::new("Y").span(30..31),
+                    ident: Ident::new("Y").span(25..26),
                     fields: vec![Field {
-                        ident: Ident::new("v"),
-                        ty: Ty::named_span("Bar", 35..38),
-                        span: Span::from(32..38)
+                        ident: Ident::new("v").span(27..28),
+                        ty: TyKind::named("Bar").span(30..33),
                     }],
                 },
                 Variant {
-                    ident: Ident::new("Z").span(42..43),
+                    ident: Ident::new("Z").span(40..41),
                     fields: vec![
                         Field {
-                            ident: Ident::new("baz"),
-                            ty: Ty::named_span("Baz", 49..52),
-                            span: Span::from(44..52)
+                            ident: Ident::new("baz").span(42..45),
+                            ty: TyKind::named("Baz").span(47..50),
                         },
                         Field {
-                            ident: Ident::new("fizz"),
-                            ty: Ty::named_span("Buzz", 60..64),
-                            span: Span::from(54..64)
+                            ident: Ident::new("fizz").span(52..56),
+                            ty: TyKind::named("Buzz").span(58..62),
                         },
                     ]
                 },
@@ -157,24 +146,23 @@ fn function_items() {
     assert_eq!(
         Parser::parse_item("fn sum(mut a: Byte, b: Byte) -> a = a + b"),
         Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("sum"),
-            ident_span: Span::from(3..6),
+            ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
                 generics: smallvec![],
                 params: vec![
                     Param {
                         mutable: true,
                         pat: PatKind::ident("a").span(11..12),
-                        ty: Ty::Byte
+                        ty: TyKind::Byte.span(14..18)
                     },
                     Param {
                         mutable: false,
                         pat: PatKind::ident("b").span(20..21),
-                        ty: Ty::Byte
+                        ty: TyKind::Byte.span(23..27)
                     }
                 ],
                 ret_mut: false,
-                ret_ty: Ty::unit(),
+                ret_ty: TyKind::unit().span(28..29),
                 body: ExprKind::Infix {
                     op: InfixOp::Assign,
                     lhs: ExprKind::ident("a").span(32..33).into(),
@@ -212,6 +200,6 @@ fn malformed_items() {
         Parser::parse_item("let global = false"),
         Err(ErrorKind::Unexpected(TokKind::Let)
             .span(0..3)
-            .context("at start of item"))
+            .context("expected the start of an item"))
     );
 }

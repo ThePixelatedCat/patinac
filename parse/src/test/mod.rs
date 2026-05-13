@@ -6,13 +6,13 @@ use pretty_assertions::assert_eq;
 use smallvec::smallvec;
 
 use ast::{
-    exprs::{Arg, Binding, ExprKind, InfixOp, Stmt},
+    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, Stmt},
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
     patterns::PatKind,
+    types::{Param as ParamTy, Return, TyKind},
 };
 use ident::Ident;
 use span::Span;
-use types::{Param as ParamTy, Return, Ty};
 
 use crate::Parser;
 
@@ -20,66 +20,74 @@ use crate::Parser;
 fn file() {
     #[rustfmt::skip]
     let input =
-r#"
+"
 fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
     let mut x: #(Bool, T) = true + sin(y)
-    x = if bar < 3 then {
+    x = if bar < 3 {
         let baz = bar.value + 2 * 4
         x + 1
-    } else if bar <= 2 then
+    } else {
         fizz(3, 5.1)
+    }
 }
 record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
-"#;
+";
 
     let items = Parser::new(lex::lex(input).unwrap()).parse().unwrap();
 
     assert_eq!(
         items.execs[0],
         ExecItem {
-            ident: Ident::new("testingfn"),
-            ident_span: Span::from(4..13),
+            ident: Ident::new("testingfn").span(4..13),
             kind: ExecKind::Fn {
                 generics: smallvec![],
                 params: vec![
                     Param {
                         mutable: true,
                         pat: PatKind::ident("x").span(18..19),
-                        ty: Ty::Bool
+                        ty: TyKind::Bool.span(21..25)
                     },
                     Param {
                         mutable: false,
                         pat: PatKind::ident("bar").span(27..30),
-                        ty: Ty::Adt(
-                            Ident::new("Bar").span(32..35),
+                        ty: TyKind::Adt(
+                            Ident::new("Bar"),
                             vec![
-                                Ty::Adt(
-                                    Ident::new("Baz").span(36..39),
-                                    vec![Ty::named_span("T", 40..41)],
-                                ),
-                                Ty::named_span("U", 44..45)
+                                TyKind::Adt(
+                                    Ident::new("Baz"),
+                                    vec![TyKind::named("T").span(40..41)],
+                                )
+                                .span(36..42),
+                                TyKind::named("U").span(44..45)
                             ]
                         )
+                        .span(32..46)
                     }
                 ],
                 ret_mut: true,
-                ret_ty: Ty::Fn(
+                ret_ty: TyKind::Fn(
                     vec![ParamTy {
                         mutable: true,
-                        ty: Ty::Int
+                        ty: TyKind::Int.span(60..63)
                     }],
                     Return {
                         mutable: false,
-                        ty: Ty::unit()
+                        ty: TyKind::unit().span(68..71).into()
                     }
-                    .into()
-                ),
-                body: ExprKind::Block(vec![
+                )
+                .span(53..71),
+                body: ExprKind::Block(BlockExpr(vec![
                     Stmt::Decl {
                         binding: Binding {
                             mutable: true,
                             pat: PatKind::ident("x").span(88..89),
-                            ty: Some(Ty::Tuple(vec![Ty::Bool, Ty::named_span("T", 99..100)]))
+                            ty: Some(
+                                TyKind::Tuple(vec![
+                                    TyKind::Bool.span(93..97),
+                                    TyKind::named("T").span(99..100)
+                                ])
+                                .span(91..101)
+                            )
                         },
                         val: ExprKind::Infix {
                             op: InfixOp::Add,
@@ -109,80 +117,65 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                 }
                                 .span(129..136)
                                 .into(),
-                                th: ExprKind::Block(vec![
+                                th: BlockExpr(vec![
                                     Stmt::Decl {
                                         binding: Binding {
                                             mutable: false,
-                                            pat: PatKind::ident("baz").span(156..159),
+                                            pat: PatKind::ident("baz").span(151..154),
                                             ty: None
                                         },
                                         val: ExprKind::Infix {
                                             op: InfixOp::Add,
                                             lhs: ExprKind::Field {
-                                                base: ExprKind::ident("bar").span(162..165).into(),
-                                                field: Ident::new("value").span(166..171)
+                                                base: ExprKind::ident("bar").span(157..160).into(),
+                                                field: Ident::new("value").span(161..166)
                                             }
-                                            .span(162..171)
+                                            .span(157..166)
                                             .into(),
                                             rhs: ExprKind::Infix {
                                                 op: InfixOp::Mul,
-                                                lhs: ExprKind::int(2).span(174..175).into(),
-                                                rhs: ExprKind::int(4).span(178..179).into()
+                                                lhs: ExprKind::int(2).span(169..170).into(),
+                                                rhs: ExprKind::int(4).span(173..174).into()
                                             }
-                                            .span(174..179)
+                                            .span(169..174)
                                             .into()
                                         }
-                                        .span(162..179),
-                                        span: Span::from(152..179)
+                                        .span(157..174),
+                                        span: Span::from(147..174)
                                     },
                                     Stmt::Expr(
                                         ExprKind::Infix {
                                             op: InfixOp::Add,
-                                            lhs: ExprKind::ident("x").span(188..189).into(),
-                                            rhs: ExprKind::int(1).span(192..193).into()
+                                            lhs: ExprKind::ident("x").span(183..184).into(),
+                                            rhs: ExprKind::int(1).span(187..188).into()
                                         }
-                                        .span(188..193)
+                                        .span(183..188)
                                     )
-                                ])
-                                .span(142..199)
-                                .into(),
-                                el: Some(
-                                    ExprKind::If {
-                                        cond: ExprKind::Infix {
-                                            op: InfixOp::Leq,
-                                            lhs: ExprKind::ident("bar").span(208..211).into(),
-                                            rhs: ExprKind::int(2).span(215..216).into()
-                                        }
-                                        .span(208..216)
-                                        .into(),
-                                        th: ExprKind::Call {
-                                            func: ExprKind::ident("fizz").span(230..234).into(),
-                                            args: vec![
-                                                Arg {
-                                                    mutable: false,
-                                                    val: ExprKind::int(3).span(235..236)
-                                                },
-                                                Arg {
-                                                    mutable: false,
-                                                    val: ExprKind::float(5.1).span(238..241)
-                                                }
-                                            ]
-                                        }
-                                        .span(230..242)
-                                        .into(),
-                                        el: None
+                                ]),
+                                el: Some(BlockExpr(vec![Stmt::Expr(
+                                    ExprKind::Call {
+                                        func: ExprKind::ident("fizz").span(210..214).into(),
+                                        args: vec![
+                                            Arg {
+                                                mutable: false,
+                                                val: ExprKind::int(3).span(215..216)
+                                            },
+                                            Arg {
+                                                mutable: false,
+                                                val: ExprKind::float(5.1).span(218..221)
+                                            }
+                                        ]
                                     }
-                                    .span(205..242)
-                                    .into()
-                                )
+                                    .span(210..222)
+                                )]))
                             }
-                            .span(126..242)
+                            .span(126..228)
                             .into()
                         }
-                        .span(122..242)
+                        .span(122..228)
                     ),
-                ])
-                .span(74..244)
+                ]))
+                .span(74..230)
             },
         }
     );
@@ -190,31 +183,27 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
     assert_eq!(
         items.adts[0],
         AdtItem {
-            ident: Ident::new("Foo").span(252..255),
+            ident: Ident::new("Foo").span(238..241),
             generics: smallvec![
-                Ident::new("T").span(256..257),
-                Ident::new("U").span(259..260),
+                Ident::new("T").span(242..243),
+                Ident::new("U").span(245..246),
             ],
-            span: Span::from(245..300),
             kind: AdtKind::Record(vec![
                 Field {
-                    ident: Ident::new("x"),
-                    ty: Ty::string_span(265..271),
-                    span: Span::from(262..271)
+                    ident: Ident::new("x").span(248..249),
+                    ty: TyKind::string().span(251..257),
                 },
                 Field {
-                    ident: Ident::new("bar"),
-                    ty: Ty::Adt(
-                        Ident::new("Bar").span(278..281),
+                    ident: Ident::new("bar").span(259..262),
+                    ty: TyKind::Adt(
+                        Ident::new("Bar"),
                         vec![
-                            Ty::Adt(
-                                Ident::new("Baz").span(282..285),
-                                vec![Ty::named_span("T", 286..287)]
-                            ),
-                            Ty::array_span(Ty::named_span("U", 296..297), 290..295),
+                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(272..273)])
+                                .span(268..274),
+                            TyKind::array(TyKind::named("U").span(282..283)).span(276..284),
                         ]
-                    ),
-                    span: Span::from(273..299)
+                    )
+                    .span(264..285),
                 }
             ])
         }

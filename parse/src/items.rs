@@ -1,19 +1,21 @@
 use derive_more::From;
 use smallvec::{SmallVec, smallvec};
 
-use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
+use ast::{
+    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
+    types::TyKind,
+};
 use errors::ResultExt;
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 use span::Span;
-use types::Ty;
 
 use crate::{ErrorKind, Parser, Result};
 
 #[derive(From, PartialEq, Debug)]
 pub enum Item {
-    ExecItem(ExecItem<(), SpanIdent, Ident>),
-    AdtItem(AdtItem<SpanIdent>),
+    ExecItem(ExecItem),
+    AdtItem(AdtItem),
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
@@ -25,11 +27,11 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Enum => self.enum_item().map(Item::from),
             _ => Err(self
                 .err_next(ErrorKind::Unexpected)
-                .context("at start of item")),
+                .context("expected the start of an item")),
         }
     }
 
-    fn const_item(&mut self) -> Result<ExecItem<(), SpanIdent, Ident>> {
+    fn const_item(&mut self) -> Result<ExecItem> {
         self.consume(TokKind::Const)?;
 
         let ident = self.ident()?;
@@ -38,24 +40,23 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let val = self.expr()?;
 
         Ok(ExecItem {
-            ident: ident.ident,
-            ident_span: ident.span,
+            ident,
             kind: ExecKind::Const { ty, val },
         })
     }
 
-    fn func_item(&mut self) -> Result<ExecItem<(), SpanIdent, Ident>> {
+    fn func_item(&mut self) -> Result<ExecItem> {
         self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
         let (generics, _) = self.generic_params()?;
-        let (params, _) = self.delimited_list(
+        let (params, params_span) = self.delimited_list(
             |this| {
                 let mutable = this.consume_at(TokKind::Mut).is_some();
                 let pat = this.pattern()?;
                 this.consume(TokKind::Colon)
                     .context("Type annotations are required on function parameters")?;
-                let (ty, _) = this.ty()?;
+                let ty = this.ty()?;
 
                 Ok(Param { mutable, pat, ty })
             },
@@ -64,15 +65,19 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         )?;
         let (ret_mut, ret_ty) = self
             .consume_at(TokKind::Colon)
-            .map(|_| Ok((self.consume_at(TokKind::Mut).is_some(), self.ty()?.0)))
+            .map(|_| Ok((self.consume_at(TokKind::Mut).is_some(), self.ty()?)))
             .transpose()?
-            .unwrap_or_else(|| (false, Ty::unit()));
+            .unwrap_or_else(|| {
+                (
+                    false,
+                    TyKind::unit().span(params_span.end..params_span.end + 1),
+                )
+            });
         self.consume(TokKind::Arrow)?;
         let body = self.expr()?;
 
         Ok(ExecItem {
-            ident: ident.ident,
-            ident_span: ident.span,
+            ident,
             kind: ExecKind::Fn {
                 generics,
                 params,
@@ -83,65 +88,50 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    fn record_item(&mut self) -> Result<AdtItem<SpanIdent>> {
-        let start = self.consume(TokKind::Record)?.span.start;
+    fn record_item(&mut self) -> Result<AdtItem> {
+        self.consume(TokKind::Record)?;
 
         let ident = self.ident()?;
         let (generics, _) = self.generic_params()?;
-
-        let (fields, fields_span) = self.fields()?;
+        let (fields, _) = self.fields()?;
 
         Ok(AdtItem {
             ident,
             generics,
-            span: Span::from(start..fields_span.end),
             kind: AdtKind::Record(fields),
         })
     }
 
-    fn enum_item(&mut self) -> Result<AdtItem<SpanIdent>> {
-        let start = self.consume(TokKind::Enum)?.span.start;
+    fn enum_item(&mut self) -> Result<AdtItem> {
+        self.consume(TokKind::Enum)?;
 
         let ident = self.ident()?;
-        let (generics, generics_span) = self.generic_params()?;
-
-        let mut variants = Vec::new();
-        let mut variant_end = None;
-        while self.consume_at(TokKind::Pipe).is_some() {
-            let ident = self.ident()?;
-            let (fields, fields_span) = self.fields()?;
-            variant_end = Some(fields_span.end);
-            variants.push(Variant { ident, fields });
-        }
-
-        let end = variant_end
-            .or_else(|| generics_span.map(|s| s.end))
-            .unwrap_or(ident.span.end);
+        let (generics, _) = self.generic_params()?;
+        let (variants, _) = self.delimited_list(
+            |this| {
+                let ident = this.ident()?;
+                let (fields, _) = this.fields()?;
+                Ok(Variant { ident, fields })
+            },
+            TokKind::LBrace,
+            TokKind::RBrace,
+        )?;
 
         Ok(AdtItem {
             ident,
             generics,
-            span: Span::from(start..end),
             kind: AdtKind::Enum(variants),
         })
     }
 
-    fn fields(&mut self) -> Result<(Vec<Field<SpanIdent>>, Span)> {
+    fn fields(&mut self) -> Result<(Vec<Field>, Span)> {
         self.delimited_list(
             |this| {
-                let SpanIdent {
-                    ident,
-                    span: ident_span,
-                } = this.ident()?;
-
+                let ident = this.ident()?;
                 this.consume(TokKind::Colon)?;
-                let (ty, ty_span) = this.ty()?;
+                let ty = this.ty()?;
 
-                Ok(Field {
-                    ident,
-                    ty,
-                    span: Span::from(ident_span.start..ty_span.end),
-                })
+                Ok(Field { ident, ty })
             },
             TokKind::LParen,
             TokKind::RParen,

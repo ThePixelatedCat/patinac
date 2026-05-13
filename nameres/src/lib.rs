@@ -11,7 +11,7 @@ use smallvec::{SmallVec, smallvec};
 
 use ast::{
     Ast, Path,
-    exprs::{Arg, Binding, Expr, ExprKind, MatchArm, Stmt},
+    exprs::{Arg, Binding, Expr, MatchArm, Stmt},
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
     patterns::{Pat, PatKind},
 };
@@ -24,9 +24,7 @@ pub use table::*;
 
 type Scope<Id> = im::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
-pub fn resolve(
-    ast: Ast<(), SpanIdent, Ident>,
-) -> Result<(Vec<ExecItem<(), AdtId, VarId>>, NameTable)> {
+pub fn resolve(ast: Ast<SpanIdent, Ident>) -> Result<(Ast<AdtId, VarId>, NameTable)> {
     let mut adt_table = PartialAdtTable::default();
     let mut adt_scope = Scope::default();
 
@@ -53,13 +51,13 @@ pub fn resolve(
     // Used to track the spans of the item idents, for error reporting in the case of duplicated items
     let mut spans: HashMap<VarId, Span> = HashMap::default();
     for item in &ast.execs {
-        if let Some(id) = var_scope.get(&item.ident) {
-            return Err(ErrorKind::DupItem(item.ident, spans[id]).span(item.ident_span));
+        if let Some(id) = var_scope.get(&item.ident.ident) {
+            return Err(ErrorKind::DupItem(item.ident.ident, spans[id]).span(item.ident.span));
         }
 
         let id = var_table.reserve();
-        var_scope.insert(item.ident, id);
-        spans.insert(id, item.ident_span);
+        var_scope.insert(item.ident.ident, id);
+        spans.insert(id, item.ident.span);
     }
     let execs = ast
         .execs
@@ -160,9 +158,9 @@ fn resolve_exec_item(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    item: ExecItem<(), SpanIdent, Ident>,
-) -> Result<ExecItem<(), AdtId, VarId>> {
-    let &id = var_scope.get(&item.ident).expect(
+    item: ExecItem<SpanIdent, Ident>,
+) -> Result<ExecItem<AdtId, VarId>> {
+    let &id = var_scope.get(&item.ident.ident).expect(
         "all exec item idents, including this one, should have already been inserted into the scope",
     );
 
@@ -177,7 +175,6 @@ fn resolve_exec_item(
                     ident: item.ident,
                     mutable: false,
                     ty: ty.clone(),
-                    span: item.ident_span,
                 },
             );
 
@@ -275,30 +272,30 @@ fn resolve_expr(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    expr: Expr<(), SpanIdent, Ident>,
-) -> Result<Expr<(), AdtId, VarId>> {
+    expr: Expr<SpanIdent, Ident>,
+) -> Result<Expr<AdtId, VarId>> {
     let kind = match expr.kind {
-        ExprKind::Path(path) => {
+        Expr::Path(path) => {
             if !path.prefix.is_empty() {
                 todo!("handle paths")
             }
 
             match var_scope.get(&path.end) {
-                Some(&ident) => ExprKind::Path(Path {
+                Some(&ident) => Expr::Path(Path {
                     prefix: smallvec![],
                     end: ident,
                 }),
                 None => return Err(ErrorKind::UnboundVariable(path.end).span(expr.span)),
             }
         }
-        ExprKind::Lit(lit) => ExprKind::Lit(lit),
-        ExprKind::Array(exprs) => ExprKind::Array(resolve_exprs(
+        Expr::Lit(lit) => Expr::Lit(lit),
+        Expr::Array(exprs) => Expr::Array(resolve_exprs(
             adt_table, adt_scope, var_table, var_scope, exprs,
         )?),
-        ExprKind::Tuple(exprs) => ExprKind::Tuple(resolve_exprs(
+        Expr::Tuple(exprs) => Expr::Tuple(resolve_exprs(
             adt_table, adt_scope, var_table, var_scope, exprs,
         )?),
-        ExprKind::Infix { op, lhs, rhs } => ExprKind::Infix {
+        Expr::Infix { op, lhs, rhs } => Expr::Infix {
             op,
             lhs: Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *lhs,
@@ -307,19 +304,19 @@ fn resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *rhs,
             )?),
         },
-        ExprKind::Unary { op, expr } => ExprKind::Unary {
+        Expr::Unary { op, expr } => Expr::Unary {
             op,
             expr: Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *expr,
             )?),
         },
-        ExprKind::Field { base, field } => ExprKind::Field {
+        Expr::Field { base, field } => Expr::Field {
             base: Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *base,
             )?),
             field,
         },
-        ExprKind::Index { arr, idx } => ExprKind::Index {
+        Expr::Index { arr, idx } => Expr::Index {
             arr: Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *arr,
             )?),
@@ -327,7 +324,7 @@ fn resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *idx,
             )?),
         },
-        ExprKind::Call { func, args } => {
+        Expr::Call { func, args } => {
             let func = Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *func,
             )?);
@@ -340,9 +337,9 @@ fn resolve_expr(
                     })
                 })
                 .try_collect()?;
-            ExprKind::Call { func, args }
+            Expr::Call { func, args }
         }
-        ExprKind::Lambda { params, body } => {
+        Expr::Lambda { params, body } => {
             let mut var_scope = var_scope.clone();
 
             // Rebind all mutable captures as immutable within the lambda body
@@ -374,9 +371,9 @@ fn resolve_expr(
                 adt_table, adt_scope, var_table, &var_scope, *body,
             )?);
 
-            ExprKind::Lambda { params, body }
+            Expr::Lambda { params, body }
         }
-        ExprKind::If { cond, th, el } => ExprKind::If {
+        Expr::If { cond, th, el } => Expr::If {
             cond: Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *cond,
             )?),
@@ -389,7 +386,7 @@ fn resolve_expr(
                 })
                 .transpose()?,
         },
-        ExprKind::Match { scrutinee, arms } => {
+        Expr::Match { scrutinee, arms } => {
             let scrutinee = Box::new(resolve_expr(
                 adt_table, adt_scope, var_table, var_scope, *scrutinee,
             )?);
@@ -415,9 +412,9 @@ fn resolve_expr(
                     })
                 })
                 .try_collect()?;
-            ExprKind::Match { scrutinee, arms }
+            Expr::Match { scrutinee, arms }
         }
-        ExprKind::For { pat, iter, body } => {
+        Expr::For { pat, iter, body } => {
             let mut var_scope = var_scope.clone();
             let pat = resolve_pat(
                 adt_table,
@@ -429,7 +426,7 @@ fn resolve_expr(
                 None,
             );
 
-            ExprKind::For {
+            Expr::For {
                 pat,
                 iter: Box::new(resolve_expr(
                     adt_table, adt_scope, var_table, &var_scope, *iter,
@@ -439,17 +436,17 @@ fn resolve_expr(
                 )?),
             }
         }
-        ExprKind::Loop(body) => ExprKind::Loop(Box::new(resolve_expr(
+        Expr::Loop(body) => Expr::Loop(Box::new(resolve_expr(
             adt_table, adt_scope, var_table, var_scope, *body,
         )?)),
-        ExprKind::Break => ExprKind::Break,
-        ExprKind::Continue => ExprKind::Continue,
-        ExprKind::Return(expr) => ExprKind::Return(Box::new(resolve_expr(
+        Expr::Break => Expr::Break,
+        Expr::Continue => Expr::Continue,
+        Expr::Return(expr) => Expr::Return(Box::new(resolve_expr(
             adt_table, adt_scope, var_table, var_scope, *expr,
         )?)),
-        ExprKind::Block(stmts) => {
+        Expr::Block(stmts) => {
             let mut var_scope = var_scope.clone();
-            ExprKind::Block(
+            Expr::Block(
                 stmts
                     .into_iter()
                     .map(|stmt| resolve_stmt(adt_table, adt_scope, var_table, &mut var_scope, stmt))
@@ -463,51 +460,51 @@ fn resolve_expr(
 
 fn collect_captures(captures: &mut HashSet<Ident>, expr: &Expr<(), SpanIdent, Ident>) {
     match &expr.kind {
-        ExprKind::Path(path) => {
+        Expr::Path(path) => {
             if !path.prefix.is_empty() {
                 todo!("handle paths")
             }
             captures.insert(path.end);
         }
-        ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
-        ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
+        Expr::Lit(_) | Expr::Break | Expr::Continue => {}
+        Expr::Array(exprs) | Expr::Tuple(exprs) => {
             for e in exprs {
                 collect_captures(captures, e);
             }
         }
-        ExprKind::Lambda { body: e, .. }
-        | ExprKind::Field { base: e, .. }
-        | ExprKind::Unary { expr: e, .. }
-        | ExprKind::Loop(e)
-        | ExprKind::Return(e) => collect_captures(captures, e),
-        ExprKind::For {
+        Expr::Lambda { body: e, .. }
+        | Expr::Field { base: e, .. }
+        | Expr::Unary { expr: e, .. }
+        | Expr::Loop(e)
+        | Expr::Return(e) => collect_captures(captures, e),
+        Expr::For {
             iter: e1, body: e2, ..
         }
-        | ExprKind::Infix {
+        | Expr::Infix {
             lhs: e1, rhs: e2, ..
         }
-        | ExprKind::Index { arr: e1, idx: e2 } => {
+        | Expr::Index { arr: e1, idx: e2 } => {
             collect_captures(captures, e1);
             collect_captures(captures, e2);
         }
-        ExprKind::Call { func, args } => {
+        Expr::Call { func, args } => {
             collect_captures(captures, func);
             for a in args {
                 collect_captures(captures, &a.val);
             }
         }
-        ExprKind::If { cond, th, el } => {
+        Expr::If { cond, th, el } => {
             collect_captures(captures, cond);
             collect_captures(captures, th);
             el.as_ref().inspect(|el| collect_captures(captures, el));
         }
-        ExprKind::Match { scrutinee, arms } => {
+        Expr::Match { scrutinee, arms } => {
             collect_captures(captures, scrutinee);
             for a in arms {
                 collect_captures(captures, &a.body);
             }
         }
-        ExprKind::Block(stmts) => {
+        Expr::Block(stmts) => {
             for s in stmts {
                 match s {
                     Stmt::Decl { val, .. } => collect_captures(captures, val),
@@ -523,8 +520,8 @@ fn resolve_exprs(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &Scope<VarId>,
-    exprs: Vec<Expr<(), SpanIdent, Ident>>,
-) -> Result<Vec<Expr<(), AdtId, VarId>>> {
+    exprs: Vec<Expr<SpanIdent, Ident>>,
+) -> Result<Vec<Expr<AdtId, VarId>>> {
     exprs
         .into_iter()
         .map(|expr| resolve_expr(adt_table, adt_scope, var_table, var_scope, expr))
@@ -536,8 +533,8 @@ fn resolve_stmt(
     adt_scope: &Scope<AdtId>,
     var_table: &mut PartialVarTable,
     var_scope: &mut Scope<VarId>,
-    stmt: Stmt<(), SpanIdent, Ident>,
-) -> Result<Stmt<(), AdtId, VarId>> {
+    stmt: Stmt<SpanIdent, Ident>,
+) -> Result<Stmt<AdtId, VarId>> {
     match stmt {
         Stmt::Decl { binding, val, span } => {
             // val must be resolved before binding, to ensure the declared variable isn't in scope within it's own declaration
