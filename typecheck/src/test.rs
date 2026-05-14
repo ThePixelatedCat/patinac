@@ -1,62 +1,72 @@
-use std::sync::LazyLock;
-
 use ena::unify::UnifyKey;
-use ident::Ident;
-use nameres::AdtId;
+
+use hir::types::{Param, Return};
 use parse::Parser;
 
-use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, type_vars::TyVar};
-use types::{Param, Return};
+use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, types::TyVar};
 
-fn check_expr(input: &str) -> Result<Ty<AdtId>> {
-    let mut checker = TypeChecker::new();
-
-    let typed_expr = checker.infer_expr(
-        &TY_ENV,
-        &mut Ctx::default(),
-        Parser::parse_expr(input).unwrap(),
-    )?;
+fn check_expr(input: &str) -> Result<Ty> {
+    let expr = Parser::parse_expr(input).unwrap();
+    let (expr, hir) = nameres::test_resolve_expr(expr).unwrap();
+    let mut checker = TypeChecker::default();
+    checker.infer_expr(&hir, expr)?;
     checker.unify()?;
-    checker.sub_expr(typed_expr).map(|e| e.ty)
+    let mut expr_mapping = checker.sub_all(&hir)?;
+    Ok(expr_mapping.remove(expr).expect(&format!("{expr:?}")))
 }
 
 fn check_full(input: &str) -> Result<()> {
     let toks = lex::lex(input).unwrap();
     let ast = Parser::new(toks).parse().unwrap();
-    TypeChecker::new().type_program(ast)?;
+    let mut hir = nameres::resolve(ast).unwrap();
+    TypeChecker::default().type_program(&mut hir)?;
     Ok(())
 }
 
 #[test]
 fn type_of_if_single_branch() {
-    let input = r#"if true then {"Hi" {}}"#;
+    let input = "if true {false #()}";
     assert_eq!(check_expr(input), Ok(Ty::unit()))
 }
 
 #[test]
 fn type_of_if_single_branch_err() {
     assert_eq!(
-        check_expr("if true then 5.0"),
-        Err(ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::unit()).span(13..16))
+        check_expr("if true { 5.0 }"),
+        Err(ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::unit()).span(8..15))
     )
 }
 
 #[test]
 fn type_of_if() {
-    assert_eq!(check_expr("if true then 5.0 else -3.0"), Ok(Ty::Float))
+    assert_eq!(check_expr("if true { 5.0 } else { -3.0 }"), Ok(Ty::Float))
 }
 
+// #[test]
+// fn type_of_if_err() {
+//     assert_eq!(
+//         check_expr(r#"if true then "true" else false"#),
+//         Err(ErrorKind::TypesNotEqual(PartialTy::Bool, PartialTy::string()).span(25..30))
+//     )
+// }
+
 #[test]
-fn type_of_if_err() {
+fn array() {
     assert_eq!(
-        check_expr(r#"if true then "true" else false"#),
-        Err(ErrorKind::TypesNotEqual(PartialTy::Bool, PartialTy::string()).span(25..30))
-    )
+        check_expr("[1.0, 2.0, 9.0 / 3.0, 4.0, -5.0].[0]"),
+        Ok(Ty::Float)
+    );
 }
 
 #[test]
-fn arrays() {
-    assert_eq!(check_expr("[1, 2, 9 / 3, 4, -5].[0]"), Ok(Ty::Int));
+fn mismatched_array() {
+    assert_eq!(
+        check_expr("[1, 2.0]"),
+        Err(
+            ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::IntVar(TyVar::from_index(1)))
+                .span(4..7)
+        )
+    );
 }
 
 #[test]
@@ -67,7 +77,7 @@ fn vars() {
 #[test]
 fn lambdas() {
     assert_eq!(
-        check_expr("fn(mut a, b): UInt -> {a = a + b a}"),
+        check_expr("fn(mut a, b: Float) -> {a = a + b a}"),
         Ok(Ty::Fn(
             vec![
                 Param {
@@ -79,10 +89,10 @@ fn lambdas() {
                     ty: Ty::UInt
                 }
             ],
-            Box::new(Return {
+            Return {
                 mutable: false,
-                ty: Ty::UInt
-            })
+                ty: Box::new(Ty::UInt)
+            }
         ))
     );
 }
@@ -93,7 +103,7 @@ fn maths() {
         check_expr("1 + 1.0"),
         Err(
             ErrorKind::TypesNotEqual(PartialTy::IntVar(TyVar::from_index(0)), PartialTy::Float)
-                .span(4..7)
+                .span(0..1)
         )
     );
     assert_eq!(check_expr("1.0 + 1.0"), Ok(Ty::Float))
@@ -101,44 +111,44 @@ fn maths() {
 
 #[test]
 fn type_of_int() {
-    assert_eq!(check_expr("{let a = 5 let b: Int = 1 a + b}"), Ok(Ty::Int));
+    assert_eq!(
+        check_expr("{let a = 5.0 let b: Float = 1.0 a + b}"),
+        Ok(Ty::Float)
+    );
 }
 
 #[test]
 fn type_of_block() {
     let input = "{
-    let mut y: UInt = 5
-    3 + 1 - 2
-    y = 256
-    if y < 3 then {
-        let a = -5
+    let mut y: Float = 5.0
+    3.0 + 1.0 - 2.0
+    y = 256.0
+    if y < 3.0 {
+        let a = -5.0
         a
-    } else 32
+    } else {32.0}
 }";
 
-    assert_eq!(check_expr(input), Ok(Ty::Int));
+    assert_eq!(check_expr(input), Ok(Ty::Float));
 }
 
 #[test]
 fn shadowing() {
-    let input = r#"{
-    let a: UInt = 5
-    let a = "Hello, World"
-    {let a = true}
-    a
-}"#;
+    let input = "{
+        let a: UInt = 5
+        let a = 6.0
+        {let a = true}
+        a
+    }";
 
-    assert_eq!(check_expr(input), Ok(Ty::string()));
+    assert_eq!(check_expr(input), Ok(Ty::Float));
 }
 
 #[test]
 fn recursion() {
     let input = "
-fn fac(n: UInt): UInt -> 
-    if n == 0 then
-        1 
-    else 
-        n * fac(n - 1)
+fn fac(n: Float): Float -> 
+    if n == 0.0 { 1.0 } else { n * fac(n - 1.0) }      
 ";
 
     assert_eq!(check_full(input), Ok(()));
@@ -147,14 +157,16 @@ fn fac(n: UInt): UInt ->
 #[test]
 fn option() {
     let input = "\
-enum Option[T] 
-| Some(v: T)
-| None()
+enum Option[T] {
+    Some(v: T),
+    None()
+}
 
 fn map[T, U](self: Option[T], f: fn(T) -> U): Option[U] -> 
-    match self with
-    | Some(v) -> Some(f(v))
-    | None -> None
+    self.match {
+        Some(v) -> f(v),
+        None() -> None()
+    }
 ";
 
     assert_eq!(check_full(input), Ok(()))

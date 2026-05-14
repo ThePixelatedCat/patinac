@@ -3,20 +3,19 @@ use itertools::Itertools;
 use hir::{
     AdtInfo, Hir, VarId,
     exprs::{Arg, Binding, BlockExpr, Expr, ExprId, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt},
-    patterns::Pat,
+    patterns::{Pat, PatKind},
 };
 use ident::SpanIdent;
 
 use crate::{
     ErrorKind, PartialTy, Result, TypeChecker,
-    type_vars::{Param, Return},
+    types::{Param, Return},
 };
 
 impl TypeChecker {
     pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> Result<PartialTy> {
-        let span = hir.expr_span(expr);
         match hir.expr_info(expr) {
-            Expr::Ident(id) => Ok(self.infer_ident(hir, *id)),
+            Expr::Ident(id) => Ok(self.infer_ident(*id)),
             Expr::Lit(lit) => Ok(self.infer_lit(lit)),
             Expr::Array(exprs) => self.infer_array(hir, exprs),
             Expr::Tuple(exprs) => self.infer_tuple(hir, exprs),
@@ -44,8 +43,9 @@ impl TypeChecker {
         exprs.iter().map(|&e| self.infer_expr(hir, e)).collect()
     }
 
-    fn infer_ident(&mut self, hir: &Hir, id: VarId) -> PartialTy {
-        self.convert(hir.var_info(id).ty.as_ref())
+    fn infer_ident(&mut self, id: VarId) -> PartialTy {
+        let var = self.fresh_var();
+        self.ctx.entry(id).unwrap().or_insert(var).clone()
     }
 
     fn check_place_mut(&mut self, hir: &Hir, place: ExprId) -> Result<()> {
@@ -88,7 +88,7 @@ impl TypeChecker {
         match &lit {
             LitExpr::Int(_) => self.fresh_int_var(),
             LitExpr::Float(_) => PartialTy::Float,
-            LitExpr::String(_) => PartialTy::string(),
+            LitExpr::String(_) => todo!("String type"),
             LitExpr::Char(_) => PartialTy::Char,
             LitExpr::Bool(_) => PartialTy::Bool,
         }
@@ -100,7 +100,7 @@ impl TypeChecker {
             let ty = self.infer_expr(hir, expr)?;
             self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(expr));
         }
-        Ok(PartialTy::array(inner_ty))
+        Ok(PartialTy::Array(Box::new(inner_ty)))
     }
 
     fn infer_tuple(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<PartialTy> {
@@ -165,24 +165,15 @@ impl TypeChecker {
                 Ok(PartialTy::unit())
             }
             InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div | InfixOp::Rem => {
-                let int_var = self.fresh_int_var();
-                self.constrain_either_eq(
-                    lhs_ty.clone(),
-                    (PartialTy::Float, int_var),
-                    hir.expr_span(lhs),
-                );
-                self.constrain_eq(rhs_ty, lhs_ty.clone(), hir.expr_span(rhs));
-                Ok(lhs_ty)
+                self.constrain_eq(lhs_ty, PartialTy::Float, hir.expr_span(lhs));
+                self.constrain_eq(rhs_ty, PartialTy::Float, hir.expr_span(rhs));
+                Ok(PartialTy::Float)
             }
             InfixOp::Exp => {
+                self.constrain_eq(lhs_ty, PartialTy::Float, hir.expr_span(lhs));
                 let int_var = self.fresh_int_var();
-                self.constrain_either_eq(
-                    lhs_ty.clone(),
-                    (PartialTy::Float, int_var.clone()),
-                    hir.expr_span(lhs),
-                );
                 self.constrain_eq(rhs_ty, int_var, hir.expr_span(rhs));
-                Ok(lhs_ty)
+                Ok(PartialTy::Float)
             }
             InfixOp::And | InfixOp::Or | InfixOp::Xor => {
                 self.constrain_eq(lhs_ty, PartialTy::Bool, hir.expr_span(lhs));
@@ -194,13 +185,8 @@ impl TypeChecker {
                 Ok(PartialTy::Bool)
             }
             InfixOp::Gt | InfixOp::Lt | InfixOp::Geq | InfixOp::Leq => {
-                let int_var = self.fresh_int_var();
-                self.constrain_either_eq(
-                    lhs_ty.clone(),
-                    (PartialTy::Float, int_var),
-                    hir.expr_span(lhs),
-                );
-                self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
+                self.constrain_eq(lhs_ty, PartialTy::Float, hir.expr_span(lhs));
+                self.constrain_eq(rhs_ty, PartialTy::Float, hir.expr_span(rhs));
                 Ok(PartialTy::Bool)
             }
         }
@@ -214,13 +200,8 @@ impl TypeChecker {
                 Ok(PartialTy::Bool)
             }
             PrefixOp::Neg => {
-                let int_var = self.fresh_int_var();
-                self.constrain_either_eq(
-                    expr_ty.clone(),
-                    (int_var, PartialTy::Float),
-                    hir.expr_span(expr),
-                );
-                Ok(expr_ty)
+                self.constrain_eq(expr_ty, PartialTy::Float, hir.expr_span(expr));
+                Ok(PartialTy::Float)
             }
         }
     }
@@ -230,7 +211,7 @@ impl TypeChecker {
         let inner_ty = self.fresh_var();
         self.constrain_eq(
             arr_ty,
-            PartialTy::array(inner_ty.clone()),
+            PartialTy::Array(Box::new(inner_ty.clone())),
             hir.expr_span(arr),
         );
 
@@ -275,9 +256,9 @@ impl TypeChecker {
         match el {
             Some(el) => {
                 let el_ty = self.infer_block_expr(hir, el)?;
-                self.constrain_eq(el_ty, th_ty.clone(), hir.expr_span(el))
+                self.constrain_eq(el_ty, th_ty.clone(), el.span)
             }
-            None => self.constrain_eq(th_ty.clone(), PartialTy::unit(), hir.expr_span(th)),
+            None => self.constrain_eq(th_ty.clone(), PartialTy::unit(), th.span),
         }
 
         Ok(th_ty)
@@ -308,12 +289,12 @@ impl TypeChecker {
         body: &BlockExpr,
     ) -> Result<PartialTy> {
         let iter_ty = self.infer_expr(hir, iter)?;
-        let body_ty = self.infer_block_expr(hir, body)?;
+        self.infer_block_expr(hir, body)?;
         Ok(PartialTy::unit())
     }
 
     fn infer_loop(&mut self, hir: &Hir, body: &BlockExpr) -> Result<PartialTy> {
-        let body_ty = self.infer_block_expr(hir, body)?;
+        self.infer_block_expr(hir, body)?;
         Ok(PartialTy::unit())
     }
 
@@ -331,14 +312,14 @@ impl TypeChecker {
             param_tys,
             Return {
                 mutable: false,
-                ty: Box::new(body_ty.clone()),
+                ty: Box::new(body_ty),
             },
         ))
     }
 
     fn infer_block_expr(&mut self, hir: &Hir, block: &BlockExpr) -> Result<PartialTy> {
         let mut stmt_tys: Vec<_> = block
-            .0
+            .stmts
             .iter()
             .map(|s| self.infer_stmt(hir, s))
             .try_collect()?;
@@ -350,7 +331,11 @@ impl TypeChecker {
             Stmt::Decl { binding, val, .. } => {
                 let val_ty = self.infer_expr(hir, *val)?;
                 let annot_ty = self.convert(binding.ty.as_ref());
-                self.constrain_eq(val_ty, annot_ty, hir.expr_span(*val));
+                self.constrain_eq(val_ty, annot_ty.clone(), hir.expr_span(*val));
+                let PatKind::Ident(id) = binding.pat.kind else {
+                    todo!("pattern type checking")
+                };
+                self.constrain_eq(ty_a, ty_b, span);
                 Ok(PartialTy::unit())
             }
             Stmt::Expr(expr) => self.infer_expr(hir, *expr),

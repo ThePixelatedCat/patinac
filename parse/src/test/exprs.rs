@@ -89,7 +89,7 @@ fn unop_expressions() {
                     expr: ExprKind::int(13).span(3..5).into(),
                 }
                 .span(2..5)
-                .as_block()
+                .as_block(1..6)
             )
             .span(1..6)
             .into()
@@ -207,7 +207,7 @@ fn binop_expressions() {
                     rhs: ExprKind::int(4).span(6..7).into(),
                 }
                 .span(1..7)
-                .as_block()
+                .as_block(0..8)
             )
             .span(0..8)
             .into(),
@@ -227,7 +227,7 @@ fn binop_expressions() {
                     rhs: ExprKind::int(3).span(5..6).into(),
                 }
                 .span(1..6)
-                .as_block()
+                .as_block(0..7)
             )
             .span(0..7)
             .into(),
@@ -287,7 +287,7 @@ fn compound_expressions() {
                     .into()
                 }
                 .span(1..27)
-                .as_block()
+                .as_block(0..28)
             )
             .span(0..28)
             .into(),
@@ -412,7 +412,7 @@ fn control_exprs() {
                 args: Vec::new()
             }
             .span(9..14)
-            .as_block(),
+            .as_block(7..16),
             el: None
         }
         .span(0..16))
@@ -422,8 +422,8 @@ fn control_exprs() {
         Parser::parse_expr("if 0.5 { foo } else { bar }"),
         Ok(ExprKind::If {
             cond: ExprKind::float(0.5).span(3..6).into(),
-            th: ExprKind::ident("foo").span(9..12).as_block(),
-            el: Some(ExprKind::ident("bar").span(22..25).as_block())
+            th: ExprKind::ident("foo").span(9..12).as_block(7..14),
+            el: Some(ExprKind::ident("bar").span(22..25).as_block(20..27))
         }
         .span(0..27))
     );
@@ -492,14 +492,14 @@ fn control_exprs() {
             ])
             .span(9..29)
             .into(),
-            body: ExprKind::Continue.span(32..40).as_block(),
+            body: ExprKind::Continue.span(32..40).as_block(30..42),
         }
         .span(0..42))
     );
 
     assert_eq!(
         Parser::parse_expr("loop { break }"),
-        Ok(ExprKind::Loop(ExprKind::Break.span(7..12).as_block()).span(0..14))
+        Ok(ExprKind::Loop(ExprKind::Break.span(7..12).as_block(5..14)).span(0..14))
     );
 }
 
@@ -517,64 +517,70 @@ if y < 3 {
 
     assert_eq!(
         Parser::parse_expr(input),
-        Ok(ExprKind::Block(BlockExpr(vec![
-            Stmt::Decl {
-                binding: Binding {
-                    mutable: true,
-                    pat: PatKind::ident("y").span(9..10),
-                    ty: None
+        Ok(ExprKind::Block(BlockExpr {
+            stmts: vec![
+                Stmt::Decl {
+                    binding: Binding {
+                        mutable: true,
+                        pat: PatKind::ident("y").span(9..10),
+                        ty: None
+                    },
+                    val: ExprKind::int(5).span(13..14).into(),
+                    span: Span::from(1..14)
                 },
-                val: ExprKind::int(5).span(13..14).into(),
-                span: Span::from(1..14)
-            },
-            Stmt::Expr(
-                ExprKind::Infix {
-                    op: InfixOp::Sub,
-                    lhs: ExprKind::Infix {
-                        op: InfixOp::Add,
-                        lhs: ExprKind::int(3).span(15..16).into(),
-                        rhs: ExprKind::int(1).span(19..20).into()
+                Stmt::Expr(
+                    ExprKind::Infix {
+                        op: InfixOp::Sub,
+                        lhs: ExprKind::Infix {
+                            op: InfixOp::Add,
+                            lhs: ExprKind::int(3).span(15..16).into(),
+                            rhs: ExprKind::int(1).span(19..20).into()
+                        }
+                        .span(15..20)
+                        .into(),
+                        rhs: ExprKind::int(2).span(23..24).into()
                     }
-                    .span(15..20)
-                    .into(),
-                    rhs: ExprKind::int(2).span(23..24).into()
-                }
-                .span(15..24)
-            ),
-            Stmt::Expr(
-                ExprKind::Infix {
-                    op: InfixOp::Assign,
-                    lhs: ExprKind::ident("y").span(25..26).into(),
-                    rhs: ExprKind::int(1).span(29..30).into()
-                }
-                .span(25..30)
-            ),
-            Stmt::Expr(
-                ExprKind::If {
-                    cond: ExprKind::Infix {
-                        op: InfixOp::Lt,
-                        lhs: ExprKind::ident("y").span(34..35).into(),
-                        rhs: ExprKind::int(3).span(38..39).into()
+                    .span(15..24)
+                ),
+                Stmt::Expr(
+                    ExprKind::Infix {
+                        op: InfixOp::Assign,
+                        lhs: ExprKind::ident("y").span(25..26).into(),
+                        rhs: ExprKind::int(1).span(29..30).into()
                     }
-                    .span(34..39)
-                    .into(),
-                    th: BlockExpr(vec![
-                        Stmt::Decl {
-                            binding: Binding {
-                                mutable: false,
-                                pat: PatKind::ident("a").span(50..51),
-                                ty: None
-                            },
-                            val: ExprKind::int(5).span(54..55).into(),
-                            span: Span::from(46..55)
+                    .span(25..30)
+                ),
+                Stmt::Expr(
+                    ExprKind::If {
+                        cond: ExprKind::Infix {
+                            op: InfixOp::Lt,
+                            lhs: ExprKind::ident("y").span(34..35).into(),
+                            rhs: ExprKind::int(3).span(38..39).into()
+                        }
+                        .span(34..39)
+                        .into(),
+                        th: BlockExpr {
+                            stmts: vec![
+                                Stmt::Decl {
+                                    binding: Binding {
+                                        mutable: false,
+                                        pat: PatKind::ident("a").span(50..51),
+                                        ty: None
+                                    },
+                                    val: ExprKind::int(5).span(54..55).into(),
+                                    span: Span::from(46..55)
+                                },
+                                Stmt::Expr(ExprKind::ident("a").span(60..61))
+                            ],
+                            span: Span::from(40..63)
                         },
-                        Stmt::Expr(ExprKind::ident("a").span(60..61))
-                    ]),
-                    el: Some(ExprKind::int(32).span(71..73).as_block())
-                }
-                .span(31..75)
-            )
-        ]))
+                        el: Some(ExprKind::int(32).span(71..73).as_block(69..75))
+                    }
+                    .span(31..75)
+                )
+            ],
+            span: Span::from(0..77)
+        })
         .span(0..77))
     );
 }

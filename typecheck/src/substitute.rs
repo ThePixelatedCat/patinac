@@ -23,6 +23,7 @@ impl TypeChecker {
             PartialTy::Bool => Ok(Ty::Bool),
             PartialTy::Char => Ok(Ty::Char),
             PartialTy::Tuple(tys) => Ok(Ty::Tuple(self.sub_tys(tys)?)),
+            PartialTy::Array(ty) => Ok(Ty::Array(Box::new(self.sub_ty(*ty)?))),
             PartialTy::Fn(params, ret) => {
                 let params = params
                     .into_iter()

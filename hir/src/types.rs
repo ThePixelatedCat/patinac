@@ -10,31 +10,16 @@ pub enum Ty {
     Char,
     Bool,
     Tuple(Vec<Self>),
+    Array(Box<Self>),
     Fn(Vec<Param>, Return),
     Adt(AdtId, Vec<Self>),
 }
 
 impl Ty {
-    // /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
-    // pub const fn unit() -> Self {
-    //     Self::Tuple(vec![])
-    // }
-
-    // pub fn named(name: &str) -> Self {
-    //     //Self::Adt(Ident::new(name), vec![])
-    //     todo!()
-    // }
-
-    // /// Helper to create a new [`TyKind::Adt`] for a `String`
-    // pub fn string() -> Self {
-    //     Self::named("String")
-    // }
-
-    // /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
-    // pub fn array(inner: Ty) -> Self {
-    //     //Self::Adt(Ident::new("Array"), vec![inner])
-    //     todo!()
-    // }
+    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
+    }
 }
 
 /// A parameter of a function type

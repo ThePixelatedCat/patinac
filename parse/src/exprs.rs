@@ -50,9 +50,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Break => self.break_expr(),
             TokKind::Continue => self.continue_expr(),
             TokKind::Return => self.return_expr(),
-            TokKind::LBrace => self
-                .block_expr()
-                .map(|(block, span)| ExprKind::Block(block).span(span)),
+            TokKind::LBrace => self.block_expr().map(|block| {
+                let span = block.span;
+                ExprKind::Block(block).span(span)
+            }),
             TokKind::Let => Err(self
                 .err_next(ErrorKind::Unexpected)
                 .context("`let` is a statement, and can only be used within a block")),
@@ -173,15 +174,13 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let start = self.consume(TokKind::If)?.span.start;
 
         let cond = Box::new(self.expr()?);
-        let (th, th_span) = self.block_expr()?;
-        let (el, el_span) = self
+        let th = self.block_expr()?;
+        let el = self
             .consume_at(TokKind::Else)
             .map(|_| self.block_expr())
-            .transpose()?
-            .unzip();
+            .transpose()?;
 
-        let end = el_span.unwrap_or(th_span).end;
-
+        let end = el.as_ref().map_or(th.span.end, |el| el.span.end);
         Ok(ExprKind::If { cond, th, el }.span(start..end))
     }
 
@@ -191,20 +190,18 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let pat = self.pattern()?;
         self.consume(TokKind::In)?;
         let iter = Box::new(self.expr()?);
-        let (body, body_span) = self.block_expr()?;
+        let body = self.block_expr()?;
 
-        let span = start..body_span.end;
-
+        let span = start..body.span.end;
         Ok(ExprKind::For { pat, iter, body }.span(span))
     }
 
     fn loop_expr(&mut self) -> Result<Expr> {
         let start = self.consume(TokKind::Loop)?.span.start;
 
-        let (body, body_span) = self.block_expr()?;
+        let body = self.block_expr()?;
 
-        let span = start..body_span.end;
-
+        let span = start..body.span.end;
         Ok(ExprKind::Loop(body).span(span))
     }
 
@@ -252,7 +249,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         Ok(ExprKind::Continue.span(span))
     }
 
-    fn block_expr(&mut self) -> Result<(BlockExpr, Span)> {
+    fn block_expr(&mut self) -> Result<BlockExpr> {
         let start = self.consume(TokKind::LBrace)?.span.start;
 
         let mut stmts = vec![];
@@ -262,7 +259,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         let end = self.consume(TokKind::RBrace)?.span.end;
 
-        Ok((BlockExpr(stmts), Span::from(start..end)))
+        Ok(BlockExpr {
+            stmts,
+            span: Span::from(start..end),
+        })
     }
 
     fn dot_suffixes(&mut self, lhs: Expr) -> Result<Expr> {

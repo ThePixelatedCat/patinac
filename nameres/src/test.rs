@@ -1,6 +1,5 @@
 use pretty_assertions::assert_eq;
 
-use ast::types::TyKind;
 use hir::Hir;
 use ident::Ident;
 use parse::Parser;
@@ -74,7 +73,7 @@ fn fib() {
 fn unbound_var() {
     assert_eq!(
         test_resolve_expr("a + 5").unwrap_err(),
-        ErrorKind::UnboundVariable(Ident::new("a")).span(0..1)
+        ErrorKind::UnboundVariable.span(0..1)
     );
 }
 
@@ -106,7 +105,7 @@ fn list() {
 fn unknown_type() {
     assert_eq!(
         test_resolve_expr(r#"{let x: String = "Hello, World!"}"#).unwrap_err(),
-        ErrorKind::UnknownType(TyKind::string()).span(8..14)
+        ErrorKind::UnknownType.span(8..14)
     );
 }
 

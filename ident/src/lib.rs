@@ -38,6 +38,12 @@ impl Display for Ident {
     }
 }
 
+impl PartialEq<&str> for Ident {
+    fn eq(&self, other: &&str) -> bool {
+        get_str(&interner(), *self) == *other
+    }
+}
+
 impl Ident {
     pub fn new(string: &str) -> Self {
         Self(interner().get_or_intern(string))

@@ -11,7 +11,7 @@ errors.path = "../errors"
 ast.path = "../ast"
 hir.path = "../hir"
 # External
-im = "15.1.0"
+im-rc = "15.1.0"
 foldhash = "0.2.0"
 derive_more = { version = "2.1.1", features = ["display"] }
 smallvec = { version = "1.15.1", features = [
@@ -30,3 +30,6 @@ pretty_assertions = "1.4.1"
 
 [lints]
 workspace = true
+
+[features]
+test = []

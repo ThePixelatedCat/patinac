@@ -22,6 +22,7 @@ slotmap = "1.1.1"
 # Internal
 parse = { path = "../parse", features = ["test"] }
 lex = { path = "../lex", features = ["test"] }
+nameres = { path = "../nameres", features = ["test"] }
 
 [lints]
 workspace = true

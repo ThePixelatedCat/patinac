@@ -3,45 +3,29 @@ mod infer;
 mod substitute;
 #[cfg(test)]
 mod test;
-mod type_vars;
+mod types;
 mod unify;
 
 use ena::unify::InPlaceUnificationTable;
 
-use hir::{
-    AdtId, Hir, VarId,
-    exprs::{Expr, ExprId},
-    items::{ExecItem, ExecKind},
-    types::Ty,
-};
-use itertools::Itertools;
+use hir::{Hir, VarId, exprs::ExprId, items::ExecKind, types::Ty};
 use slotmap::SecondaryMap;
 use span::Span;
 
 pub use crate::error::{Error, ErrorKind, Result};
-use crate::type_vars::{PartialTy, TyVar};
+use crate::types::{PartialTy, TyVar};
 
 struct Constraint {
-    kind: ConstraintKind,
+    ty_a: PartialTy,
+    ty_b: PartialTy,
     span: Span,
 }
-
-enum ConstraintKind {
-    TypeEqual(PartialTy, PartialTy),
-    EitherTypeEqual(PartialTy, (PartialTy, PartialTy)),
-}
-
 #[derive(Default)]
 pub struct TypeChecker {
     table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
     substitution: SecondaryMap<ExprId, PartialTy>,
-}
-
-impl TypeChecker {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    ctx: SecondaryMap<VarId, PartialTy>,
 }
 
 impl TypeChecker {
@@ -66,7 +50,7 @@ impl TypeChecker {
                 }
             }
         }
-        self.unify();
+        self.unify()?;
         self.sub_all(hir)
     }
 
@@ -78,18 +62,8 @@ impl TypeChecker {
         PartialTy::IntVar(self.table.new_key(None))
     }
 
-    fn constrain_eq(&mut self, a: PartialTy, b: PartialTy, span: Span) {
-        self.constraints.push(Constraint {
-            kind: ConstraintKind::TypeEqual(a, b),
-            span,
-        });
-    }
-
-    fn constrain_either_eq(&mut self, a: PartialTy, tys: (PartialTy, PartialTy), span: Span) {
-        self.constraints.push(Constraint {
-            kind: ConstraintKind::EitherTypeEqual(a, tys),
-            span,
-        });
+    fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Span) {
+        self.constraints.push(Constraint { ty_a, ty_b, span });
     }
 
     fn convert(&mut self, ast_ty: Option<&Ty>) -> PartialTy {

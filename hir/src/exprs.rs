@@ -120,7 +120,10 @@ pub struct MatchArm {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BlockExpr(pub Vec<Stmt>);
+pub struct BlockExpr {
+    pub stmts: Vec<Stmt>,
+    pub span: Span,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {

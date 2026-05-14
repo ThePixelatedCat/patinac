@@ -33,7 +33,7 @@ use ident::Ident;
 
 use crate::error::{ErrorKind, Result};
 
-type Scope<Id> = im::HashMap<Ident, Id, foldhash::fast::RandomState>;
+type Scope<Id> = im_rc::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name
@@ -73,6 +73,13 @@ pub fn resolve(ast: Ast) -> Result<Hir> {
         .try_collect()?;
 
     Ok(hir)
+}
+
+#[cfg(any(test, feature = "test"))]
+pub fn test_resolve_expr(expr: AstExpr) -> Result<(ExprId, Hir)> {
+    let mut hir = Hir::default();
+    let expr = resolve_expr(&Scope::default(), &Scope::default(), &mut hir, expr)?;
+    Ok((expr, hir))
 }
 
 fn resolve_adt_item(
@@ -243,7 +250,7 @@ fn resolve_expr(
     let new_expr = match expr.kind {
         ExprKind::Ident(ident) => match var_scope.get(&ident) {
             Some(&id) => HirExpr::Ident(id),
-            None => return Err(ErrorKind::UnboundVariable(ident).span(expr.span)),
+            None => return Err(ErrorKind::UnboundVariable.span(expr.span)),
         },
         ExprKind::Lit(lit) => HirExpr::Lit(convert_lit(lit)),
         ExprKind::Array(exprs) => HirExpr::Array(resolve_exprs(adt_scope, var_scope, hir, exprs)?),
@@ -404,7 +411,7 @@ fn collect_captures_inner(captures: &mut HashSet<Ident>, expr: &AstExpr) {
 }
 
 fn collect_block_captures(captures: &mut HashSet<Ident>, block: &AstBlockExpr) {
-    for s in &block.0 {
+    for s in &block.stmts {
         match s {
             AstStmt::Decl { val, .. } => collect_captures_inner(captures, val),
             AstStmt::Expr(expr) => collect_captures_inner(captures, expr),
@@ -432,11 +439,14 @@ fn resolve_block_expr(
 ) -> Result<HirBlockExpr> {
     let mut var_scope = var_scope.clone();
     let stmts = block_expr
-        .0
+        .stmts
         .into_iter()
         .map(|s| resolve_stmt(adt_scope, &mut var_scope, hir, s))
         .try_collect()?;
-    Ok(HirBlockExpr(stmts))
+    Ok(HirBlockExpr {
+        stmts,
+        span: block_expr.span,
+    })
 }
 
 fn resolve_stmt(
@@ -498,12 +508,21 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
             };
             Ok(HirTy::Fn(params, ret))
         }
-        AstTyKind::Adt(ident, args) => match adt_scope.get(&ident).copied() {
-            Some(id) => Ok(HirTy::Adt(id, resolve_tys(adt_scope, args)?)),
-            None => {
-                return Err(ErrorKind::UnknownType(AstTyKind::Adt(ident, args)).span(ty.span));
+        AstTyKind::Adt(ident, mut args) => {
+            if ident == "Array" {
+                match args.len() {
+                    1 => resolve_ty(adt_scope, args.swap_remove(0))
+                        .map(Box::new)
+                        .map(HirTy::Array),
+                    len => Err(ErrorKind::GenericCount(1, len).span(ty.span)),
+                }
+            } else {
+                match adt_scope.get(&ident).copied() {
+                    Some(id) => Ok(HirTy::Adt(id, resolve_tys(adt_scope, args)?)),
+                    None => Err(ErrorKind::UnknownType.span(ty.span)),
+                }
             }
-        },
+        }
     }
 }
 

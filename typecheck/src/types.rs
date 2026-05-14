@@ -3,7 +3,6 @@ use std::fmt::Display;
 use ena::unify::{EqUnifyValue, UnifyKey};
 
 use hir::{AdtId, types::Ty};
-use ident::Ident;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
@@ -33,6 +32,7 @@ pub enum PartialTy {
     Bool,
     Char,
     Tuple(Vec<Self>),
+    Array(Box<Self>),
     Fn(Vec<Param>, Return),
     Adt(AdtId, Vec<Self>),
     Var(TyVar),
@@ -50,7 +50,8 @@ impl From<&Ty> for PartialTy {
             Ty::Float => Self::Float,
             Ty::Bool => Self::Bool,
             Ty::Char => Self::Char,
-            Ty::Tuple(tys) => Self::Tuple(tys.iter().map(PartialTy::from).collect()),
+            Ty::Tuple(tys) => Self::Tuple(tys.iter().map(Self::from).collect()),
+            Ty::Array(ty) => Self::Array(Box::new(ty.as_ref().into())),
             Ty::Fn(params, ret) => Self::Fn(
                 params
                     .iter()
@@ -64,7 +65,7 @@ impl From<&Ty> for PartialTy {
                     ty: Box::new(Self::from(&*ret.ty)),
                 },
             ),
-            Ty::Adt(id, args) => Self::Adt(*id, args.iter().map(PartialTy::from).collect()),
+            Ty::Adt(id, args) => Self::Adt(*id, args.iter().map(Self::from).collect()),
         }
     }
 }
@@ -78,15 +79,6 @@ impl From<Ty> for PartialTy {
 impl Display for PartialTy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Self::Var(_) => "{var}".fmt(f),
-            Self::IntVar(_) => "{integer}".fmt(f),
-            Self::Adt(name, args) => {
-                write!(f, "temp{name:?}")?; //TODO properly print error
-                if !args.is_empty() {
-                    write!(f, "[{}]", itertools::join(args, ", "))?;
-                }
-                Ok(())
-            }
             Self::Int => "Int".fmt(f),
             Self::UInt => "UInt".fmt(f),
             Self::Byte => "Byte".fmt(f),
@@ -94,9 +86,19 @@ impl Display for PartialTy {
             Self::Bool => "Bool".fmt(f),
             Self::Char => "Char".fmt(f),
             Self::Tuple(tys) => write!(f, "#({})", itertools::join(tys, ", ")),
+            Self::Array(ty) => write!(f, "Array[{ty}]"),
             Self::Fn(params, result_ty) => {
                 write!(f, "fn({}) -> {result_ty}", itertools::join(params, ", "))
             }
+            Self::Adt(name, args) => {
+                write!(f, "temp{name:?}")?; //TODO properly print error
+                if !args.is_empty() {
+                    write!(f, "[{}]", itertools::join(args, ", "))?;
+                }
+                Ok(())
+            }
+            Self::Var(_) => "{var}".fmt(f),
+            Self::IntVar(_) => "{integer}".fmt(f),
         }
     }
 }
@@ -104,14 +106,6 @@ impl Display for PartialTy {
 impl PartialTy {
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
-    }
-
-    pub fn string() -> Self {
-        Self::Adt(Ident::new("String"), vec![])
-    }
-
-    pub fn array(inner: PartialTy) -> Self {
-        Self::Adt(Ident::new("Array"), vec![inner])
     }
 }
 

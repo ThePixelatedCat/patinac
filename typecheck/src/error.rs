@@ -2,7 +2,7 @@ use derive_more::Display;
 
 use span::Span;
 
-use crate::type_vars::{Param, PartialTy, Return, TyVar};
+use crate::types::{Param, PartialTy, Return, TyVar};
 
 pub type Result<T> = errors::Result<T, ErrorKind>;
 pub type Error = errors::Error<ErrorKind>;

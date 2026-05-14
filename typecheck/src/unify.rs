@@ -1,9 +1,8 @@
 use std::{iter, mem};
 
 use crate::{
-    ConstraintKind, ErrorKind, PartialTy, TyVar, TypeChecker,
-    error::Error,
-    type_vars::{Param, Return},
+    ErrorKind, PartialTy, TyVar, TypeChecker,
+    types::{Param, Return},
 };
 
 fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
@@ -15,6 +14,7 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
         | PartialTy::Bool
         | PartialTy::Char => Ok(()),
         PartialTy::Tuple(tys) => tys.iter().try_for_each(|ty| occurs_check(ty, var)),
+        PartialTy::Array(ty) => occurs_check(ty, var),
         PartialTy::Fn(params, ret) => {
             params
                 .iter()
@@ -31,13 +31,10 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
 
 impl TypeChecker {
     /// Unifies all types in the unification table, clearing all of our constraints in the process
-    pub(super) fn unify(&mut self) -> Result<(), Error> {
+    pub(super) fn unify(&mut self) -> crate::Result<()> {
         for constr in mem::take(&mut self.constraints) {
-            match constr.kind {
-                ConstraintKind::TypeEqual(left, right) => self.unify_ty_ty(left, right),
-                ConstraintKind::EitherTypeEqual(ty, options) => todo!(),
-            }
-            .map_err(|kind| kind.span(constr.span))?;
+            self.unify_ty_ty(constr.ty_a, constr.ty_b)
+                .map_err(|kind| kind.span(constr.span))?;
         }
         Ok(())
     }
@@ -87,7 +84,10 @@ impl TypeChecker {
                         PartialTy::Tuple(rhs_inners),
                     ));
                 }
-                self.unify_all(lhs_inners, rhs_inners)
+                self.unify_tys(lhs_inners, rhs_inners)
+            }
+            (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
+                self.unify_ty_ty(*lhs_inner, *rhs_inner)
             }
             (PartialTy::Fn(lhs_params, lhs_return), PartialTy::Fn(rhs_params, rhs_return)) => {
                 if lhs_params.len() != rhs_params.len() {
@@ -111,13 +111,13 @@ impl TypeChecker {
             (PartialTy::Adt(name_a, args_a), PartialTy::Adt(name_b, args_b))
                 if name_a == name_b =>
             {
-                self.unify_all(args_a, args_b)
+                self.unify_tys(args_a, args_b)
             }
             (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs)),
         }
     }
 
-    fn unify_all(
+    fn unify_tys(
         &mut self,
         left_tys: Vec<PartialTy>,
         right_tys: Vec<PartialTy>,
@@ -148,6 +148,7 @@ impl TypeChecker {
             PartialTy::Tuple(tys) => {
                 PartialTy::Tuple(tys.into_iter().map(|ty| self.normalize_ty(ty)).collect())
             }
+            PartialTy::Array(ty) => PartialTy::Array(Box::new(self.normalize_ty(*ty))),
             PartialTy::Fn(params, ret) => {
                 let params = params
                     .into_iter()
