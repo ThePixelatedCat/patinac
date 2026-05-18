@@ -33,18 +33,6 @@ fn lambda() {
 }
 
 #[test]
-fn match_() {
-    let input = "
-    5.match {
-        x -> x,
-        -1 -> 0,
-        #(a, b) -> #(b, a)
-    }
-";
-    assert!(test_resolve_expr(input).is_ok());
-}
-
-#[test]
 fn for_() {
     assert!(test_resolve_expr("for x in [1, 2, 3] { x + 5 }").is_ok());
 }
@@ -89,14 +77,11 @@ fn consts() {
 #[test]
 fn list() {
     let input = r#"
-    record List[T](head: Link[T])
+    record List(head: Link)
 
-    enum Link[T] {
-        Cons(elem: T, next: Link[T]),
-        Nil()
-    }
+    record Link(elem: Int, next: Link)
 
-    fn cons[T](list: List[T], elem: T): List[T] -> "todo"
+    fn cons(list: List, elem: Int): List -> "todo"
 "#;
     assert!(test_resolve_full(input).is_ok());
 }

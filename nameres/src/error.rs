@@ -21,7 +21,7 @@ pub enum ErrorKind {
 impl std::error::Error for ErrorKind {}
 
 impl ErrorKind {
-    pub fn span(self, span: impl Into<Span>) -> Error<ErrorKind> {
-        Error::span(self, span)
+    pub fn span(self, span: impl Into<Span>) -> Error<Self> {
+        Error::new(self, span)
     }
 }

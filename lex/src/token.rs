@@ -93,15 +93,27 @@ pub enum TokKind {
     /// `+`
     #[token("+")]
     Plus,
+    /// `+.`
+    #[token("+.")]
+    PlusF,
     /// `-`
     #[token("-")]
     Minus,
+    /// `-.`
+    #[token("-.")]
+    MinusF,
     /// `*`
     #[token("*")]
     Times,
+    /// `*.`
+    #[token("*.")]
+    TimesF,
     /// `/`
     #[token("/")]
     Divide,
+    /// `/.`
+    #[token("/.")]
+    DivideF,
     /// `**`
     #[token("**")]
     Exponent,

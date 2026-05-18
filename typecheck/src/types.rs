@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
-use hir::{AdtId, types::Ty};
+use hir::{items::AdtId, types::Ty};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
@@ -34,7 +34,7 @@ pub enum PartialTy {
     Tuple(Vec<Self>),
     Array(Box<Self>),
     Fn(Vec<Param>, Return),
-    Adt(AdtId, Vec<Self>),
+    Adt(AdtId),
     Var(TyVar),
     IntVar(TyVar),
 }
@@ -65,7 +65,7 @@ impl From<&Ty> for PartialTy {
                     ty: Box::new(Self::from(&*ret.ty)),
                 },
             ),
-            Ty::Adt(id, args) => Self::Adt(*id, args.iter().map(Self::from).collect()),
+            Ty::Adt(id) => Self::Adt(*id),
         }
     }
 }
@@ -90,12 +90,8 @@ impl Display for PartialTy {
             Self::Fn(params, result_ty) => {
                 write!(f, "fn({}) -> {result_ty}", itertools::join(params, ", "))
             }
-            Self::Adt(name, args) => {
-                write!(f, "temp{name:?}")?; //TODO properly print error
-                if !args.is_empty() {
-                    write!(f, "[{}]", itertools::join(args, ", "))?;
-                }
-                Ok(())
+            Self::Adt(name) => {
+                write!(f, "temp{name:?}") //TODO properly print
             }
             Self::Var(_) => "{var}".fmt(f),
             Self::IntVar(_) => "{integer}".fmt(f),
@@ -117,10 +113,10 @@ pub struct Param {
 
 impl Display for Param {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.mutable {
-            true => write!(f, "mut {}", self.ty),
-            false => self.ty.fmt(f),
+        if self.mutable {
+            "mut ".fmt(f)?;
         }
+        self.ty.fmt(f)
     }
 }
 
@@ -132,9 +128,9 @@ pub struct Return {
 
 impl Display for Return {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.mutable {
-            true => write!(f, "mut {}", self.ty),
-            false => self.ty.fmt(f),
+        if self.mutable {
+            "mut ".fmt(f)?;
         }
+        self.ty.fmt(f)
     }
 }

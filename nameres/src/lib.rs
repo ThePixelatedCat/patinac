@@ -2,31 +2,26 @@ mod error;
 #[cfg(test)]
 mod test;
 
-use std::iter;
-
 use foldhash::{HashMap, HashSet};
 use itertools::Itertools;
-use smallvec::SmallVec;
 
 use ast::{
     Ast,
     exprs::{
         Binding as AstBinding, BlockExpr as AstBlockExpr, Expr as AstExpr, ExprKind,
-        InfixOp as AstInfixOp, LitExpr as AstLitExpr, PrefixOp as AstUnaryOp, Stmt as AstStmt,
+        InfixOp as AstInfixOp, LitExpr as AstLitExpr, PrefixOp as AstPrefixOp, Stmt as AstStmt,
     },
-    items::{AdtItem, AdtKind, ExecItem as AstExecItem, ExecKind as AstExecKind, Field},
+    items::{AdtItem, AdtKind, ExecItem as AstExecItem, ExecKind as AstExecKind},
     patterns::{Pat as AstPat, PatKind as AstPatKind},
     types::{Ty as AstTy, TyKind as AstTyKind},
 };
 use hir::{
-    AdtId, AdtInfo, FieldInfo, Hir, VarId, VarInfo,
+    Hir, VarId, VarInfo,
     exprs::{
-        Arg as HirArg, Binding as HirBinding, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId,
-        InfixOp as HirInfixOp, LitExpr as HirLitExpr, MatchArm as HirMatchArm,
-        PrefixOp as HirUnaryOp, Stmt as HirStmt,
+        Arg as HirArg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
+        LitExpr as HirLitExpr, PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
-    items::{ExecItem as HirExecItem, ExecKind as HirExecKind, Param},
-    patterns::{Pat as HirPat, PatKind as HirPatKind},
+    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind, FieldInfo, Param},
     types::{Param as ParamTy, Return, Ty as HirTy},
 };
 use ident::Ident;
@@ -41,6 +36,8 @@ pub fn resolve(ast: Ast) -> Result<Hir> {
     let mut hir = Hir::default();
 
     let mut adt_scope = Scope::default();
+    let mut var_scope = Scope::default();
+
     for item in &ast.adts {
         if let Some(&id) = adt_scope.get(&item.ident.ident) {
             return Err(
@@ -53,9 +50,8 @@ pub fn resolve(ast: Ast) -> Result<Hir> {
     }
     ast.adts
         .into_iter()
-        .try_for_each(|adt| resolve_adt_item(&adt_scope, &mut hir, adt))?;
+        .try_for_each(|adt| resolve_adt_item(&adt_scope, &mut var_scope, &mut hir, adt))?;
 
-    let mut var_scope = Scope::default();
     for item in &ast.execs {
         if let Some(&id) = var_scope.get(&item.ident.ident) {
             return Err(
@@ -84,7 +80,7 @@ pub fn test_resolve_expr(expr: AstExpr) -> Result<(ExprId, Hir)> {
 
 fn resolve_adt_item(
     adt_scope: &Scope<AdtId>,
-    //var_scope: &mut Scope<VarId>,
+    var_scope: &mut Scope<VarId>,
     hir: &mut Hir,
     item: AdtItem,
 ) -> Result<()> {
@@ -92,55 +88,59 @@ fn resolve_adt_item(
         "all ast idents, including this one, should have already been inserted into the scope",
     );
 
-    let generics: SmallVec<_> = item
-        .generics
-        .iter()
-        .map(|&g| hir.add_adt(g, AdtInfo::Param))
-        .collect();
-
-    let mut scope = adt_scope.clone();
-    scope.extend(iter::zip(
-        item.generics.iter().map(|i| i.ident),
-        generics.iter().copied(),
-    ));
+    if !item.generics.is_empty() {
+        todo!("Generics")
+    }
 
     match item.kind {
         AdtKind::Record(fields) => {
-            let fields = resolve_fields(&scope, fields)?;
-
-            //todo!("Constructors");
-            // let fn_type = Ty::Fn {
-            //     generics: generics.clone(),
-            //     params: (),
-            //     result: Box::new(Ty::Adt(res.id(), generics.iter().map(|p|)).span(item.ident.span)),
-            // };
-
-            hir.fulfill_adt(id, AdtInfo::Record { generics, fields });
-        }
-        AdtKind::Enum(variants) => {
-            let variants = variants
+            let fields: Vec<_> = fields
                 .into_iter()
-                .map(|variant| Ok((variant.ident.ident, resolve_fields(&scope, variant.fields)?)))
+                .map(|field| {
+                    Ok((
+                        field.ident.ident,
+                        FieldInfo {
+                            ty: resolve_ty(adt_scope, field.ty)?,
+                        },
+                    ))
+                })
                 .try_collect()?;
-            hir.fulfill_adt(id, AdtInfo::Enum { generics, variants });
+
+            let constructor_ty = HirTy::Fn(
+                fields
+                    .iter()
+                    .map(|(_, f)| ParamTy {
+                        mutable: false,
+                        ty: f.ty.clone(),
+                    })
+                    .collect(),
+                Return {
+                    mutable: false,
+                    ty: Box::new(HirTy::Adt(id)),
+                },
+            );
+            let constructor_id = hir.add_var(
+                item.ident,
+                VarInfo {
+                    mutable: false,
+                    ty: Some(constructor_ty),
+                },
+            );
+            var_scope.insert(item.ident.ident, constructor_id);
+
+            hir.fulfill_adt(
+                id,
+                AdtInfo::Record {
+                    fields: HashMap::from_iter(fields),
+                },
+            );
+        }
+        AdtKind::Enum(_) => {
+            todo!("Enums (Pattern Matching)");
         }
     }
 
     Ok(())
-}
-
-fn resolve_fields(scope: &Scope<AdtId>, fields: Vec<Field>) -> Result<HashMap<Ident, FieldInfo>> {
-    fields
-        .into_iter()
-        .map(|field| {
-            Ok((
-                field.ident.ident,
-                FieldInfo {
-                    ty: resolve_ty(scope, field.ty)?,
-                },
-            ))
-        })
-        .collect()
 }
 
 fn resolve_exec_item(
@@ -172,38 +172,32 @@ fn resolve_exec_item(
             })
         }
         AstExecKind::Fn {
-            generics: old_generics,
+            generics,
             params,
             ret_mut,
             ret_ty,
             body,
         } => {
-            let mut adt_scope = adt_scope.clone();
-            let mut var_scope = var_scope.clone();
+            if !generics.is_empty() {
+                todo!("Generics")
+            }
 
-            let generics: SmallVec<[AdtId; _]> = old_generics
-                .iter()
-                .map(|&g| hir.add_adt(g, AdtInfo::Param))
-                .collect();
-            adt_scope.extend(iter::zip(
-                old_generics.iter().map(|i| i.ident),
-                generics.iter().copied(),
-            ));
+            let mut var_scope = var_scope.clone();
 
             let params: Vec<_> = params
                 .into_iter()
                 .map(|p| {
-                    let ty = resolve_ty(&adt_scope, p.ty)?;
-                    let pat = resolve_pat(&mut var_scope, hir, p.pat, p.mutable, Some(ty.clone()));
+                    let ty = resolve_ty(adt_scope, p.ty)?;
+                    let id = resolve_pat(&mut var_scope, hir, p.pat, p.mutable, Some(ty.clone()));
                     Ok(Param {
                         mutable: p.mutable,
-                        pat,
+                        id,
                         ty,
                     })
                 })
                 .try_collect()?;
-            let ret_ty = resolve_ty(&adt_scope, ret_ty)?;
-            let body = resolve_expr(&adt_scope, &var_scope, hir, body)?;
+            let ret_ty = resolve_ty(adt_scope, ret_ty)?;
+            let body = resolve_expr(adt_scope, &var_scope, hir, body)?;
 
             let ty = HirTy::Fn(
                 params
@@ -230,7 +224,6 @@ fn resolve_exec_item(
             Ok(HirExecItem {
                 ident: id,
                 kind: HirExecKind::Fn {
-                    generics,
                     params,
                     ret_mut,
                     ret_ty,
@@ -323,26 +316,13 @@ fn resolve_expr(
                 .map(|el| resolve_block_expr(adt_scope, var_scope, hir, el))
                 .transpose()?,
         },
-        ExprKind::Match { scrutinee, arms } => {
-            let scrutinee = resolve_expr(adt_scope, var_scope, hir, *scrutinee)?;
-            let arms = arms
-                .into_iter()
-                .map(|arm| {
-                    let mut var_scope = var_scope.clone();
-                    let pat = resolve_pat(&mut var_scope, hir, arm.pat, false, None);
-                    let body = resolve_expr(adt_scope, &var_scope, hir, arm.body)?;
-                    Ok(HirMatchArm { pat, body })
-                })
-                .try_collect()?;
-            HirExpr::Match { scrutinee, arms }
-        }
+        ExprKind::Match { .. } => todo!("Match (Pattern Matching)"),
         ExprKind::For { pat, iter, body } => {
+            let iter = resolve_expr(adt_scope, var_scope, hir, *iter)?;
             let mut var_scope = var_scope.clone();
-            HirExpr::For {
-                pat: resolve_pat(&mut var_scope, hir, pat, false, None),
-                iter: resolve_expr(adt_scope, &var_scope, hir, *iter)?,
-                body: resolve_block_expr(adt_scope, &var_scope, hir, body)?,
-            }
+            let id = resolve_pat(&mut var_scope, hir, pat, false, None);
+            let body = resolve_block_expr(adt_scope, &var_scope, hir, body)?;
+            HirExpr::For { id, iter, body }
         }
         ExprKind::Loop(body) => HirExpr::Loop(resolve_block_expr(adt_scope, var_scope, hir, body)?),
         ExprKind::Break => HirExpr::Break,
@@ -457,11 +437,11 @@ fn resolve_stmt(
 ) -> Result<HirStmt> {
     match stmt {
         AstStmt::Decl { binding, val, span } => {
-            // val must be resolved before binding, to ensure the declared variable isn't in scope within it's own declaration
+            // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
             let val = resolve_expr(adt_scope, var_scope, hir, val)?;
-            let binding = resolve_binding(adt_scope, var_scope, hir, binding)?;
+            let id = resolve_binding(adt_scope, var_scope, hir, binding)?;
 
-            Ok(HirStmt::Decl { binding, val, span })
+            Ok(HirStmt::Decl { id, val, span })
         }
         AstStmt::Expr(expr) => resolve_expr(adt_scope, var_scope, hir, expr).map(HirStmt::Expr),
     }
@@ -472,15 +452,15 @@ fn resolve_binding(
     var_scope: &mut Scope<VarId>,
     hir: &mut Hir,
     binding: AstBinding,
-) -> Result<HirBinding> {
+) -> Result<VarId> {
     let ty = binding.ty.map(|ty| resolve_ty(adt_scope, ty)).transpose()?;
-    let pat = resolve_pat(var_scope, hir, binding.pat, binding.mutable, ty.clone());
-
-    Ok(HirBinding {
-        mutable: binding.mutable,
-        pat,
+    Ok(resolve_pat(
+        var_scope,
+        hir,
+        binding.pat,
+        binding.mutable,
         ty,
-    })
+    ))
 }
 
 fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
@@ -517,8 +497,12 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
                     len => Err(ErrorKind::GenericCount(1, len).span(ty.span)),
                 }
             } else {
+                if !args.is_empty() {
+                    todo!("Generics")
+                }
+
                 match adt_scope.get(&ident).copied() {
-                    Some(id) => Ok(HirTy::Adt(id, resolve_tys(adt_scope, args)?)),
+                    Some(id) => Ok(HirTy::Adt(id)),
                     None => Err(ErrorKind::UnknownType.span(ty.span)),
                 }
             }
@@ -538,37 +522,15 @@ fn resolve_pat(
     pat: AstPat,
     mutable: bool,
     ty: Option<HirTy>,
-) -> HirPat {
-    let kind = match pat.kind {
-        AstPatKind::Wildcard => HirPatKind::Wildcard,
-        AstPatKind::Literal { negate, lit } => HirPatKind::Literal {
-            negate,
-            lit: convert_lit(lit),
-        },
+) -> VarId {
+    match pat.kind {
         AstPatKind::Ident(ident) => {
             let id = hir.add_var(ident.span(pat.span), VarInfo { mutable, ty });
             var_scope.insert(ident, id);
-            HirPatKind::Ident(id)
+            id
         }
-        AstPatKind::Constructor(ident, pats) => todo!(),
-        AstPatKind::Tuple(old_pats) => {
-            let tys = match ty {
-                Some(HirTy::Tuple(tys)) => tys,
-                _ => vec![],
-            };
-
-            let pats = iter::zip(
-                old_pats,
-                tys.into_iter().map(Some).chain(iter::repeat(None)),
-            )
-            .map(|(pat, ty)| resolve_pat(var_scope, hir, pat, mutable, ty))
-            .collect();
-
-            HirPatKind::Tuple(pats)
-        }
-    };
-
-    kind.span(pat.span)
+        _ => todo!("Pattern Matching"),
+    }
 }
 
 fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
@@ -581,30 +543,21 @@ fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
     }
 }
 
-const fn convert_prefix_op(op: AstUnaryOp) -> HirUnaryOp {
-    match op {
-        AstUnaryOp::Not => HirUnaryOp::Not,
-        AstUnaryOp::Neg => HirUnaryOp::Neg,
-    }
+macro_rules! convert_op {
+    ($op:ident, $enum_name:ident, $($variant:ident),*) => {
+        match $op {
+            $(ast::exprs::$enum_name::$variant => hir::exprs::$enum_name::$variant),*
+        }
+    };
+}
+
+const fn convert_prefix_op(op: AstPrefixOp) -> HirPrefixOp {
+    convert_op!(op, PrefixOp, Not, Neg)
 }
 
 const fn convert_infix_op(op: AstInfixOp) -> HirInfixOp {
-    match op {
-        AstInfixOp::Assign => HirInfixOp::Assign,
-        AstInfixOp::Add => HirInfixOp::Add,
-        AstInfixOp::Sub => HirInfixOp::Sub,
-        AstInfixOp::Mul => HirInfixOp::Mul,
-        AstInfixOp::Div => HirInfixOp::Div,
-        AstInfixOp::Exp => HirInfixOp::Exp,
-        AstInfixOp::Rem => HirInfixOp::Rem,
-        AstInfixOp::And => HirInfixOp::And,
-        AstInfixOp::Or => HirInfixOp::Or,
-        AstInfixOp::Xor => HirInfixOp::Xor,
-        AstInfixOp::Eqq => HirInfixOp::Eqq,
-        AstInfixOp::Neq => HirInfixOp::Neq,
-        AstInfixOp::Gt => HirInfixOp::Gt,
-        AstInfixOp::Lt => HirInfixOp::Lt,
-        AstInfixOp::Geq => HirInfixOp::Geq,
-        AstInfixOp::Leq => HirInfixOp::Leq,
-    }
+    convert_op!(
+        op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, Rem, RemF, And, Or,
+        Xor, Eqq, Neq, Gt, Lt, Geq, Leq
+    )
 }

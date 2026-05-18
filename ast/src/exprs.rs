@@ -151,11 +151,16 @@ pub struct BlockExpr {
 pub enum InfixOp {
     Assign,
     Add,
+    AddF,
     Sub,
+    SubF,
     Mul,
+    MulF,
     Div,
+    DivF,
     Exp,
     Rem,
+    RemF,
     And,
     Or,
     Xor,
@@ -176,8 +181,8 @@ impl InfixOp {
             Self::Eqq | Self::Neq => (7, 8),
             Self::Gt | Self::Lt | Self::Leq | Self::Geq => (9, 10),
             Self::Xor => (13, 14),
-            Self::Add | Self::Sub => (17, 18),
-            Self::Mul | Self::Div | Self::Rem => (19, 20),
+            Self::Add | Self::AddF | Self::Sub | Self::SubF => (17, 18),
+            Self::Mul | Self::MulF | Self::Div | Self::DivF | Self::Rem | Self::RemF => (19, 20),
             Self::Exp => (22, 21),
         }
     }

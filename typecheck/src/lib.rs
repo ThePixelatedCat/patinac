@@ -8,13 +8,17 @@ mod unify;
 
 use ena::unify::InPlaceUnificationTable;
 
-use hir::{Hir, VarId, exprs::ExprId, items::ExecKind, types::Ty};
+use hir::{Hir, exprs::ExprId, items::ExecKind, types::Ty};
 use slotmap::SecondaryMap;
 use span::Span;
 
 pub use crate::error::{Error, ErrorKind, Result};
-use crate::types::{PartialTy, TyVar};
+use crate::{
+    infer::Context,
+    types::{PartialTy, TyVar},
+};
 
+#[derive(Debug)]
 struct Constraint {
     ty_a: PartialTy,
     ty_b: PartialTy,
@@ -25,33 +29,38 @@ pub struct TypeChecker {
     table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
     substitution: SecondaryMap<ExprId, PartialTy>,
-    ctx: SecondaryMap<VarId, PartialTy>,
 }
 
 impl TypeChecker {
     pub fn type_program(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
+        let ctx = self.build_context(hir);
         for exec in &hir.execs {
             match &exec.kind {
-                ExecKind::Const { ty, val } => {
-                    let val_ty = self.infer_expr(hir, *val)?;
-                    let annot_ty = self.convert(ty.as_ref());
-                    self.constrain_eq(val_ty, annot_ty, hir.expr_span(*val));
+                ExecKind::Const { val, .. } => {
+                    let val_ty = self.infer_expr(&ctx, hir, *val)?;
+                    self.constrain_eq(val_ty, ctx.get(exec.ident), hir.expr_span(*val));
                 }
                 ExecKind::Fn {
-                    generics,
                     params,
                     ret_mut,
                     ret_ty,
                     body,
                 } => {
-                    let body_ty = self.infer_expr(hir, *body)?;
-                    let ret_ty = ret_ty.into();
-                    self.constrain_eq(body_ty, ret_ty, hir.expr_span(*body));
+                    let body_ty = self.infer_expr(&ctx, hir, *body)?;
+                    self.constrain_eq(body_ty, ret_ty.into(), hir.expr_span(*body));
                 }
             }
         }
         self.unify()?;
         self.sub_all(hir)
+    }
+
+    fn build_context(&mut self, hir: &Hir) -> Context {
+        hir.var_info
+            .iter()
+            .map(|(var, info)| (var, self.convert(info.ty.as_ref())))
+            .collect::<SecondaryMap<_, _>>()
+            .into()
     }
 
     fn fresh_var(&mut self) -> PartialTy {

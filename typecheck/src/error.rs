@@ -9,7 +9,7 @@ pub type Error = errors::Error<ErrorKind>;
 
 impl ErrorKind {
     pub fn span(self, span: impl Into<Span>) -> Error {
-        Error::span(self, span)
+        Error::new(self, span)
     }
 }
 

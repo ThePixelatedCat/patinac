@@ -10,6 +10,7 @@ lex.path = "../lex"
 ast.path = "../ast"
 parse.path = "../parse"
 nameres.path = "../nameres"
+typecheck.path = "../typecheck"
 #typecheck.path = "../typecheck"
 # External
 anyhow = "1.0.100"

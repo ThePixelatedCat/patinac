@@ -19,7 +19,7 @@ pub enum Item {
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn item(&mut self) -> Result<Item> {
+    pub(crate) fn item(&mut self) -> Result<Item> {
         match self.peek()? {
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
@@ -27,7 +27,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Enum => self.enum_item().map(Item::from),
             _ => Err(self
                 .err_next(ErrorKind::Unexpected)
-                .context("expected the start of an item")),
+                .with_ctx("expected the start of an item")),
         }
     }
 

@@ -6,8 +6,9 @@ use yansi::Paint;
 use parse::Parser;
 use span::Span;
 
-//use typecheck::TypeChecker;
+use typecheck::TypeChecker;
 
+#[derive(Clone, Copy)]
 enum DiagnosticKind {
     Error,
     Warning,
@@ -43,21 +44,27 @@ fn main() {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
-                print_diagnostic(DiagnosticKind::Error, &err.kind.to_string(), err.span, &src);
+                print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
             }
             return;
         }
     };
 
-    let (exec_items, name_table) = match nameres::resolve(ast) {
+    let mut hir = match nameres::resolve(ast) {
         Ok(v) => v,
         Err(err) => {
-            print_diagnostic(DiagnosticKind::Error, &err.kind.to_string(), err.span, &src);
+            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
             return;
         }
     };
 
-    //TypeChecker::new().check(&ast)?;
+    let ty_map = match TypeChecker::default().type_program(&mut hir) {
+        Ok(v) => v,
+        Err(err) => {
+            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
+            return;
+        }
+    };
 }
 
 fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
@@ -77,8 +84,7 @@ fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
     println!("{}", header.white().wrap().bold());
     println!("{}   {line}", ">".white().bold());
     println!(
-        "    {:>span_end$} {}",
+        "    {:>span_end$}",
         str::repeat("^", span_end - span_start).bright_red(),
-        ""
     );
 }

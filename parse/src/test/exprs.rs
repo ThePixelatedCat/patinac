@@ -117,19 +117,19 @@ fn binop_expressions() {
     );
 
     assert_eq!(
-        Parser::parse_expr("4 * 2 + 3"),
+        Parser::parse_expr("4.0 *. 2.0 +. 3.0"),
         Ok(ExprKind::Infix {
-            op: InfixOp::Add,
+            op: InfixOp::AddF,
             lhs: ExprKind::Infix {
-                op: InfixOp::Mul,
-                lhs: ExprKind::int(4).span(0..1).into(),
-                rhs: ExprKind::int(2).span(4..5).into()
+                op: InfixOp::MulF,
+                lhs: ExprKind::float(4.0).span(0..3).into(),
+                rhs: ExprKind::float(2.0).span(7..10).into()
             }
-            .span(0..5)
+            .span(0..10)
             .into(),
-            rhs: ExprKind::int(3).span(8..9).into(),
+            rhs: ExprKind::float(3.0).span(14..17).into(),
         }
-        .span(0..9))
+        .span(0..17))
     );
 
     assert_eq!(
@@ -591,7 +591,7 @@ fn malformed_expressions() {
         Parser::parse_expr("let x = 7 + sin(3.0)"),
         Err(ErrorKind::Unexpected(TokKind::Let)
             .span(0..3)
-            .context("`let` is a statement, and can only be used within a block"))
+            .with_ctx("`let` is a statement, and can only be used within a block"))
     );
     assert_eq!(
         Parser::parse_expr("[1, 3, 4, 5"),
@@ -609,6 +609,6 @@ fn malformed_expressions() {
         Parser::parse_expr("foo.0"),
         Err(ErrorKind::Unexpected(TokKind::IntLit)
             .span(4..5)
-            .context("Expected `[` or identifier"))
+            .with_ctx("Expected `[` or identifier"))
     );
 }

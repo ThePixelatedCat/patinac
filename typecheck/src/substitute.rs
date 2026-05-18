@@ -40,13 +40,11 @@ impl TypeChecker {
                 };
                 Ok(Ty::Fn(params, ret))
             }
-            PartialTy::Adt(ident, arg_tys) => Ok(Ty::Adt(ident, self.sub_tys(arg_tys)?)),
-            PartialTy::Var(var) | PartialTy::IntVar(var) => {
-                let root = self.table.find(var);
-                self.table
-                    .probe_value(root)
-                    .map_or(Err(ErrorKind::UninferredType), |ty| self.sub_ty(ty))
-            }
+            PartialTy::Adt(id) => Ok(Ty::Adt(id)),
+            PartialTy::Var(var) | PartialTy::IntVar(var) => self
+                .table
+                .probe_value(var)
+                .map_or(Err(ErrorKind::UninferredType), |ty| self.sub_ty(ty)),
         }
     }
 

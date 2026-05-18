@@ -1,20 +1,16 @@
-use foldhash::HashMap;
-
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
-use smallvec::SmallVec;
 
-use ident::{Ident, SpanIdent};
+use ident::SpanIdent;
 use span::Span;
 
 use crate::{
     exprs::{Expr, ExprId},
-    items::ExecItem,
+    items::{AdtId, AdtInfo, ExecItem},
     types::Ty,
 };
 
 pub mod exprs;
 pub mod items;
-pub mod patterns;
 pub mod types;
 
 #[derive(Debug, Default)]
@@ -25,7 +21,7 @@ pub struct Hir {
     exprs: SlotMap<ExprId, Expr>,
     expr_spans: SecondaryMap<ExprId, Span>,
     vars: SlotMap<VarId, SpanIdent>,
-    var_info: SecondaryMap<VarId, VarInfo>,
+    pub var_info: SecondaryMap<VarId, VarInfo>,
 }
 
 // Adt-related functions
@@ -99,29 +95,7 @@ impl Hir {
     }
 }
 
-new_key_type! {
-    pub struct AdtId;
-    pub struct VarId;
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AdtInfo {
-    Record {
-        generics: SmallVec<[AdtId; 4]>,
-        fields: HashMap<Ident, FieldInfo>,
-    },
-    Enum {
-        generics: SmallVec<[AdtId; 4]>,
-        variants: HashMap<Ident, HashMap<Ident, FieldInfo>>,
-    },
-    Param,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldInfo {
-    pub ty: Ty,
-}
-
+new_key_type! { pub struct VarId; }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarInfo {
     pub mutable: bool,

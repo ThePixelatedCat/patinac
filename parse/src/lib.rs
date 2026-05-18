@@ -27,6 +27,11 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
         }
     }
 
+    /// Parses the tokens this was constructed with into an AST
+    ///
+    /// # Errors
+    /// If parsing any expression errors, an error will be returned, with a list of every error that occured.
+    /// At most one error will be reported per item
     pub fn parse(mut self) -> result::Result<Ast, Vec<Error>> {
         let mut ast = Ast::default();
         let mut errs = Vec::new();

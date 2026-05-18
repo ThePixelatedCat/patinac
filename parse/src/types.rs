@@ -12,7 +12,7 @@ macro_rules! primitive {
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn ty(&mut self) -> Result<Ty> {
+    pub(crate) fn ty(&mut self) -> Result<Ty> {
         match self.peek()? {
             TokKind::Int => primitive!(self, Int),
             TokKind::UInt => primitive!(self, UInt),
@@ -67,11 +67,5 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             }
             _ => Err(self.err_next(ErrorKind::Unexpected)),
         }
-    }
-
-    pub fn ty_annot(&mut self) -> Result<Option<Ty>> {
-        self.consume_at(TokKind::Colon)
-            .map(|_| self.ty())
-            .transpose()
     }
 }

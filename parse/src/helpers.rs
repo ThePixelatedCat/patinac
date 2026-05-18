@@ -1,4 +1,4 @@
-use ast::exprs::Binding;
+use ast::{exprs::Binding, types::Ty};
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 use span::Span;
@@ -6,14 +6,20 @@ use span::Span;
 use crate::{Error, ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
+    pub(crate) fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind) -> Error {
         match self.next() {
             Ok(token) => f(token.kind).span(token.span),
             Err(err) => err,
         }
     }
 
-    pub fn binding(&mut self) -> Result<Binding> {
+    pub(crate) fn ty_annot(&mut self) -> Result<Option<Ty>> {
+        self.consume_at(TokKind::Colon)
+            .map(|_| self.ty())
+            .transpose()
+    }
+
+    pub(crate) fn binding(&mut self) -> Result<Binding> {
         Ok(Binding {
             mutable: self.consume_at(TokKind::Mut).is_some(),
             pat: self.pattern()?,
@@ -21,14 +27,14 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         })
     }
 
-    pub fn ident(&mut self) -> Result<SpanIdent> {
+    pub(crate) fn ident(&mut self) -> Result<SpanIdent> {
         self.consume(TokKind::Ident).map(|ident| SpanIdent {
             ident: Ident::new(ident.src),
             span: ident.span,
         })
     }
 
-    pub fn delimited_list<T, F>(
+    pub(crate) fn delimited_list<T, F>(
         &mut self,
         mut f: F,
         start: TokKind,

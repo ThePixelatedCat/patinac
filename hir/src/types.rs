@@ -12,7 +12,7 @@ pub enum Ty {
     Tuple(Vec<Self>),
     Array(Box<Self>),
     Fn(Vec<Param>, Return),
-    Adt(AdtId, Vec<Self>),
+    Adt(AdtId),
 }
 
 impl Ty {

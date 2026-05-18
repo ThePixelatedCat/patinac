@@ -9,7 +9,7 @@ use span::Span;
 use crate::{ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub(super) fn stmt(&mut self) -> Result<Stmt> {
+    pub(crate) fn stmt(&mut self) -> Result<Stmt> {
         match self.peek()? {
             TokKind::Let => {
                 let start = self.consume(TokKind::Let)?.span.start;
@@ -25,7 +25,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn expr(&mut self) -> Result<Expr> {
+    pub(crate) fn expr(&mut self) -> Result<Expr> {
         self.expr_inner(0)
     }
 
@@ -56,7 +56,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             }),
             TokKind::Let => Err(self
                 .err_next(ErrorKind::Unexpected)
-                .context("`let` is a statement, and can only be used within a block")),
+                .with_ctx("`let` is a statement, and can only be used within a block")),
             _ => Err(self.err_next(ErrorKind::Unexpected)),
         }?;
 
@@ -74,15 +74,19 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 // Continue current iteration with given binop
                 Ok(TokKind::Eq) => InfixOp::Assign,
                 Ok(TokKind::Plus) => InfixOp::Add,
+                Ok(TokKind::PlusF) => InfixOp::AddF,
                 Ok(TokKind::Minus) => InfixOp::Sub,
+                Ok(TokKind::MinusF) => InfixOp::SubF,
                 Ok(TokKind::Times) => InfixOp::Mul,
+                Ok(TokKind::TimesF) => InfixOp::MulF,
                 Ok(TokKind::Divide) => InfixOp::Div,
-                Ok(TokKind::Xor) => InfixOp::Xor,
+                Ok(TokKind::DivideF) => InfixOp::DivF,
                 Ok(TokKind::Exponent) => InfixOp::Exp,
                 Ok(TokKind::Eqq) => InfixOp::Eqq,
                 Ok(TokKind::Neq) => InfixOp::Neq,
                 Ok(TokKind::And) => InfixOp::And,
                 Ok(TokKind::Or) => InfixOp::Or,
+                Ok(TokKind::Xor) => InfixOp::Xor,
                 Ok(TokKind::Lt) => InfixOp::Lt,
                 Ok(TokKind::Leq) => InfixOp::Leq,
                 Ok(TokKind::Gt) => InfixOp::Gt,
@@ -116,7 +120,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         self.ident().map(|i| ExprKind::Ident(i.ident).span(i.span))
     }
 
-    pub fn lit_expr(&mut self) -> Result<(LitExpr, Span)> {
+    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Span)> {
         fn process_escapes(input: &str) -> String {
             input
                 .replace(r"\'", "\'")
@@ -313,7 +317,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             }
             _ => Err(self
                 .err_next(ErrorKind::Unexpected)
-                .context("Expected `[` or identifier")),
+                .with_ctx("Expected `[` or identifier")),
         }
     }
 

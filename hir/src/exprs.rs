@@ -3,17 +3,13 @@ use slotmap::new_key_type;
 use ident::SpanIdent;
 use span::Span;
 
-use crate::{VarId, patterns::Pat, types::Ty};
+use crate::VarId;
 
 new_key_type! { pub struct ExprId; }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
-    Decl {
-        binding: Binding,
-        val: ExprId,
-        span: Span,
-    },
+    Decl { id: VarId, val: ExprId, span: Span },
     Expr(ExprId),
 }
 
@@ -45,7 +41,7 @@ pub enum Expr {
         args: Vec<Arg>,
     },
     Lambda {
-        params: Vec<Binding>,
+        params: Vec<VarId>,
         body: ExprId,
     },
     If {
@@ -53,12 +49,8 @@ pub enum Expr {
         th: BlockExpr,
         el: Option<BlockExpr>,
     },
-    Match {
-        scrutinee: ExprId,
-        arms: Vec<MatchArm>,
-    },
     For {
-        pat: Pat,
+        id: VarId,
         iter: ExprId,
         body: BlockExpr,
     },
@@ -100,26 +92,13 @@ pub enum LitExpr {
     Bool(bool),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Binding {
-    pub mutable: bool,
-    pub pat: Pat,
-    pub ty: Option<Ty>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub mutable: bool,
     pub val: ExprId,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct MatchArm {
-    pub pat: Pat,
-    pub body: ExprId,
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
     pub span: Span,
@@ -129,11 +108,16 @@ pub struct BlockExpr {
 pub enum InfixOp {
     Assign,
     Add,
+    AddF,
     Sub,
+    SubF,
     Mul,
+    MulF,
     Div,
+    DivF,
     Exp,
     Rem,
+    RemF,
     And,
     Or,
     Xor,
@@ -145,32 +129,8 @@ pub enum InfixOp {
     Leq,
 }
 
-impl InfixOp {
-    pub const fn binding_power(self) -> (u8, u8) {
-        match self {
-            Self::Assign => (1, 0),
-            Self::Or => (3, 4),
-            Self::And => (5, 6),
-            Self::Eqq | Self::Neq => (7, 8),
-            Self::Gt | Self::Lt | Self::Leq | Self::Geq => (9, 10),
-            Self::Xor => (13, 14),
-            Self::Add | Self::Sub => (17, 18),
-            Self::Mul | Self::Div | Self::Rem => (19, 20),
-            Self::Exp => (22, 21),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixOp {
     Not,
     Neg,
-}
-
-impl PrefixOp {
-    pub const fn binding_power(self) -> u8 {
-        match self {
-            Self::Neg | Self::Not => 51,
-        }
-    }
 }

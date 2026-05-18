@@ -5,7 +5,7 @@ use lex::{Tok, TokKind};
 use crate::{ErrorKind, Parser, Result};
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    pub fn pattern(&mut self) -> Result<Pat> {
+    pub(crate) fn pattern(&mut self) -> Result<Pat> {
         match self.peek()? {
             TokKind::Minus
             | TokKind::IntLit

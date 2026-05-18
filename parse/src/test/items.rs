@@ -200,6 +200,6 @@ fn malformed_items() {
         Parser::parse_item("let global = false"),
         Err(ErrorKind::Unexpected(TokKind::Let)
             .span(0..3)
-            .context("expected the start of an item"))
+            .with_ctx("expected the start of an item"))
     );
 }

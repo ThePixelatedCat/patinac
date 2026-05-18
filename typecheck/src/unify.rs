@@ -12,7 +12,8 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
         | PartialTy::Byte
         | PartialTy::Float
         | PartialTy::Bool
-        | PartialTy::Char => Ok(()),
+        | PartialTy::Char
+        | PartialTy::Adt(_) => Ok(()),
         PartialTy::Tuple(tys) => tys.iter().try_for_each(|ty| occurs_check(ty, var)),
         PartialTy::Array(ty) => occurs_check(ty, var),
         PartialTy::Fn(params, ret) => {
@@ -21,11 +22,13 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
                 .try_for_each(|param| occurs_check(&param.ty, var))?;
             occurs_check(&ret.ty, var)
         }
-        PartialTy::Adt(_, args) => args.iter().try_for_each(|ty| occurs_check(ty, var)),
-        PartialTy::Var(this_var) | PartialTy::IntVar(this_var) if *this_var == var => {
-            Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)))
+        PartialTy::Var(this_var) | PartialTy::IntVar(this_var) => {
+            if *this_var == var {
+                Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)))
+            } else {
+                Ok(())
+            }
         }
-        PartialTy::Var(_) | PartialTy::IntVar(_) => Ok(()),
     }
 }
 
@@ -52,25 +55,6 @@ impl TypeChecker {
         let rhs = self.normalize_ty(unnorm_rhs);
 
         match (lhs, rhs) {
-            (int_var @ PartialTy::IntVar(_), PartialTy::Var(var))
-            | (PartialTy::Var(var), int_var @ PartialTy::IntVar(_)) => {
-                self.unify_var_value(var, int_var)
-            }
-            (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
-                self.unify_var_var(lhs_var, rhs_var)
-            }
-            (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
-                occurs_check(&ty, var)?;
-                self.unify_var_value(var, ty)
-            }
-            (
-                PartialTy::IntVar(int_var),
-                int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
-            )
-            | (
-                int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
-                PartialTy::IntVar(int_var),
-            ) => self.unify_var_value(int_var, int_ty),
             (PartialTy::Int, PartialTy::Int)
             | (PartialTy::UInt, PartialTy::UInt)
             | (PartialTy::Byte, PartialTy::Byte)
@@ -107,12 +91,23 @@ impl TypeChecker {
                 }
                 self.unify_ty_ty(*lhs_return.ty, *rhs_return.ty)
             }
-
-            (PartialTy::Adt(name_a, args_a), PartialTy::Adt(name_b, args_b))
-                if name_a == name_b =>
-            {
-                self.unify_tys(args_a, args_b)
+            (PartialTy::Adt(a), PartialTy::Adt(b)) if a == b => Ok(()),
+            (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
+            | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
+                self.unify_var_var(lhs_var, rhs_var)
             }
+            (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
+                occurs_check(&ty, var)?;
+                self.unify_var_value(var, ty)
+            }
+            (
+                PartialTy::IntVar(int_var),
+                int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
+            )
+            | (
+                int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
+                PartialTy::IntVar(int_var),
+            ) => self.unify_var_value(int_var, int_ty),
             (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs)),
         }
     }
@@ -163,6 +158,7 @@ impl TypeChecker {
                 };
                 PartialTy::Fn(params, ret)
             }
+            PartialTy::Adt(id) => PartialTy::Adt(id),
             PartialTy::Var(v) => match self.table.probe_value(v) {
                 Some(ty) => self.normalize_ty(ty),
                 None => PartialTy::Var(self.table.find(v)),
@@ -171,13 +167,6 @@ impl TypeChecker {
                 Some(ty) => self.normalize_ty(ty),
                 None => PartialTy::IntVar(self.table.find(v)),
             },
-            PartialTy::Adt(ident, arg_tys) => {
-                let arg_tys = arg_tys
-                    .into_iter()
-                    .map(|ty| self.normalize_ty(ty))
-                    .collect();
-                PartialTy::Adt(ident, arg_tys)
-            }
         }
     }
 }

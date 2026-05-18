@@ -1,21 +1,35 @@
-use smallvec::SmallVec;
+use foldhash::HashMap;
+use slotmap::new_key_type;
 
-use crate::{AdtId, VarId, exprs::ExprId, patterns::Pat, types::Ty};
+use ident::Ident;
 
-#[derive(Debug, PartialEq)]
+use crate::{VarId, exprs::ExprId, types::Ty};
+
+new_key_type! { pub struct AdtId; }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdtInfo {
+    Record { fields: HashMap<Ident, FieldInfo> },
+    Param,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldInfo {
+    pub ty: Ty,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ExecItem {
     pub ident: VarId,
     pub kind: ExecKind,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ExecKind {
     Const {
         ty: Option<Ty>,
         val: ExprId,
     },
     Fn {
-        generics: SmallVec<[AdtId; 4]>,
         params: Vec<Param>,
         ret_mut: bool,
         ret_ty: Ty,
@@ -23,9 +37,9 @@ pub enum ExecKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub mutable: bool,
-    pub pat: Pat,
+    pub id: VarId,
     pub ty: Ty,
 }
