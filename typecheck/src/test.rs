@@ -161,3 +161,20 @@ fn consts() {
 ";
     assert!(check_full(input).is_ok());
 }
+
+#[test]
+fn fields() {
+    let input = "
+    record Foo(x: Int)
+
+    fn bar(foo: Foo): Int -> foo.x
+";
+    assert!(check_full(input).is_ok());
+
+    let input = "
+    record Foo(x: Int)
+
+    fn bar(foo: Foo): Int -> foo.y
+";
+    assert_eq!(check_full(input), Err(ErrorKind::MissingField.span(58..59)));
+}

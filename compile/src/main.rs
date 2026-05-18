@@ -58,7 +58,7 @@ fn main() {
         }
     };
 
-    let ty_map = match TypeChecker::default().type_program(&mut hir) {
+    let expr_tys = match TypeChecker::default().type_program(&mut hir) {
         Ok(v) => v,
         Err(err) => {
             print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);

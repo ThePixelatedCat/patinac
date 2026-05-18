@@ -1,5 +1,5 @@
 [package]
-name = "hir"
+name = "codegen"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,10 +7,12 @@ edition = "2024"
 # Internal
 span.path = "../span"
 ident.path = "../ident"
+hir.path = "../hir"
 # External
-derive_more = { version = "2.1.1", features = ["display"] }
-slotmap = "1.1.1"
-foldhash = "0.2.0"
+inkwell = { version = "0.9.0", features = ["llvm22-1"] }
+
+[dev-dependencies]
+# Internal
 
 [lints]
 workspace = true

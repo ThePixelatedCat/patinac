@@ -10,11 +10,8 @@ ident.path = "../ident"
 errors.path = "../errors"
 hir.path = "../hir"
 # External
-ego-tree = "0.11.0"
 ena = "0.14.3"
-fnv = "1.0.7"
 itertools = "0.14.0"
-im = "15.1.0"
 derive_more = { version = "2.1.1", features = ["display"] }
 slotmap = "1.1.1"
 
