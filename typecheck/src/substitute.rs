@@ -6,7 +6,6 @@ use hir::{
     Hir, TyMap,
     types::{Param, Return, Ty},
 };
-use slotmap::SecondaryMap;
 
 use crate::error::{ErrorKind, Result};
 
@@ -52,7 +51,7 @@ impl TypeChecker {
     }
 
     pub(super) fn sub_all(&mut self, hir: &Hir) -> Result<TyMap> {
-        Ok(mem::take(&mut self.substitution)
+        let expr_map = mem::take(&mut self.substitution)
             .into_iter()
             .map(|(expr, ty)| {
                 Ok((
@@ -61,7 +60,18 @@ impl TypeChecker {
                         .map_err(|err| err.span(hir.expr_span(expr)))?,
                 ))
             })
-            .collect::<Result<SecondaryMap<_, _>>>()?
-            .into())
+            .try_collect()?;
+        let var_map = mem::take(&mut self.ctx)
+            .into_iter()
+            .map(|(var, ty)| {
+                Ok((
+                    var,
+                    self.sub_ty(ty)
+                        .map_err(|err| err.span(hir.var_ident(var).span))?,
+                ))
+            })
+            .try_collect()?;
+
+        Ok(TyMap::new(expr_map, var_map))
     }
 }

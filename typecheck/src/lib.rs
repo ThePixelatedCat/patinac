@@ -8,15 +8,12 @@ mod unify;
 
 use ena::unify::InPlaceUnificationTable;
 
-use hir::{Hir, TyMap, exprs::ExprId, items::ExecKind, types::Ty};
+use hir::{Hir, TyMap, VarId, exprs::ExprId, items::ExecKind, types::Ty};
 use slotmap::SecondaryMap;
 use span::Span;
 
 pub use crate::error::{Error, ErrorKind, Result};
-use crate::{
-    infer::Context,
-    types::{PartialTy, TyVar},
-};
+use crate::types::{PartialTy, TyVar};
 
 #[derive(Debug)]
 struct Constraint {
@@ -24,28 +21,30 @@ struct Constraint {
     ty_b: PartialTy,
     span: Span,
 }
+
 #[derive(Default)]
 pub struct TypeChecker {
     table: InPlaceUnificationTable<TyVar>,
     constraints: Vec<Constraint>,
     substitution: SecondaryMap<ExprId, PartialTy>,
+    ctx: SecondaryMap<VarId, PartialTy>,
 }
 
 impl TypeChecker {
     pub fn type_program(&mut self, hir: &mut Hir) -> Result<TyMap> {
-        let ctx = self.build_context(hir);
+        self.build_context(hir);
         for exec in &hir.execs {
             match &exec.kind {
                 ExecKind::Const { val, .. } => {
-                    let val_ty = self.infer_expr(&ctx, hir, *val)?;
-                    self.constrain_eq(val_ty, ctx.get(exec.ident), hir.expr_span(*val));
+                    let val_ty = self.infer_expr(hir, *val)?;
+                    self.constrain_eq(val_ty, self.ctx[exec.ident].clone(), hir.expr_span(*val));
                 }
                 ExecKind::Fn {
                     params,
                     ret_ty,
                     body,
                 } => {
-                    let body_ty = self.infer_expr(&ctx, hir, *body)?;
+                    let body_ty = self.infer_expr(hir, *body)?;
                     self.constrain_eq(body_ty, ret_ty.into(), hir.expr_span(*body));
                 }
             }
@@ -54,8 +53,9 @@ impl TypeChecker {
         self.sub_all(hir)
     }
 
-    fn build_context(&mut self, hir: &Hir) -> Context {
-        hir.var_info
+    fn build_context(&mut self, hir: &Hir) {
+        self.ctx = hir
+            .var_info
             .iter()
             .map(|(var, info)| (var, self.convert(info.ty.as_ref())))
             .collect::<SecondaryMap<_, _>>()

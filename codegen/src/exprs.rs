@@ -1,5 +1,6 @@
 use hir::{
-    exprs::{BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp},
+    VarId,
+    exprs::{BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
     types::Ty,
 };
 use inkwell::{
@@ -10,9 +11,9 @@ use inkwell::{
 use crate::Codegen;
 
 impl<'ctx> Codegen<'ctx, '_> {
-    pub fn codegen_expr(&self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    pub fn codegen_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
-            Expr::Ident(var_id) => todo!(),
+            Expr::Ident(id) => self.codegen_ident(*id),
             Expr::Lit(lit) => self.codegen_lit(expr, lit),
             Expr::Array(expr_ids) => {
                 //self.ctx.
@@ -38,13 +39,24 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn unit(&self) -> BasicValueEnum<'ctx> {
+    fn unit(&mut self) -> BasicValueEnum<'ctx> {
         self.ctx.const_struct(&[], false).as_basic_value_enum()
     }
 
-    fn codegen_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
+    fn codegen_ident(&mut self, id: VarId) -> BasicValueEnum<'ctx> {
+        let alloc = self.vars[id];
+        self.builder
+            .build_load(
+                alloc.get_type(),
+                alloc,
+                &mut self.hir.var_ident(id).ident.to_string(),
+            )
+            .unwrap()
+    }
+
+    fn codegen_lit(&mut self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
         match lit {
-            LitExpr::Int(val) => match self.ty_map.get(expr) {
+            LitExpr::Int(val) => match self.ty_map.expr_ty(expr) {
                 Ty::Int => {
                     let max = i64::MAX as u64;
                     let clamped_val = if *val > max {
@@ -88,7 +100,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_infix(&self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
+    fn codegen_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
         let lhs = self.codegen_expr(lhs);
         let rhs = self.codegen_expr(rhs);
 
@@ -177,7 +189,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_prefix(&self, op: PrefixOp, expr: ExprId) -> BasicValueEnum<'ctx> {
+    fn codegen_prefix(&mut self, op: PrefixOp, expr: ExprId) -> BasicValueEnum<'ctx> {
         let expr = self.codegen_expr(expr);
 
         match op {
@@ -195,7 +207,7 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn codegen_if(
-        &self,
+        &mut self,
         expr: ExprId,
         cond: ExprId,
         th: &BlockExpr,
@@ -236,13 +248,13 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.builder.position_at_end(merge_block);
         let phi = self
             .builder
-            .build_phi(self.convert_ty(self.ty_map.get(expr)), "iftmp")
+            .build_phi(self.convert_ty(self.ty_map.expr_ty(expr)), "iftmp")
             .unwrap();
         phi.add_incoming(&[(&th, th_block), (&el, el_block)]);
         phi.as_basic_value()
     }
 
-    fn codegen_loop(&self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn codegen_loop(&mut self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
         let pre_block = self.builder.get_insert_block().unwrap();
         let function = pre_block.get_parent().unwrap();
         let body_block = self.ctx.append_basic_block(function, "body");
@@ -256,7 +268,29 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.unit()
     }
 
-    fn codegen_block_expr(&self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
-        todo!()
+    fn codegen_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
+        for stmt in block.stmts {
+            self.codegen_stmt(&stmt);
+        }
+
+        self.unit()
+    }
+
+    fn codegen_stmt(&mut self, stmt: &Stmt) -> BasicValueEnum<'ctx> {
+        match stmt {
+            Stmt::Decl { id, val, .. } => {
+                let val = self.codegen_expr(*val);
+
+                let ty = self.convert_ty(self.ty_map.var_ty(*id));
+                let name = self.hir.var_ident(*id).ident.to_string();
+                let alloc = self.builder.build_alloca(ty, &name).unwrap();
+                self.vars.insert(*id, alloc);
+
+                self.builder.build_store(alloc, val).unwrap();
+
+                self.unit()
+            }
+            Stmt::Expr(expr) => self.codegen_expr(*expr),
+        }
     }
 }

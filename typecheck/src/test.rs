@@ -9,11 +9,11 @@ fn check_expr(input: &str) -> Result<Ty> {
     let (expr, hir) = nameres::test_resolve_expr(Parser::parse_expr(input).unwrap()).unwrap();
 
     let mut checker = TypeChecker::default();
-    let ctx = checker.build_context(&hir);
-    checker.infer_expr(&ctx, &hir, expr)?;
+    checker.build_context(&hir);
+    checker.infer_expr(&hir, expr)?;
     checker.unify()?;
 
-    Ok(checker.sub_all(&hir)?.get(expr).clone())
+    Ok(checker.sub_all(&hir)?.expr_ty(expr).clone())
 }
 
 fn check_full(input: &str) -> Result<()> {

@@ -1,4 +1,3 @@
-use derive_more::From;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::SpanIdent;
@@ -96,12 +95,19 @@ impl Hir {
     }
 }
 
-#[derive(From)]
-pub struct TyMap(SecondaryMap<ExprId, Ty>);
+pub struct TyMap(SecondaryMap<ExprId, Ty>, SecondaryMap<VarId, Ty>);
 
 impl TyMap {
-    pub fn get(&self, expr: ExprId) -> &Ty {
-        self.0.get(expr).unwrap()
+    pub fn new(expr_map: SecondaryMap<ExprId, Ty>, var_map: SecondaryMap<VarId, Ty>) -> Self {
+        Self(expr_map, var_map)
+    }
+
+    pub fn expr_ty(&self, expr: ExprId) -> &Ty {
+        &self.0[expr]
+    }
+
+    pub fn var_ty(&self, var: VarId) -> &Ty {
+        &self.1[var]
     }
 }
 

@@ -11,7 +11,7 @@ use inkwell::{
         AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
         StructType,
     },
-    values::{AnyValue, AnyValueEnum},
+    values::{AnyValue, AnyValueEnum, PointerValue},
 };
 
 use hir::{
@@ -29,6 +29,7 @@ pub struct Codegen<'ctx, 'hir> {
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     structs: SecondaryMap<AdtId, StructType<'ctx>>,
+    vars: SecondaryMap<VarId, PointerValue<'ctx>>,
 }
 
 impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
@@ -40,6 +41,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             builder: ctx.create_builder(),
             module: ctx.create_module(module_name),
             structs: Self::build_structs(hir, ctx),
+            vars: SecondaryMap::new(),
         };
         this.populate_structs();
         this
@@ -95,7 +97,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 .ptr_type(AddressSpace::default())
                 .as_basic_type_enum(),
             Ty::Fn(params, _) => todo!(),
-            Ty::Adt(id) => self.structs.get(*id).unwrap().as_basic_type_enum(),
+            Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
     }
 
