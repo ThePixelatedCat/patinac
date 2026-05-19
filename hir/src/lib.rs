@@ -1,3 +1,4 @@
+use derive_more::From;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::SpanIdent;
@@ -16,7 +17,7 @@ pub mod types;
 #[derive(Debug, Default)]
 pub struct Hir {
     pub execs: Vec<ExecItem>,
-    adts: SlotMap<AdtId, SpanIdent>,
+    pub adts: SlotMap<AdtId, SpanIdent>,
     adt_info: SecondaryMap<AdtId, AdtInfo>,
     exprs: SlotMap<ExprId, Expr>,
     expr_spans: SecondaryMap<ExprId, Span>,
@@ -92,6 +93,15 @@ impl Hir {
 
     pub fn try_var_info(&self, id: VarId) -> Option<&VarInfo> {
         self.var_info.get(id)
+    }
+}
+
+#[derive(From)]
+pub struct TyMap(SecondaryMap<ExprId, Ty>);
+
+impl TyMap {
+    pub fn get(&self, expr: ExprId) -> &Ty {
+        self.0.get(expr).unwrap()
     }
 }
 

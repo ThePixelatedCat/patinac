@@ -13,10 +13,7 @@ fn check_expr(input: &str) -> Result<Ty> {
     checker.infer_expr(&ctx, &hir, expr)?;
     checker.unify()?;
 
-    Ok(checker
-        .sub_all(&hir)?
-        .remove(expr)
-        .expect(&format!("{expr:?}")))
+    Ok(checker.sub_all(&hir)?.get(expr).clone())
 }
 
 fn check_full(input: &str) -> Result<()> {

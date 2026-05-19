@@ -87,6 +87,7 @@ dependencies = [
  "hir",
  "ident",
  "inkwell",
+ "slotmap",
  "span",
 ]
 

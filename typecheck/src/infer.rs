@@ -4,7 +4,6 @@ use itertools::Itertools;
 use hir::{
     Hir, VarId,
     exprs::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
-    items::AdtInfo,
 };
 use ident::SpanIdent;
 use slotmap::SecondaryMap;
@@ -239,15 +238,12 @@ impl TypeChecker {
         let PartialTy::Adt(base_ty) = base_ty else {
             return Err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base)));
         };
-        let AdtInfo::Record { fields, .. } = &hir.adt_info(base_ty) else {
-            return Err(ErrorKind::MissingField.span(field.span));
-        };
 
         let field_ty = PartialTy::from(
-            &fields
+            hir.adt_info(base_ty)
+                .fields
                 .get(&field.ident)
-                .ok_or_else(|| ErrorKind::MissingField.span(field.span))?
-                .ty,
+                .ok_or_else(|| ErrorKind::MissingField.span(field.span))?,
         );
 
         Ok(field_ty)

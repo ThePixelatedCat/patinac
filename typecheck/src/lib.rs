@@ -8,7 +8,7 @@ mod unify;
 
 use ena::unify::InPlaceUnificationTable;
 
-use hir::{Hir, exprs::ExprId, items::ExecKind, types::Ty};
+use hir::{Hir, TyMap, exprs::ExprId, items::ExecKind, types::Ty};
 use slotmap::SecondaryMap;
 use span::Span;
 
@@ -32,7 +32,7 @@ pub struct TypeChecker {
 }
 
 impl TypeChecker {
-    pub fn type_program(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
+    pub fn type_program(&mut self, hir: &mut Hir) -> Result<TyMap> {
         let ctx = self.build_context(hir);
         for exec in &hir.execs {
             match &exec.kind {
@@ -42,7 +42,6 @@ impl TypeChecker {
                 }
                 ExecKind::Fn {
                     params,
-                    ret_mut,
                     ret_ty,
                     body,
                 } => {

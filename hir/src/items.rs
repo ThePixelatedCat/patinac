@@ -7,14 +7,8 @@ use crate::{VarId, exprs::ExprId, types::Ty};
 
 new_key_type! { pub struct AdtId; }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AdtInfo {
-    Record { fields: HashMap<Ident, FieldInfo> },
-    Param,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldInfo {
-    pub ty: Ty,
+pub struct AdtInfo {
+    pub fields: HashMap<Ident, Ty>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -31,7 +25,6 @@ pub enum ExecKind {
     },
     Fn {
         params: Vec<Param>,
-        ret_mut: bool,
         ret_ty: Ty,
         body: ExprId,
     },

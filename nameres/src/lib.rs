@@ -21,7 +21,7 @@ use hir::{
         Arg as HirArg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
         LitExpr as HirLitExpr, PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
-    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind, FieldInfo, Param},
+    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind, Param},
     types::{Param as ParamTy, Return, Ty as HirTy},
 };
 use ident::Ident;
@@ -96,22 +96,15 @@ fn resolve_adt_item(
         AdtKind::Record(fields) => {
             let fields: Vec<_> = fields
                 .into_iter()
-                .map(|field| {
-                    Ok((
-                        field.ident.ident,
-                        FieldInfo {
-                            ty: resolve_ty(adt_scope, field.ty)?,
-                        },
-                    ))
-                })
+                .map(|field| Ok((field.ident.ident, resolve_ty(adt_scope, field.ty)?)))
                 .try_collect()?;
 
             let constructor_ty = HirTy::Fn(
                 fields
                     .iter()
-                    .map(|(_, f)| ParamTy {
+                    .map(|(_, ty)| ParamTy {
                         mutable: false,
-                        ty: f.ty.clone(),
+                        ty: ty.clone(),
                     })
                     .collect(),
                 Return {
@@ -130,7 +123,7 @@ fn resolve_adt_item(
 
             hir.fulfill_adt(
                 id,
-                AdtInfo::Record {
+                AdtInfo {
                     fields: HashMap::from_iter(fields),
                 },
             );
@@ -182,6 +175,10 @@ fn resolve_exec_item(
                 todo!("Generics")
             }
 
+            if ret_mut {
+                todo!("Projections")
+            }
+
             let mut var_scope = var_scope.clone();
 
             let params: Vec<_> = params
@@ -225,7 +222,6 @@ fn resolve_exec_item(
                 ident: id,
                 kind: HirExecKind::Fn {
                     params,
-                    ret_mut,
                     ret_ty,
                     body,
                 },

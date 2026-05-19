@@ -3,8 +3,7 @@ use std::{mem, result};
 use itertools::Itertools;
 
 use hir::{
-    Hir,
-    exprs::ExprId,
+    Hir, TyMap,
     types::{Param, Return, Ty},
 };
 use slotmap::SecondaryMap;
@@ -52,8 +51,8 @@ impl TypeChecker {
         tys.into_iter().map(|ty| self.sub_ty(ty)).collect()
     }
 
-    pub(super) fn sub_all(&mut self, hir: &Hir) -> Result<SecondaryMap<ExprId, Ty>> {
-        mem::take(&mut self.substitution)
+    pub(super) fn sub_all(&mut self, hir: &Hir) -> Result<TyMap> {
+        Ok(mem::take(&mut self.substitution)
             .into_iter()
             .map(|(expr, ty)| {
                 Ok((
@@ -62,6 +61,7 @@ impl TypeChecker {
                         .map_err(|err| err.span(hir.expr_span(expr)))?,
                 ))
             })
-            .collect()
+            .collect::<Result<SecondaryMap<_, _>>>()?
+            .into())
     }
 }
