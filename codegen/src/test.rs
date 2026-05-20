@@ -70,12 +70,21 @@ fn call() {
 }
 
 #[test]
+fn fib() {
+    let input = "
+    fn fib(n: Float): Float ->
+        if n < 2.0 { n } else { fib(n -. 1.0) +. fib(n -. 2.0) }
+";
+    check(input, true);
+}
+
+#[test]
 fn facs() {
     let input = "
     fn fac_rec(n: Float): Float -> 
         if n <= 0.0 { 1.0 } else { n *. fac_rec(n -. 1.0) }
 ";
-    check(input, true);
+    check(input, false);
 
     //     let input = "
     //     fn fac_iter(n: Float): Float -> {
