@@ -1,6 +1,7 @@
 use std::{env, fmt::Display, fs};
 
 use anyhow::anyhow;
+use codegen::Codegen;
 use yansi::Paint;
 
 use parse::Parser;
@@ -28,7 +29,7 @@ fn main() {
         .nth(1)
         .ok_or_else(|| anyhow!("source filepath argument missing"))
         .unwrap();
-    let src = fs::read_to_string(src_path).unwrap();
+    let src = fs::read_to_string(&src_path).unwrap();
 
     let toks = match lex::lex(&src) {
         Ok(tokens) => tokens,
@@ -58,13 +59,16 @@ fn main() {
         }
     };
 
-    let expr_tys = match TypeChecker::default().type_program(&mut hir) {
+    let ty_map = match TypeChecker::default().type_program(&mut hir) {
         Ok(v) => v,
         Err(err) => {
             print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
             return;
         }
     };
+
+    let ctx = codegen::create_ctx();
+    Codegen::new(&hir, &ty_map, &ctx, &src_path).codegen(true);
 }
 
 fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {

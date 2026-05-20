@@ -12,6 +12,8 @@ pub enum ErrorKind {
     UnboundVariable,
     #[display("Duplicate item with name {_0} (first occurence at {_1})")]
     DupItem(Ident, Span),
+    #[display("Duplicate field {_0}")]
+    DupFields(Ident),
     #[display("Unknown type")]
     UnknownType,
     #[display("This type expects {_0} arguments but has {_1}")]

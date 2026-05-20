@@ -2,7 +2,7 @@ mod error;
 #[cfg(test)]
 mod test;
 
-use foldhash::{HashMap, HashSet};
+use foldhash::HashSet;
 use itertools::Itertools;
 
 use ast::{
@@ -21,7 +21,7 @@ use hir::{
         Arg as HirArg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
         LitExpr as HirLitExpr, PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
-    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind, Param},
+    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind},
     types::{Param as ParamTy, Ty as HirTy},
 };
 use ident::Ident;
@@ -99,6 +99,10 @@ fn resolve_adt_item(
                 .map(|field| Ok((field.ident.ident, resolve_ty(adt_scope, field.ty)?)))
                 .try_collect()?;
 
+            if let Some((dup, _)) = fields.iter().duplicates_by(|(id, _)| id).next() {
+                return Err(ErrorKind::DupFields(*dup).span(item.ident.span));
+            }
+
             let constructor_ty = HirTy::Fn(
                 fields
                     .iter()
@@ -121,12 +125,12 @@ fn resolve_adt_item(
             hir.fulfill_adt(
                 id,
                 AdtInfo {
-                    fields: HashMap::from_iter(fields),
+                    fields: fields.into(),
                 },
             );
         }
         AdtKind::Enum(_) => {
-            todo!("Enums (Pattern Matching)");
+            todo!("Pattern Matching");
         }
     }
 
@@ -178,10 +182,7 @@ fn resolve_exec_item(
                     let ty = resolve_ty(adt_scope, p.ty)?;
                     let id = resolve_pat(&mut var_scope, hir, p.pat, p.mutable, Some(ty.clone()));
                     Ok((
-                        Param {
-                            id,
-                            mutable: p.mutable,
-                        },
+                        id,
                         ParamTy {
                             ty,
                             mutable: p.mutable,
@@ -292,7 +293,7 @@ fn resolve_expr(
                 .map(|el| resolve_block_expr(adt_scope, var_scope, hir, el))
                 .transpose()?,
         },
-        ExprKind::Match { .. } => todo!("Match (Pattern Matching)"),
+        ExprKind::Match { .. } => todo!("Pattern Matching"),
         ExprKind::For { pat, iter, body } => {
             let iter = resolve_expr(adt_scope, var_scope, hir, *iter)?;
             let mut var_scope = Scope::clone(var_scope);
@@ -534,7 +535,7 @@ const fn convert_prefix_op(op: AstPrefixOp) -> HirPrefixOp {
 
 const fn convert_infix_op(op: AstInfixOp) -> HirInfixOp {
     convert_op!(
-        op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, Rem, RemF, And, Or,
-        Xor, Eqq, Neq, Gt, Lt, Geq, Leq
+        op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Xor, Eqq,
+        Neq, Gt, Lt, Geq, Leq
     )
 }

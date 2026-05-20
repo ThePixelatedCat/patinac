@@ -159,8 +159,6 @@ pub enum InfixOp {
     Div,
     DivF,
     Exp,
-    Rem,
-    RemF,
     And,
     Or,
     Xor,
@@ -182,7 +180,7 @@ impl InfixOp {
             Self::Gt | Self::Lt | Self::Leq | Self::Geq => (9, 10),
             Self::Xor => (13, 14),
             Self::Add | Self::AddF | Self::Sub | Self::SubF => (17, 18),
-            Self::Mul | Self::MulF | Self::Div | Self::DivF | Self::Rem | Self::RemF => (19, 20),
+            Self::Mul | Self::MulF | Self::Div | Self::DivF => (19, 20),
             Self::Exp => (22, 21),
         }
     }

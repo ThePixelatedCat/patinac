@@ -94,8 +94,6 @@ pub enum InfixOp {
     Div,
     DivF,
     Exp,
-    Rem,
-    RemF,
     And,
     Or,
     Xor,

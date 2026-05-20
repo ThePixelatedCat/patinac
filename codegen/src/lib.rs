@@ -1,26 +1,36 @@
 mod exprs;
+#[cfg(test)]
+mod test;
 
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    fs::File,
+    iter,
+    path::{Path, PathBuf},
+};
 
 use inkwell::{
     AddressSpace,
     builder::Builder,
     context::Context,
-    module::{Linkage, Module},
-    types::{
-        AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
-        StructType,
-    },
-    values::{AnyValue, AnyValueEnum, PointerValue},
+    module::Module,
+    passes::PassBuilderOptions,
+    targets::{FileType, InitializationConfig, Target, TargetMachine},
+    types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, StructType},
+    values::{FunctionValue, PointerValue},
 };
 
 use hir::{
     Hir, TyMap, VarId,
-    exprs::{Expr, ExprId, LitExpr},
-    items::AdtId,
+    exprs::ExprId,
+    items::{AdtId, ExecKind},
     types::Ty,
 };
 use slotmap::SecondaryMap;
+
+pub fn create_ctx() -> Context {
+    Context::create()
+}
 
 pub struct Codegen<'ctx, 'hir> {
     hir: &'hir Hir,
@@ -29,7 +39,14 @@ pub struct Codegen<'ctx, 'hir> {
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     structs: SecondaryMap<AdtId, StructType<'ctx>>,
-    vars: SecondaryMap<VarId, PointerValue<'ctx>>,
+    funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
+    vars: SecondaryMap<VarId, AllocInfo<'ctx>>,
+}
+
+#[derive(Clone, Copy)]
+struct AllocInfo<'ctx> {
+    ptr: PointerValue<'ctx>,
+    ty: AnyTypeEnum<'ctx>,
 }
 
 impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
@@ -41,10 +58,75 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             builder: ctx.create_builder(),
             module: ctx.create_module(module_name),
             structs: Self::build_structs(hir, ctx),
+            funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
         };
         this.populate_structs();
         this
+    }
+
+    pub fn codegen(&mut self, opts: bool) {
+        for exec in &self.hir.execs {
+            match &exec.kind {
+                ExecKind::Const { val } => todo!(),
+                ExecKind::Fn { params, .. } => {
+                    let ty @ Ty::Fn(_, ret_ty) = self.ty_map.var_ty(exec.ident) else {
+                        unreachable!("ICE")
+                    };
+                    let func = self.build_func(exec.ident, params, ret_ty);
+                    self.funcs.insert(exec.ident, func);
+                    self.vars.insert(
+                        exec.ident,
+                        AllocInfo {
+                            ptr: func.as_global_value().as_pointer_value(),
+                            ty: func.get_type().as_any_type_enum(),
+                        },
+                    )
+                }
+            };
+        }
+
+        for exec in &self.hir.execs {
+            match &exec.kind {
+                ExecKind::Const { val } => todo!(),
+                ExecKind::Fn { params, body } => {
+                    let func = self.funcs[exec.ident];
+                    self.populate_func(func, params, *body);
+                }
+            };
+        }
+
+        self.module.verify().unwrap();
+
+        Target::initialize_native(&InitializationConfig::default()).unwrap();
+        let triple = TargetMachine::get_default_triple();
+        let target = Target::from_triple(&triple).unwrap();
+        let target_machine = target
+            .create_target_machine_from_options(&triple, Default::default())
+            .unwrap();
+
+        self.module
+            .set_data_layout(&target_machine.get_target_data().get_data_layout());
+        self.module.set_triple(&triple);
+
+        if opts {
+            let pass_opts = PassBuilderOptions::create();
+            pass_opts.set_verify_each(true);
+            self.module
+                .run_passes(
+                    "mem2reg,instcombine,reassociate,gvn,sccp,dce,simplifycfg",
+                    &target_machine,
+                    pass_opts,
+                )
+                .unwrap();
+        }
+
+        let path = format!("{}.o", self.module.get_name().to_str().unwrap());
+        target_machine
+            .write_to_file(&self.module, FileType::Object, Path::new(&path))
+            .unwrap();
+
+        self.module.print_to_stderr()
     }
 
     fn report_warning(&self, msg: impl Into<Cow<'static, str>>) {
@@ -60,22 +142,9 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
     fn populate_structs(&self) {
         for (id, ty) in &self.structs {
-            let field_tys: Vec<_> = self
-                .hir
-                .adt_info(id)
-                .fields
-                .values()
-                .map(|ty| {
-                    if let Ty::Adt(inner_id) = ty
-                        && *inner_id == id
-                    {
-                        self.ctx
-                            .ptr_type(AddressSpace::default())
-                            .as_basic_type_enum()
-                    } else {
-                        self.convert_ty(ty)
-                    }
-                })
+            let field_tys: Vec<_> = (&self.hir.adt_info(id).fields)
+                .into_iter()
+                .map(|(_, ty)| self.convert_ty(ty))
                 .collect();
             ty.set_body(&field_tys, false);
         }
@@ -92,16 +161,16 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 let inner_tys: Vec<_> = inner_tys.iter().map(|ty| self.convert_ty(ty)).collect();
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
-            Ty::Array(_) => self
+            Ty::Array(_) => todo!(),
+            Ty::Fn(params, _) => todo!(),
+            Ty::Adt(id) => self
                 .ctx
                 .ptr_type(AddressSpace::default())
                 .as_basic_type_enum(),
-            Ty::Fn(params, _) => todo!(),
-            Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
     }
 
-    fn codegen_function(&mut self, id: VarId, params: &[VarId], ret_ty: &Ty, body: ExprId) {
+    fn build_func(&self, id: VarId, params: &[VarId], ret_ty: &Ty) -> FunctionValue<'ctx> {
         let fn_name = self.hir.var_ident(id).ident.to_string();
 
         let param_tys: Vec<_> = params
@@ -120,13 +189,63 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let ret_ty = self.convert_ty(&ret_ty);
         let fn_ty = ret_ty.fn_type(&param_tys, false);
 
-        let function = self.module.add_function(&fn_name, fn_ty, None);
+        self.module.add_function(&fn_name, fn_ty, None)
+    }
 
+    fn populate_func(&mut self, function: FunctionValue<'ctx>, params: &[VarId], body: ExprId) {
         let entry_block = self.ctx.append_basic_block(function, "entry");
         self.builder.position_at_end(entry_block);
+
+        for (param, arg) in iter::zip(params, function.get_param_iter()) {
+            let info = if self.hir.var_info(*param).mutable {
+                AllocInfo {
+                    ptr: arg.into_pointer_value(),
+                    ty: self
+                        .convert_ty(self.ty_map.var_ty(*param))
+                        .as_any_type_enum(),
+                }
+            } else {
+                let ty = arg.get_type();
+                let name = self.hir.var_ident(*param).ident.to_string();
+                let ptr = self.builder.build_alloca(ty, &name).unwrap();
+                self.builder.build_store(ptr, arg).unwrap();
+                AllocInfo {
+                    ptr,
+                    ty: ty.as_any_type_enum(),
+                }
+            };
+
+            self.vars.insert(*param, info);
+        }
+
         let body = self.codegen_expr(body);
         self.builder.build_return(Some(&body)).unwrap();
 
         assert!(function.verify(true));
+    }
+
+    fn alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> AllocInfo<'ctx> {
+        let curr_block = self.builder.get_insert_block().unwrap();
+        let head_block = curr_block
+            .get_parent()
+            .unwrap()
+            .get_first_basic_block()
+            .unwrap();
+
+        self.builder.position_at_end(head_block);
+        let ptr = self.builder.build_alloca(ty, &name).unwrap();
+        self.builder.position_at_end(curr_block);
+        AllocInfo {
+            ptr,
+            ty: ty.as_any_type_enum(),
+        }
+    }
+
+    fn curr_function(&self) -> FunctionValue<'ctx> {
+        self.builder
+            .get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap()
     }
 }

@@ -8,7 +8,11 @@ edition = "2024"
 span.path = "../span"
 ident.path = "../ident"
 # External
-derive_more = { version = "2.1.1", features = ["display"] }
+derive_more = { version = "2.1.1", features = [
+    "display",
+    "from",
+    "into_iterator",
+], default-features = false }
 slotmap = "1.1.1"
 foldhash = "0.2.0"
 

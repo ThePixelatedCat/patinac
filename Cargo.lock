@@ -87,8 +87,12 @@ dependencies = [
  "hir",
  "ident",
  "inkwell",
+ "lex",
+ "nameres",
+ "parse",
  "slotmap",
  "span",
+ "typecheck",
 ]
 
 [[package]]
@@ -97,6 +101,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ast",
+ "codegen",
  "lex",
  "nameres",
  "parse",

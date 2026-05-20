@@ -113,13 +113,13 @@ impl TypeChecker {
                 self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
                 Ok(PartialTy::unit())
             }
-            InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div | InfixOp::Rem => {
+            InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div => {
                 let int_var = self.fresh_int_var();
                 self.constrain_eq(lhs_ty, int_var.clone(), hir.expr_span(lhs));
                 self.constrain_eq(rhs_ty, int_var.clone(), hir.expr_span(rhs));
                 Ok(int_var)
             }
-            InfixOp::AddF | InfixOp::SubF | InfixOp::MulF | InfixOp::DivF | InfixOp::RemF => {
+            InfixOp::AddF | InfixOp::SubF | InfixOp::MulF | InfixOp::DivF => {
                 self.constrain_eq(lhs_ty, PartialTy::Float, hir.expr_span(lhs));
                 self.constrain_eq(rhs_ty, PartialTy::Float, hir.expr_span(rhs));
                 Ok(PartialTy::Float)
@@ -186,7 +186,7 @@ impl TypeChecker {
         let field_ty = PartialTy::from(
             hir.adt_info(base_ty)
                 .fields
-                .get(&field.ident)
+                .get_ty(field.ident)
                 .ok_or_else(|| ErrorKind::MissingField.span(field.span))?,
         );
 

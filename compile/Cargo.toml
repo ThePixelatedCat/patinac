@@ -11,7 +11,7 @@ ast.path = "../ast"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"
-#typecheck.path = "../typecheck"
+codegen.path = "../codegen"
 # External
 anyhow = "1.0.100"
 yansi = "1.0.1"

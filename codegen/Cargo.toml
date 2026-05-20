@@ -14,6 +14,10 @@ slotmap = "1.1.1"
 
 [dev-dependencies]
 # Internal
+lex.path = "../lex"
+parse.path = "../parse"
+nameres.path = "../nameres"
+typecheck.path = "../typecheck"
 
 [lints]
 workspace = true
