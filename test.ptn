@@ -8,3 +8,6 @@ fn fib(n: Float): Float ->
 record Point(x: Float, y: Float)
 fn get_x(self: Point): Float -> self.x
 fn get_y(self: Point): Float -> self.y
+
+record Link(value: Int, next: Link)
+fn get_next(self: Link): Link -> self.next
