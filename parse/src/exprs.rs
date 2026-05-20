@@ -54,6 +54,12 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let span = block.span;
                 ExprKind::Block(block).span(span)
             }),
+            TokKind::Print => {
+                let start = self.consume(TokKind::Print)?.span.start;
+                let expr = self.expr()?;
+                let span = start..expr.span.end;
+                Ok(ExprKind::Print(Box::new(expr)).span(span))
+            }
             TokKind::Let => Err(self
                 .err_next(ErrorKind::Unexpected)
                 .with_ctx("`let` is a statement, and can only be used within a block")),

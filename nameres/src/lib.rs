@@ -330,6 +330,7 @@ fn resolve_expr(
         ExprKind::Block(stmts) => {
             HirExpr::Block(resolve_block_expr(adt_scope, var_scope, hir, stmts)?)
         }
+        ExprKind::Print(expr) => HirExpr::Print(resolve_expr(adt_scope, var_scope, hir, *expr)?),
     };
 
     Ok(hir.add_expr(new_expr, expr.span))
@@ -355,6 +356,7 @@ fn collect_captures_inner(captures: &mut HashSet<Ident>, expr: &AstExpr) {
         ExprKind::Lambda { body: e, .. }
         | ExprKind::Field { base: e, .. }
         | ExprKind::Prefix { expr: e, .. }
+        | ExprKind::Print(e)
         | ExprKind::Return(e) => collect_captures_inner(captures, e),
         ExprKind::Infix {
             lhs: e1, rhs: e2, ..

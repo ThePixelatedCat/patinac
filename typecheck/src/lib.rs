@@ -48,6 +48,13 @@ impl TypeChecker {
                 }
             }
         }
+        if let Some(main) = hir.main() {
+            let ExecKind::Fn { body, .. } = &main.kind else {
+                unreachable!("ICE")
+            };
+            let body_ty = self.infer_expr(hir, *body)?;
+            self.constrain_eq(body_ty, PartialTy::unit(), hir.expr_span(*body));
+        }
         self.unify()?;
         self.sub_all(hir)
     }

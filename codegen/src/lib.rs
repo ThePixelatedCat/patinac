@@ -37,6 +37,7 @@ pub struct Codegen<'ctx, 'hir> {
     structs: SecondaryMap<AdtId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
     vars: SecondaryMap<VarId, AllocInfo<'ctx>>,
+    printf: FunctionValue<'ctx>,
 }
 
 #[derive(Clone, Copy)]
@@ -47,18 +48,27 @@ struct AllocInfo<'ctx> {
 
 impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     pub fn new(hir: &'hir Hir, ty_map: &'hir TyMap, ctx: &'ctx Context, module_name: &str) -> Self {
+        let module = ctx.create_module(module_name);
         let this = Self {
+            printf: Self::printf(ctx, &module),
             hir,
             ty_map,
             ctx,
             builder: ctx.create_builder(),
-            module: ctx.create_module(module_name),
+            module,
             structs: Self::build_structs(hir, ctx),
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
         };
         this.populate_structs();
         this
+    }
+
+    fn printf(ctx: &'ctx Context, module: &Module<'ctx>) -> FunctionValue<'ctx> {
+        let ty = ctx
+            .i32_type()
+            .fn_type(&[ctx.ptr_type(AddressSpace::default()).into()], true);
+        module.add_function("printf", ty, None)
     }
 
     pub fn codegen(&mut self, opts: bool) {

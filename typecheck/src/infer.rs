@@ -28,6 +28,11 @@ impl TypeChecker {
             Expr::Continue => todo!(),
             Expr::Return(_) => todo!(),
             Expr::Block(block) => self.infer_block_expr(hir, block),
+
+            Expr::Print(expr) => {
+                let _ = self.infer_expr(hir, *expr)?;
+                Ok(PartialTy::unit())
+            }
         }
         .inspect(|ty| {
             self.substitution.insert(expr, ty.clone());

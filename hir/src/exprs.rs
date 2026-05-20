@@ -59,6 +59,8 @@ pub enum Expr {
     Continue,
     Return(ExprId),
     Block(BlockExpr),
+
+    Print(ExprId),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -78,6 +78,8 @@ pub enum ExprKind {
     Continue,
     Return(Box<Expr>),
     Block(BlockExpr),
+
+    Print(Box<Expr>),
 }
 
 impl ExprKind {

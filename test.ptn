@@ -1,4 +1,6 @@
-fn main() -> {}
+fn main() -> {
+    print fib(35.0)
+}
 
 fn fac_rec(n: Float): Float -> 
     if n <= 0.0 { 1.0 } else { n *. fac_rec(n -. 1.0) }

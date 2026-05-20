@@ -39,7 +39,35 @@ impl<'ctx> Codegen<'ctx, '_> {
             Expr::Continue => todo!(),
             Expr::Return(expr) => todo!(),
             Expr::Block(stmts) => self.codegen_block_expr(stmts),
+
+            Expr::Print(expr) => self.codegen_print(*expr),
         }
+    }
+
+    fn codegen_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+        let format_string = match self.ty_map.expr_ty(expr) {
+            Ty::Int => "%d",
+            Ty::UInt => "%u",
+            Ty::Byte => "%hhu",
+            Ty::Float => "%f",
+            Ty::Bool => "%d",
+            Ty::Char => todo!(),
+            Ty::Adt(_) => todo!(),
+            Ty::Tuple(_) | Ty::Array(_) | Ty::Fn(_, _) => panic!("Cannot print this type"),
+        };
+
+        let format_ptr = self
+            .builder
+            .build_global_string_ptr(format_string, "format_string")
+            .unwrap()
+            .as_pointer_value();
+
+        let expr = self.codegen_expr(expr);
+        self.builder
+            .build_call(self.printf, &[format_ptr.into(), expr.into()], "print")
+            .unwrap();
+
+        self.unit()
     }
 
     #[allow(unused)]

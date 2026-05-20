@@ -219,6 +219,10 @@ pub enum TokKind {
     #[token("false")]
     False,
 
+    /// `print`
+    #[token("print")]
+    Print,
+
     /* MISC */
     /// identifier
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
