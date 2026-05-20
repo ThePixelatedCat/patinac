@@ -17,7 +17,7 @@ use inkwell::{
 use hir::{
     Hir, TyMap, VarId,
     exprs::{Expr, ExprId, LitExpr},
-    items::{AdtId, Param},
+    items::AdtId,
     types::Ty,
 };
 use slotmap::SecondaryMap;
@@ -101,18 +101,18 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         }
     }
 
-    fn codegen_function(&self, id: VarId, params: &[Param], ret_ty: &Ty, body: ExprId) {
+    fn codegen_function(&mut self, id: VarId, params: &[VarId], ret_ty: &Ty, body: ExprId) {
         let fn_name = self.hir.var_ident(id).ident.to_string();
 
         let param_tys: Vec<_> = params
             .iter()
             .map(|p| {
-                if p.mutable {
+                if self.hir.var_info(*p).mutable {
                     self.ctx
                         .ptr_type(AddressSpace::default())
                         .as_basic_type_enum()
                 } else {
-                    self.convert_ty(&p.ty)
+                    self.convert_ty(self.ty_map.var_ty(*p))
                 }
                 .into()
             })
@@ -124,9 +124,8 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
         let entry_block = self.ctx.append_basic_block(function, "entry");
         self.builder.position_at_end(entry_block);
-        self.builder
-            .build_return(Some(&self.codegen_expr(body)))
-            .unwrap();
+        let body = self.codegen_expr(body);
+        self.builder.build_return(Some(&body)).unwrap();
 
         assert!(function.verify(true));
     }

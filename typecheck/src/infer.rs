@@ -6,10 +6,7 @@ use hir::{
 };
 use ident::SpanIdent;
 
-use crate::{
-    ErrorKind, PartialTy, Result, TypeChecker,
-    types::{Param, Return},
-};
+use crate::{ErrorKind, PartialTy, Result, TypeChecker, types::Param};
 
 impl TypeChecker {
     pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> Result<PartialTy> {
@@ -89,21 +86,15 @@ impl TypeChecker {
                 })
             })
             .try_collect()?;
-        let return_ty = self.fresh_var();
+        let ret_ty = self.fresh_var();
 
         self.constrain_eq(
             func_ty,
-            PartialTy::Fn(
-                arg_tys,
-                Return {
-                    mutable: false,
-                    ty: Box::new(return_ty.clone()),
-                },
-            ),
+            PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
             hir.expr_span(func),
         );
 
-        Ok(return_ty)
+        Ok(ret_ty)
     }
 
     fn infer_infix(
@@ -250,23 +241,14 @@ impl TypeChecker {
     fn infer_lambda(&mut self, hir: &Hir, params: &[VarId], body: ExprId) -> Result<PartialTy> {
         let param_tys = params
             .iter()
-            .map(|id| {
-                let info = hir.var_info(*id);
-                Param {
-                    mutable: info.mutable,
-                    ty: self.ctx[*id].clone(),
-                }
+            .map(|id| Param {
+                mutable: hir.var_info(*id).mutable,
+                ty: self.ctx[*id].clone(),
             })
             .collect();
         let body_ty = self.infer_expr(hir, body)?;
 
-        Ok(PartialTy::Fn(
-            param_tys,
-            Return {
-                mutable: false,
-                ty: Box::new(body_ty),
-            },
-        ))
+        Ok(PartialTy::Fn(param_tys, Box::new(body_ty)))
     }
 
     fn infer_block_expr(&mut self, hir: &Hir, block: &BlockExpr) -> Result<PartialTy> {

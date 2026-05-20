@@ -2,7 +2,7 @@ use derive_more::Display;
 
 use span::Span;
 
-use crate::types::{Param, PartialTy, Return, TyVar};
+use crate::types::{Param, PartialTy, TyVar};
 
 pub type Result<T> = errors::Result<T, ErrorKind>;
 pub type Error = errors::Error<ErrorKind>;
@@ -35,6 +35,4 @@ pub enum ErrorKind {
     ParamCount(PartialTy, PartialTy),
     #[display("mismatched parameter mutability between `{_0}` and `{_1}`")]
     ParamMutability(Param, Param),
-    #[display("mismatched return type mutability between `{_0}` and `{_1}`")]
-    ReturnMutability(Return, Return),
 }

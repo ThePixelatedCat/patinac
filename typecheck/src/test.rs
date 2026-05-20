@@ -1,6 +1,6 @@
 use ena::unify::UnifyKey;
 
-use hir::types::{Param, Return};
+use hir::types::Param;
 use parse::Parser;
 
 use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, types::TyVar};
@@ -84,10 +84,7 @@ fn inc() {
                 mutable: true,
                 ty: Ty::Float
             }],
-            Return {
-                mutable: false,
-                ty: Ty::unit().into()
-            }
+            Ty::unit().into()
         ))
     );
 }

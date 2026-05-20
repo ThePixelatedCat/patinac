@@ -11,7 +11,7 @@ pub enum Ty {
     Bool,
     Tuple(Vec<Self>),
     Array(Box<Self>),
-    Fn(Vec<Param>, Return),
+    Fn(Vec<Param>, Box<Self>),
     Adt(AdtId),
 }
 
@@ -25,12 +25,6 @@ impl Ty {
 /// A parameter of a function type
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
-    pub mutable: bool,
     pub ty: Ty,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return {
     pub mutable: bool,
-    pub ty: Box<Ty>,
 }

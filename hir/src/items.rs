@@ -19,20 +19,12 @@ pub struct ExecItem {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExecKind {
-    Const {
-        ty: Option<Ty>,
-        val: ExprId,
-    },
-    Fn {
-        params: Vec<Param>,
-        ret_ty: Ty,
-        body: ExprId,
-    },
+    Const { val: ExprId },
+    Fn { params: Vec<Param>, body: ExprId },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Param {
-    pub mutable: bool,
     pub id: VarId,
-    pub ty: Ty,
+    pub mutable: bool,
 }

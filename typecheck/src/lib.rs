@@ -39,13 +39,12 @@ impl TypeChecker {
                     let val_ty = self.infer_expr(hir, *val)?;
                     self.constrain_eq(val_ty, self.ctx[exec.ident].clone(), hir.expr_span(*val));
                 }
-                ExecKind::Fn {
-                    params,
-                    ret_ty,
-                    body,
-                } => {
+                ExecKind::Fn { params, body } => {
                     let body_ty = self.infer_expr(hir, *body)?;
-                    self.constrain_eq(body_ty, ret_ty.into(), hir.expr_span(*body));
+                    let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.ident] else {
+                        unreachable!("ICE: Function was given non-function type during nameres")
+                    };
+                    self.constrain_eq(body_ty, *ret_ty.clone(), hir.expr_span(*body));
                 }
             }
         }

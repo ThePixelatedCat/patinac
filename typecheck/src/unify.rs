@@ -1,9 +1,6 @@
 use std::{iter, mem};
 
-use crate::{
-    ErrorKind, PartialTy, TyVar, TypeChecker,
-    types::{Param, Return},
-};
+use crate::{ErrorKind, PartialTy, TyVar, TypeChecker, types::Param};
 
 fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
     match ty {
@@ -20,7 +17,7 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
             params
                 .iter()
                 .try_for_each(|param| occurs_check(&param.ty, var))?;
-            occurs_check(&ret.ty, var)
+            occurs_check(&ret, var)
         }
         PartialTy::Var(this_var) | PartialTy::IntVar(this_var) => {
             if *this_var == var {
@@ -73,11 +70,11 @@ impl TypeChecker {
             (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
                 self.unify_ty_ty(*lhs_inner, *rhs_inner)
             }
-            (PartialTy::Fn(lhs_params, lhs_return), PartialTy::Fn(rhs_params, rhs_return)) => {
+            (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
                 if lhs_params.len() != rhs_params.len() {
                     return Err(ErrorKind::ParamCount(
-                        PartialTy::Fn(lhs_params, lhs_return),
-                        PartialTy::Fn(rhs_params, rhs_return),
+                        PartialTy::Fn(lhs_params, lhs_ret),
+                        PartialTy::Fn(rhs_params, rhs_ret),
                     ));
                 }
                 iter::zip(lhs_params, rhs_params).try_for_each(|(l, r)| {
@@ -86,10 +83,7 @@ impl TypeChecker {
                     }
                     self.unify_ty_ty(l.ty, r.ty)
                 })?;
-                if lhs_return.mutable != rhs_return.mutable {
-                    return Err(ErrorKind::ReturnMutability(lhs_return, rhs_return));
-                }
-                self.unify_ty_ty(*lhs_return.ty, *rhs_return.ty)
+                self.unify_ty_ty(*lhs_ret, *rhs_ret)
             }
             (PartialTy::Adt(a), PartialTy::Adt(b)) if a == b => Ok(()),
             (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
@@ -152,10 +146,7 @@ impl TypeChecker {
                         ..param
                     })
                     .collect();
-                let ret = Return {
-                    mutable: ret.mutable,
-                    ty: Box::new(self.normalize_ty(*ret.ty)),
-                };
+                let ret = Box::new(self.normalize_ty(*ret));
                 PartialTy::Fn(params, ret)
             }
             PartialTy::Adt(id) => PartialTy::Adt(id),

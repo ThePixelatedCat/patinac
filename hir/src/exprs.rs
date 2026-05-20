@@ -61,28 +61,6 @@ pub enum Expr {
     Block(BlockExpr),
 }
 
-impl Expr {
-    pub const fn int(i: u64) -> Self {
-        Self::Lit(LitExpr::Int(i))
-    }
-
-    pub const fn float(f: f64) -> Self {
-        Self::Lit(LitExpr::Float(f))
-    }
-
-    pub const fn char(c: char) -> Self {
-        Self::Lit(LitExpr::Char(c))
-    }
-
-    pub fn string(s: &str) -> Self {
-        Self::Lit(LitExpr::String(String::from(s)))
-    }
-
-    pub const fn bool(b: bool) -> Self {
-        Self::Lit(LitExpr::Bool(b))
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum LitExpr {
     Int(u64),

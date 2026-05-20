@@ -269,8 +269,8 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn codegen_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
-        for stmt in block.stmts {
-            self.codegen_stmt(&stmt);
+        for stmt in &block.stmts {
+            self.codegen_stmt(stmt);
         }
 
         self.unit()

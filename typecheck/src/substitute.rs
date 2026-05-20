@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use hir::{
     Hir, TyMap,
-    types::{Param, Return, Ty},
+    types::{Param, Ty},
 };
 
 use crate::error::{ErrorKind, Result};
@@ -32,10 +32,7 @@ impl TypeChecker {
                         })
                     })
                     .try_collect()?;
-                let ret = Return {
-                    mutable: ret.mutable,
-                    ty: Box::new(self.sub_ty(*ret.ty)?),
-                };
+                let ret = Box::new(self.sub_ty(*ret)?);
                 Ok(Ty::Fn(params, ret))
             }
             PartialTy::Adt(id) => Ok(Ty::Adt(id)),

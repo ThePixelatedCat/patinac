@@ -33,7 +33,7 @@ pub enum PartialTy {
     Char,
     Tuple(Vec<Self>),
     Array(Box<Self>),
-    Fn(Vec<Param>, Return),
+    Fn(Vec<Param>, Box<Self>),
     Adt(AdtId),
     Var(TyVar),
     IntVar(TyVar),
@@ -52,19 +52,17 @@ impl From<&Ty> for PartialTy {
             Ty::Char => Self::Char,
             Ty::Tuple(tys) => Self::Tuple(tys.iter().map(Self::from).collect()),
             Ty::Array(ty) => Self::Array(Box::new(ty.as_ref().into())),
-            Ty::Fn(params, ret) => Self::Fn(
-                params
+            Ty::Fn(params, ret) => {
+                let params = params
                     .iter()
                     .map(|param| Param {
                         mutable: param.mutable,
                         ty: (&param.ty).into(),
                     })
-                    .collect(),
-                Return {
-                    mutable: ret.mutable,
-                    ty: Box::new(Self::from(&*ret.ty)),
-                },
-            ),
+                    .collect();
+                let ret = Box::new(Self::from(&**ret));
+                Self::Fn(params, ret)
+            }
             Ty::Adt(id) => Self::Adt(*id),
         }
     }
@@ -112,21 +110,6 @@ pub struct Param {
 }
 
 impl Display for Param {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
-        }
-        self.ty.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return {
-    pub mutable: bool,
-    pub ty: Box<PartialTy>,
-}
-
-impl Display for Return {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;

@@ -22,7 +22,7 @@ use hir::{
         LitExpr as HirLitExpr, PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
     items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind, Param},
-    types::{Param as ParamTy, Return, Ty as HirTy},
+    types::{Param as ParamTy, Ty as HirTy},
 };
 use ident::Ident;
 
@@ -107,10 +107,7 @@ fn resolve_adt_item(
                         ty: ty.clone(),
                     })
                     .collect(),
-                Return {
-                    mutable: false,
-                    ty: Box::new(HirTy::Adt(id)),
-                },
+                Box::new(HirTy::Adt(id)),
             );
             let constructor_id = hir.add_var(
                 item.ident,
@@ -151,17 +148,11 @@ fn resolve_exec_item(
             let ty = ty.map(|ty| resolve_ty(adt_scope, ty)).transpose()?;
             let val = resolve_expr(adt_scope, var_scope, hir, val)?;
 
-            hir.fulfill_var(
-                id,
-                VarInfo {
-                    mutable: false,
-                    ty: ty.clone(),
-                },
-            );
+            hir.fulfill_var(id, VarInfo { mutable: false, ty });
 
             Ok(HirExecItem {
                 ident: id,
-                kind: HirExecKind::Const { ty, val },
+                kind: HirExecKind::Const { val },
             })
         }
         AstExecKind::Fn {
@@ -179,52 +170,41 @@ fn resolve_exec_item(
                 todo!("Projections")
             }
 
-            let mut var_scope = var_scope.clone();
+            let mut var_scope = Scope::clone(var_scope);
 
-            let params: Vec<_> = params
+            let (params, params_ty) = params
                 .into_iter()
                 .map(|p| {
                     let ty = resolve_ty(adt_scope, p.ty)?;
                     let id = resolve_pat(&mut var_scope, hir, p.pat, p.mutable, Some(ty.clone()));
-                    Ok(Param {
-                        mutable: p.mutable,
-                        id,
-                        ty,
-                    })
+                    Ok((
+                        Param {
+                            id,
+                            mutable: p.mutable,
+                        },
+                        ParamTy {
+                            ty,
+                            mutable: p.mutable,
+                        },
+                    ))
                 })
                 .try_collect()?;
-            let ret_ty = resolve_ty(adt_scope, ret_ty)?;
             let body = resolve_expr(adt_scope, &var_scope, hir, body)?;
-
-            let ty = HirTy::Fn(
-                params
-                    .iter()
-                    .map(|p| ParamTy {
-                        mutable: p.mutable,
-                        ty: p.ty.clone(),
-                    })
-                    .collect(),
-                Return {
-                    mutable: ret_mut,
-                    ty: Box::new(ret_ty.clone()),
-                },
-            );
 
             hir.fulfill_var(
                 id,
                 VarInfo {
                     mutable: false,
-                    ty: Some(ty),
+                    ty: Some(HirTy::Fn(
+                        params_ty,
+                        Box::new(resolve_ty(adt_scope, ret_ty)?),
+                    )),
                 },
             );
 
             Ok(HirExecItem {
                 ident: id,
-                kind: HirExecKind::Fn {
-                    params,
-                    ret_ty,
-                    body,
-                },
+                kind: HirExecKind::Fn { params, body },
             })
         }
     }
@@ -275,7 +255,7 @@ fn resolve_expr(
             HirExpr::Call { func, args }
         }
         ExprKind::Lambda { params, body } => {
-            let mut var_scope = var_scope.clone();
+            let mut var_scope = Scope::clone(var_scope);
 
             // Rebind all mutable captures as immutable within the lambda body
             for capture in collect_captures(&body) {
@@ -293,7 +273,7 @@ fn resolve_expr(
                             ..info.clone()
                         },
                     );
-                    var_scope.insert(ident.ident, id);
+                    var_scope.insert(capture, id);
                 }
             }
 
@@ -315,7 +295,7 @@ fn resolve_expr(
         ExprKind::Match { .. } => todo!("Match (Pattern Matching)"),
         ExprKind::For { pat, iter, body } => {
             let iter = resolve_expr(adt_scope, var_scope, hir, *iter)?;
-            let mut var_scope = var_scope.clone();
+            let mut var_scope = Scope::clone(var_scope);
             let id = resolve_pat(&mut var_scope, hir, pat, false, None);
             let body = resolve_block_expr(adt_scope, &var_scope, hir, body)?;
             HirExpr::For { id, iter, body }
@@ -413,7 +393,7 @@ fn resolve_block_expr(
     hir: &mut Hir,
     block_expr: AstBlockExpr,
 ) -> Result<HirBlockExpr> {
-    let mut var_scope = var_scope.clone();
+    let mut var_scope = Scope::clone(var_scope);
     let stmts = block_expr
         .stmts
         .into_iter()
@@ -469,6 +449,10 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
         AstTyKind::Bool => Ok(HirTy::Bool),
         AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(adt_scope, tys)?)),
         AstTyKind::Fn(params, ret) => {
+            if ret.mutable {
+                todo!("Projections")
+            }
+
             let params = params
                 .into_iter()
                 .map(|param| {
@@ -478,10 +462,7 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, ty: AstTy) -> Result<HirTy> {
                     })
                 })
                 .try_collect()?;
-            let ret = Return {
-                mutable: ret.mutable,
-                ty: Box::new(resolve_ty(adt_scope, *ret.ty)?),
-            };
+            let ret = Box::new(resolve_ty(adt_scope, *ret.ty)?);
             Ok(HirTy::Fn(params, ret))
         }
         AstTyKind::Adt(ident, mut args) => {
