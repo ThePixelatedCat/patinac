@@ -16,12 +16,23 @@ pub mod types;
 #[derive(Debug, Default)]
 pub struct Hir {
     pub execs: Vec<ExecItem>,
+    main: Option<ExecItem>,
     pub adts: SlotMap<AdtId, SpanIdent>,
     adt_info: SecondaryMap<AdtId, AdtInfo>,
     exprs: SlotMap<ExprId, Expr>,
     expr_spans: SecondaryMap<ExprId, Span>,
     vars: SlotMap<VarId, SpanIdent>,
     pub var_info: SecondaryMap<VarId, VarInfo>,
+}
+
+impl Hir {
+    pub fn main(&self) -> Option<&ExecItem> {
+        self.main.as_ref()
+    }
+
+    pub fn set_main(&mut self, main: ExecItem) {
+        self.main = Some(main)
+    }
 }
 
 // Adt-related functions

@@ -32,7 +32,7 @@ type Scope<Id> = im_rc::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name
-pub fn resolve(ast: Ast) -> Result<Hir> {
+pub fn resolve(mut ast: Ast) -> Result<Hir> {
     let mut hir = Hir::default();
 
     let mut adt_scope = Scope::default();
@@ -62,6 +62,12 @@ pub fn resolve(ast: Ast) -> Result<Hir> {
         let id = hir.reserve_var(item.ident);
         var_scope.insert(item.ident.ident, id);
     }
+
+    if let Some(idx) = find_main(&ast.execs)? {
+        let main = resolve_exec_item(&adt_scope, &var_scope, &mut hir, ast.execs.remove(idx))?;
+        hir.set_main(main);
+    }
+
     hir.execs = ast
         .execs
         .into_iter()
@@ -69,6 +75,22 @@ pub fn resolve(ast: Ast) -> Result<Hir> {
         .try_collect()?;
 
     Ok(hir)
+}
+
+fn find_main(execs: &[AstExecItem]) -> Result<Option<usize>> {
+    for (idx, item) in execs.iter().enumerate() {
+        if let AstExecKind::Fn { params, ret_ty, .. } = &item.kind
+            && item.ident.ident == "main"
+        {
+            if params.is_empty() && ret_ty.kind == AstTyKind::unit() {
+                return Ok(Some(idx));
+            } else {
+                return Err(ErrorKind::InvalidMain.span(item.ident.span));
+            }
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(any(test, feature = "test"))]

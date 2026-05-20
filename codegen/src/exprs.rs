@@ -7,12 +7,13 @@ use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
     types::BasicTypeEnum,
-    values::{BasicValue, BasicValueEnum},
+    values::{BasicValue, BasicValueEnum, PointerValue},
 };
 
 use crate::Codegen;
 
 impl<'ctx> Codegen<'ctx, '_> {
+    #[allow(unused)]
     pub fn codegen_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.codegen_ident(*id),
@@ -41,21 +42,34 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
+    #[allow(unused)]
     fn codegen_place_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
-        match self.hir.expr_info(expr) {
-            Expr::Ident(id) => self.vars[*id].ptr.as_basic_value_enum(),
-            Expr::Field { base, field } => todo!(),
+        let ptr: PointerValue = match self.hir.expr_info(expr) {
+            Expr::Ident(id) => self.vars[*id].ptr,
+            Expr::Field { base, field } => {
+                let Ty::Adt(id) = self.ty_map.expr_ty(*base) else {
+                    unreachable!("ICE")
+                };
+                let ty = self.structs[*id];
+                let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
+
+                let base = self.codegen_expr(*base);
+                self.builder
+                    .build_struct_gep(ty, base.into_pointer_value(), idx, "geptmp")
+                    .unwrap()
+            }
             Expr::Index { arr, idx } => todo!(),
             Expr::Call { func, args } => todo!("Projections"),
             _ => unreachable!("ICE: Tried to codegen non-place expr as place expr"),
-        }
+        };
+        ptr.as_basic_value_enum()
     }
 
-    fn unit(&mut self) -> BasicValueEnum<'ctx> {
+    fn unit(&self) -> BasicValueEnum<'ctx> {
         self.ctx.const_struct(&[], false).as_basic_value_enum()
     }
 
-    fn codegen_ident(&mut self, id: VarId) -> BasicValueEnum<'ctx> {
+    fn codegen_ident(&self, id: VarId) -> BasicValueEnum<'ctx> {
         let alloc = self.vars[id];
         self.builder
             .build_load(
@@ -66,7 +80,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap()
     }
 
-    fn codegen_lit(&mut self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
+    fn codegen_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
         match lit {
             LitExpr::Int(val) => match self.ty_map.expr_ty(expr) {
                 Ty::Int => {
@@ -83,7 +97,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                 }
                 Ty::UInt => self.ctx.i64_type().const_int(*val, false),
                 Ty::Byte => {
-                    let max = u8::MAX as u64;
+                    let max = u64::from(u8::MAX);
                     let clamped_val = if *val > max {
                         self.report_warning(format!(
                             "Byte literal {val} overflowed and was clamped to {max}"

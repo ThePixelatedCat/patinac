@@ -18,6 +18,10 @@ pub enum ErrorKind {
     UnknownType,
     #[display("This type expects {_0} arguments but has {_1}")]
     GenericCount(usize, usize),
+    #[display(
+        "Invalid `main` function. The `main` function must take no parameters and return no value"
+    )]
+    InvalidMain,
 }
 
 impl std::error::Error for ErrorKind {}

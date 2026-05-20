@@ -1,13 +1,9 @@
 mod exprs;
 #[cfg(test)]
 mod test;
+mod witnesses;
 
-use std::{
-    borrow::Cow,
-    fs::File,
-    iter,
-    path::{Path, PathBuf},
-};
+use std::{borrow::Cow, iter, path::Path};
 
 use inkwell::{
     AddressSpace,
@@ -15,7 +11,7 @@ use inkwell::{
     context::Context,
     module::Module,
     passes::PassBuilderOptions,
-    targets::{FileType, InitializationConfig, Target, TargetMachine},
+    targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
     types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{FunctionValue, PointerValue},
 };
@@ -68,9 +64,22 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     pub fn codegen(&mut self, opts: bool) {
         for exec in &self.hir.execs {
             match &exec.kind {
-                ExecKind::Const { val } => todo!(),
+                ExecKind::Const { .. } => {
+                    todo!("Constants");
+                    // let ty = self.convert_ty(self.ty_map.var_ty(exec.ident));
+                    // let name = self.hir.var_ident(exec.ident).ident.to_string();
+                    // let global = self.module.add_global(ty, None, &name);
+                    // global.set_initializer(&self.codegen_expr(*val));
+                    // self.vars.insert(
+                    //     exec.ident,
+                    //     AllocInfo {
+                    //         ptr: global.as_pointer_value(),
+                    //         ty: ty.as_any_type_enum(),
+                    //     },
+                    // );
+                }
                 ExecKind::Fn { params, .. } => {
-                    let ty @ Ty::Fn(_, ret_ty) = self.ty_map.var_ty(exec.ident) else {
+                    let Ty::Fn(_, ret_ty) = self.ty_map.var_ty(exec.ident) else {
                         unreachable!("ICE")
                     };
                     let func = self.build_func(exec.ident, params, ret_ty);
@@ -81,19 +90,45 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                             ptr: func.as_global_value().as_pointer_value(),
                             ty: func.get_type().as_any_type_enum(),
                         },
-                    )
+                    );
                 }
+            }
+        }
+
+        if let Some(main) = self.hir.main() {
+            let fn_ty = self.ctx.i32_type().fn_type(&[], false);
+            let func = self.module.add_function("main", fn_ty, None);
+            self.funcs.insert(main.ident, func);
+            self.vars.insert(
+                main.ident,
+                AllocInfo {
+                    ptr: func.as_global_value().as_pointer_value(),
+                    ty: func.get_type().as_any_type_enum(),
+                },
+            );
+
+            let ExecKind::Fn { body, .. } = main.kind else {
+                unreachable!("ICE")
             };
+
+            let entry_block = self.ctx.append_basic_block(func, "entry");
+            self.builder.position_at_end(entry_block);
+            let _ = self.codegen_expr(body);
+            self.builder
+                .build_return(Some(&self.ctx.i32_type().const_zero()))
+                .unwrap();
+
+            assert!(func.verify(true));
         }
 
         for exec in &self.hir.execs {
             match &exec.kind {
-                ExecKind::Const { val } => todo!(),
+                ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, body } => {
                     let func = self.funcs[exec.ident];
                     self.populate_func(func, params, *body);
                 }
-            };
+            }
         }
 
         self.module.verify().unwrap();
@@ -102,7 +137,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let triple = TargetMachine::get_default_triple();
         let target = Target::from_triple(&triple).unwrap();
         let target_machine = target
-            .create_target_machine_from_options(&triple, Default::default())
+            .create_target_machine_from_options(&triple, TargetMachineOptions::default())
             .unwrap();
 
         self.module
@@ -126,11 +161,12 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .write_to_file(&self.module, FileType::Object, Path::new(&path))
             .unwrap();
 
-        self.module.print_to_stderr()
+        self.module.print_to_stderr();
     }
 
     fn report_warning(&self, msg: impl Into<Cow<'static, str>>) {
-        todo!("warnings")
+        drop(msg);
+        todo!("warnings");
     }
 
     fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<AdtId, StructType<'ctx>> {
@@ -186,7 +222,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 .into()
             })
             .collect();
-        let ret_ty = self.convert_ty(&ret_ty);
+        let ret_ty = self.convert_ty(ret_ty);
         let fn_ty = ret_ty.fn_type(&param_tys, false);
 
         self.module.add_function(&fn_name, fn_ty, None)
@@ -233,7 +269,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .unwrap();
 
         self.builder.position_at_end(head_block);
-        let ptr = self.builder.build_alloca(ty, &name).unwrap();
+        let ptr = self.builder.build_alloca(ty, name).unwrap();
         self.builder.position_at_end(curr_block);
         AllocInfo {
             ptr,

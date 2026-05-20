@@ -39,7 +39,7 @@ impl TypeChecker {
                     let val_ty = self.infer_expr(hir, *val)?;
                     self.constrain_eq(val_ty, self.ctx[exec.ident].clone(), hir.expr_span(*val));
                 }
-                ExecKind::Fn { params, body } => {
+                ExecKind::Fn { body, .. } => {
                     let body_ty = self.infer_expr(hir, *body)?;
                     let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.ident] else {
                         unreachable!("ICE: Function was given non-function type during nameres")
@@ -57,8 +57,7 @@ impl TypeChecker {
             .var_info
             .iter()
             .map(|(var, info)| (var, self.convert(info.ty.as_ref())))
-            .collect::<SecondaryMap<_, _>>()
-            .into()
+            .collect::<SecondaryMap<_, _>>();
     }
 
     fn fresh_var(&mut self) -> PartialTy {
