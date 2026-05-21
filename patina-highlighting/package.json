@@ -1,0 +1,25 @@
+{
+  "name": "patina-highlighting",
+  "displayName": "Patina Highlighting",
+  "description": "Syntax highlighting for Patina",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.120.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "patina",
+      "aliases": ["Patina", "patina"],
+      "extensions": [".ptn"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "patina",
+      "scopeName": "source.patina",
+      "path": "./syntaxes/patina.tmLanguage.json"
+    }]
+  }
+}

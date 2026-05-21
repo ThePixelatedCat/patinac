@@ -1,0 +1,292 @@
+{
+    "name": "Patina",
+    "scopeName": "source.patina",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#literals"
+        },
+        {
+            "include": "#functions"
+        },
+        {
+            "include": "#types"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#punctuation"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#variables"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "comment": "line comments",
+            "name": "comment.line.double-slash.patina",
+            "match": "//.*$"
+        },
+        "literals": {
+            "patterns": [
+                {
+                    "comment": "decimal integers and floats",
+                    "name": "constant.numeric.decimal.patina",
+                    "match": "\\b[0-9][0-9_]*(\\.[0-9][0-9_]*([Ee](-?)([0-9][0-9_]*))?)?\\b"
+                },
+                {
+                    "comment": "hexadecimal integers",
+                    "name": "constant.numeric.hex.patina",
+                    "match": "\\b0x[0-9a-fA-F][0-9a-fA-F_]*\\b"
+                },
+                {
+                    "comment": "octal integers",
+                    "name": "constant.numeric.oct.patina",
+                    "match": "\\b0o[0-7][0-7_]*\\b"
+                },
+                {
+                    "comment": "binary integers",
+                    "name": "constant.numeric.bin.patina",
+                    "match": "\\b0b[01][01_]*\\b"
+                },
+                {
+                    "comment": "booleans",
+                    "name": "constant.language.bool.patina",
+                    "match": "\\b(true|false)\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "comment": "function definition",
+                    "name": "meta.function.definition.patina",
+                    "begin": "\\b(fn)\\s+([a-z][a-z0-9_]*)(\\()",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.other.fn.patina"
+                        },
+                        "2": {
+                            "name": "entity.name.function.patina"
+                        },
+                        "3": {
+                            "name": "punctuation.brackets.round.patina"
+                        }
+                    },
+                    "end": "(\\{)",
+                    "endCaptures": {
+                        "1": {
+                            "name": "punctuation.brackets.curly.patina"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "include": "#comments"
+                        },
+                        {
+                            "include": "#literals"
+                        },
+                        {
+                            "include": "#types"
+                        },
+                        {
+                            "include": "#keywords"
+                        },
+                        {
+                            "include": "#punctuation"
+                        },
+                        {
+                            "include": "#strings"
+                        },
+                        {
+                            "include": "#variables"
+                        }
+                    ]
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "comment": "control flow keywords",
+                    "name": "keyword.control.patina",
+                    "match": "\\b(if|else|match|for|in|loop|return|break|continue)\\b"
+                },
+                {
+                    "comment": "let keyword",
+                    "name": "keyword.other.patina",
+                    "match": "\\blet\\b"
+                },
+                {
+                    "comment": "const keyword",
+                    "name": "keyword.declaration.const.patina",
+                    "match": "\\bconst\\b"
+                },
+                {
+                    "comment": "enum keyword",
+                    "name": "keyword.declaration.enum.patina",
+                    "match": "\\benum\\b"
+                },
+                {
+                    "comment": "record keyword",
+                    "name": "keyword.declaration.record.patina",
+                    "match": "\\brecord\\b"
+                },
+                {
+                    "comment": "fn keyword",
+                    "name": "keyword.other.fn.patina",
+                    "match": "\\bfn\\b"
+                },
+                {
+                    "comment": "mut keyword",
+                    "name": "storage.modifier.mut.patina",
+                    "match": "\\bmut\\b"
+                },
+                {
+                    "comment": "print keyword",
+                    "name": "keyword.other.print.patina",
+                    "match": "\\bprint\\b"
+                },
+                {
+                    "comment": "logical operators",
+                    "name": "keyword.operator.logical.patina",
+                    "match": "(\\^|\\||\\|\\||&&|!)(?!=)"
+                },
+                {
+                    "comment": "assignment operators",
+                    "name": "keyword.operator.assignment.patina",
+                    "match": "(\\+=|-=|\\*=|/=|\\*\\*=)"
+                },
+                {
+                    "comment": "single equal",
+                    "name": "keyword.operator.assignment.equal.patina",
+                    "match": "(?<![<>])=(?!=)"
+                },
+                {
+                    "comment": "comparison operators",
+                    "name": "keyword.operator.comparison.patina",
+                    "match": "(==|!=|<=|>=)"
+                },
+                {
+                    "comment": "math operators",
+                    "name": "keyword.operator.math.patina",
+                    "match": "(([+*]|(\\*\\*))(?!=))|(-(?!>))|(/(?!/))"
+                },
+                {
+                    "comment": "namespace operator",
+                    "name": "keyword.operator.namespace.patina",
+                    "match": "::"
+                },
+                {
+                    "comment": "dot access",
+                    "name": "keyword.operator.access.dot.patina",
+                    "match": "\\."
+                },
+                {
+                    "comment": "colon",
+                    "name": "keyword.operator.colon.patina",
+                    "match": ":"
+                },
+                {
+                    "comment": "dashrocket, skinny arrow",
+                    "name": "keyword.operator.arrow.skinny.patina",
+                    "match": "->"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "comment": "numeric types",
+                    "name": "entity.name.type.numeric.patina",
+                    "match": "\\b(Int|UInt|Byte|Float)\\b"
+                },
+                {
+                    "comment": "primitive types",
+                    "name": "entity.name.type.primitive.patina",
+                    "match": "\\b(Bool|Char)\\b"
+                },
+                {
+                    "comment": "types",
+                    "name": "entity.name.type.patina",
+                    "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "comment": "comma",
+                    "name": "punctuation.comma.patina",
+                    "match": ","
+                },
+                {
+                    "comment": "curly braces",
+                    "name": "punctuation.brackets.curly.patina",
+                    "match": "[{}]"
+                },
+                {
+                    "comment": "parentheses, round brackets",
+                    "name": "punctuation.brackets.round.patina",
+                    "match": "[()]"
+                },
+                {
+                    "comment": "square brackets",
+                    "name": "punctuation.brackets.square.patina",
+                    "match": "[\\[\\]]"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "comment": "strings",
+                    "name": "string.quoted.double.patina",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "include": "#escapes"
+                        }
+                    ]
+                },
+                {
+                    "comment": "characters",
+                    "name": "string.quoted.single.char.patina",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "include": "#escapes"
+                        }
+                    ]
+                }
+            ]
+        },
+        "escapes": {
+            "comment": "escapes",
+            "name": "constant.character.escape.patina",
+            "match": "\\\\(?:\\\\|'|\"|0|t|n|r|(u\\{[0-9a-fA-F]{1,6}\\}))"
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "comment": "variable name",
+                    "name": "variable.other.patina",
+                    "match": "\\b[a-z][a-z0-9_]*\\b"
+                },
+                {
+                    "comment": "constant name",
+                    "name": "constant.other.caps.patina",
+                    "match": "\\b[A-Z][A-Z0-9_]*\\b"
+                }
+            ]
+        }
+    }
+}
