@@ -5,7 +5,6 @@ use ast::{
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
     types::TyKind,
 };
-use errors::ResultExt;
 use ident::{Ident, SpanIdent};
 use lex::{Tok, TokKind};
 use span::Span;
@@ -25,23 +24,21 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::Fn => self.func_item().map(Item::from),
             TokKind::Record => self.record_item().map(Item::from),
             TokKind::Enum => self.enum_item().map(Item::from),
-            _ => Err(self
-                .err_next(ErrorKind::Unexpected)
-                .with_ctx("expected the start of an item")),
+            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
         }
     }
 
     fn const_item(&mut self) -> Result<ExecItem> {
         self.consume(TokKind::Const)?;
 
-        let ident = self.ident()?;
-        let ty = self.ty_annot()?;
+        let ident = self.ident();
+        let ty = self.ty_annot();
         self.consume(TokKind::Eq)?;
-        let val = self.expr()?;
+        let val = self.expr();
 
         Ok(ExecItem {
-            ident,
-            kind: ExecKind::Const { ty, val },
+            ident: ident?,
+            kind: ExecKind::Const { ty: ty?, val: val? },
         })
     }
 
@@ -54,8 +51,9 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             |this| {
                 let mutable = this.consume_at(TokKind::Mut).is_some();
                 let pat = this.pattern()?;
-                this.consume(TokKind::Colon)
-                    .with_ctx("Type annotations are required on function parameters")?;
+                this.consume(TokKind::Colon).inspect_err(|()| {
+                    this.add_static_ctx("Type annotations are required on function parameters")
+                })?;
                 let ty = this.ty()?;
 
                 Ok(Param { mutable, pat, ty })
@@ -91,9 +89,11 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     fn record_item(&mut self) -> Result<AdtItem> {
         self.consume(TokKind::Record)?;
 
-        let ident = self.ident()?;
-        let (generics, _) = self.generic_params()?;
+        let ident = self.ident();
+        let generics = self.generic_params();
         let (fields, _) = self.fields()?;
+        let (generics, _) = generics?;
+        let ident = ident?;
 
         Ok(AdtItem {
             ident,
@@ -105,8 +105,8 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     fn enum_item(&mut self) -> Result<AdtItem> {
         self.consume(TokKind::Enum)?;
 
-        let ident = self.ident()?;
-        let (generics, _) = self.generic_params()?;
+        let ident = self.ident();
+        let generics = self.generic_params();
         let (variants, _) = self.delimited_list(
             |this| {
                 let ident = this.ident()?;
@@ -116,6 +116,8 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             TokKind::LBrace,
             TokKind::RBrace,
         )?;
+        let (generics, _) = generics?;
+        let ident = ident?;
 
         Ok(AdtItem {
             ident,

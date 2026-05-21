@@ -6,10 +6,9 @@ use ast::{
     types::TyKind,
 };
 use ident::Ident;
-use lex::TokKind;
 use span::Span;
 
-use crate::{ErrorKind, Parser};
+use crate::Parser;
 
 #[test]
 fn lit_expressions() {
@@ -587,28 +586,9 @@ if y < 3 {
 
 #[test]
 fn malformed_expressions() {
-    assert_eq!(
-        Parser::parse_expr("let x = 7 + sin(3.0)"),
-        Err(ErrorKind::Unexpected(TokKind::Let)
-            .span(0..3)
-            .with_ctx("`let` is a statement, and can only be used within a block"))
-    );
-    assert_eq!(
-        Parser::parse_expr("[1, 3, 4, 5"),
-        Err(ErrorKind::Eof.span(0..0))
-    );
-    assert_eq!(
-        Parser::parse_expr("*5"),
-        Err(ErrorKind::Unexpected(TokKind::Times).span(0..1))
-    );
-    assert_eq!(
-        Parser::parse_stmt("let foo: fn(let UInt) -> UInt = fn()"),
-        Err(ErrorKind::Unexpected(TokKind::Let).span(12..15))
-    );
-    assert_eq!(
-        Parser::parse_expr("foo.0"),
-        Err(ErrorKind::Unexpected(TokKind::IntLit)
-            .span(4..5)
-            .with_ctx("Expected `[` or identifier"))
-    );
+    assert!(Parser::parse_expr("let x = 7 + sin(3.0)").is_err(),);
+    assert!(Parser::parse_expr("[1, 3, 4, 5").is_err(),);
+    assert!(Parser::parse_expr("*5").is_err(),);
+    assert!(Parser::parse_stmt("let foo: fn(let UInt) -> UInt = fn()").is_err(),);
+    assert!(Parser::parse_expr("foo.0").is_err(),);
 }

@@ -1,8 +1,10 @@
 use derive_more::Display;
+use std::result;
+
 use lex::TokKind;
 use span::Span;
 
-pub type Result<T> = errors::Result<T, ErrorKind>;
+pub type Result<T> = result::Result<T, ()>;
 pub type Error = errors::Error<ErrorKind>;
 
 impl ErrorKind {

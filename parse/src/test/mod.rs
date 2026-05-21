@@ -14,7 +14,7 @@ use ast::{
 use ident::Ident;
 use span::Span;
 
-use crate::Parser;
+use crate::{TEST_HANDLER, Parser};
 
 #[test]
 fn file() {
@@ -33,7 +33,9 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
 record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
 ";
 
-    let items = Parser::new(lex::lex(input).unwrap()).parse().unwrap();
+    let items = Parser::new(lex::lex(input).unwrap(), TEST_HANDLER)
+        .parse()
+        .unwrap();
 
     assert_eq!(
         items.execs[0],

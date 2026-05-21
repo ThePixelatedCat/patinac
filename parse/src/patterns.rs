@@ -49,7 +49,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
                     .map(|(pats, span)| PatKind::Tuple(pats).span(start..span.end))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected)),
+            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
     }
 }

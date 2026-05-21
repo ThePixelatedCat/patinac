@@ -11,7 +11,10 @@ hir.path = "../hir"
 # External
 inkwell = { version = "0.9.0", features = ["llvm22-1"] }
 slotmap = "1.1.1"
-clap = { version = "4.6.1", features = ["derive"], default-features = false }
+clap = { version = "4.6.1", features = [
+    "derive",
+    "std",
+], default-features = false }
 
 [dev-dependencies]
 # Internal

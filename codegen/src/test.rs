@@ -1,11 +1,11 @@
-use parse::Parser;
+use parse::{Parser, TEST_HANDLER};
 use typecheck::TypeChecker;
 
 use crate::{Codegen, CodegenMode, OptLevel};
 
 fn check(input: &str, opt_level: OptLevel) {
     let toks = lex::lex(input).unwrap();
-    let ast = Parser::new(toks).parse().unwrap();
+    let ast = Parser::new(toks, TEST_HANDLER).parse().unwrap();
     let mut hir = nameres::resolve(ast).unwrap();
     let ty_map = TypeChecker::default().type_program(&mut hir).unwrap();
     let ctx = crate::create_ctx();

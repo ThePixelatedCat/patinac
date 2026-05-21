@@ -8,9 +8,8 @@ use ast::{
     types::TyKind,
 };
 use ident::Ident;
-use lex::TokKind;
 
-use crate::{ErrorKind, Parser, items::Item};
+use crate::{Parser, items::Item};
 
 #[test]
 fn const_items() {
@@ -182,24 +181,7 @@ fn function_items() {
 
 #[test]
 fn malformed_items() {
-    assert_eq!(
-        Parser::parse_item("const fn: Int = 5"),
-        Err(ErrorKind::Mismatched {
-            expected: TokKind::Ident,
-            found: TokKind::Fn,
-        }
-        .span(6..8))
-    );
-
-    assert_eq!(
-        Parser::parse_item("const NO_DICTS: [String: Int] = 5"),
-        Err(ErrorKind::Unexpected(TokKind::LBracket).span(16..17))
-    );
-
-    assert_eq!(
-        Parser::parse_item("let global = false"),
-        Err(ErrorKind::Unexpected(TokKind::Let)
-            .span(0..3)
-            .with_ctx("expected the start of an item"))
-    );
+    assert!(Parser::parse_item("const fn: Int = 5").is_err(),);
+    assert!(Parser::parse_item("const NO_DICTS: [String: Int] = 5").is_err(),);
+    assert!(Parser::parse_item("let global = false").is_err(),);
 }

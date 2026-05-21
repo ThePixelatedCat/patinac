@@ -642,6 +642,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "smallvec",
+ "smol_str",
  "span",
 ]
 

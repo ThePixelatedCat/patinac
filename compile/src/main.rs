@@ -26,6 +26,9 @@ fn main() {
 
     let start = Instant::now();
 
+    let err_handler: &dyn for<'a> Fn(&'a str, Span) =
+        &|msg, span| print_diagnostic(DiagnosticKind::Error, msg, span, &src);
+
     eprintln!("Lexing...");
     let toks = match lex::lex(&src) {
         Ok(tokens) => tokens,
@@ -38,14 +41,8 @@ fn main() {
     };
 
     eprintln!("Parsing...");
-    let ast = match Parser::new(toks).parse() {
-        Ok(ast) => ast,
-        Err(errs) => {
-            for err in errs {
-                print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            }
-            return;
-        }
+    let Ok(ast) = Parser::new(toks, err_handler).parse() else {
+        return;
     };
 
     eprintln!("Resolving...");
@@ -117,10 +114,10 @@ fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
     let line_num = src[..=span.start].matches("\r\n").count();
 
     let header = format!("{kind}: {msg} ({}:{})", line_num + 1, span_start + 1);
-    println!("{}", header.white().wrap().bold());
-    println!("{}   {line}", ">".white().bold());
-    println!(
-        "    {:>span_end$}",
-        str::repeat("^", span_end - span_start).bright_red(),
+    eprintln!(
+        "{}\n{}   {line}\n    {:>span_end$}",
+        header.white().wrap().bold(),
+        ">".white().bold(),
+        str::repeat("^", span_end - span_start).bright_red()
     );
 }

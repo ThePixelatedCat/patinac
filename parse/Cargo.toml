@@ -19,6 +19,7 @@ smallvec = { version = "1.15.1", features = [
     "const_generics",
     "const_new",
 ] }
+smol_str = "0.3.6"
 
 [dev-dependencies]
 # Internal

@@ -34,6 +34,14 @@ impl<E> Error<E> {
         self
     }
 
+    pub fn add_ctx(&mut self, ctx: impl Into<SmolStr>) {
+        self.0.ctx.push(ctx.into());
+    }
+
+    pub fn add_static_ctx(&mut self, ctx: &'static str) {
+        self.0.ctx.push(SmolStr::new_static(ctx));
+    }
+
     pub fn kind(&self) -> &E {
         &self.0.kind
     }

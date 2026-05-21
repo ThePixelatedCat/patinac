@@ -9,21 +9,30 @@ mod types;
 
 use std::{iter::Peekable, result, vec};
 
+use smol_str::SmolStr;
+
 use ast::Ast;
 use lex::{Tok, TokKind};
+use span::Span;
 
 pub use crate::error::{Error, ErrorKind, Result};
 
 use crate::items::Item;
 
+pub const TEST_HANDLER: &'static dyn Fn(&str, Span) = &|str, _| eprintln!("{str}");
+
 pub struct Parser<'src, I: Iterator<Item = Tok<'src>>> {
     toks: Peekable<I>,
+    err_handler: &'src dyn Fn(&str, Span),
+    errors: Vec<Error>,
 }
 
 impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
-    pub fn new(toks: Vec<Tok<'src>>) -> Self {
+    pub fn new(toks: Vec<Tok<'src>>, err_handler: &'src dyn Fn(&str, Span)) -> Self {
         Self {
             toks: toks.into_iter().peekable(),
+            err_handler,
+            errors: Vec::new(),
         }
     }
 
@@ -32,54 +41,85 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
     /// # Errors
     /// If parsing any expression errors, an error will be returned, with a list of every error that occured.
     /// At most one error will be reported per item
-    pub fn parse(mut self) -> result::Result<Ast, Vec<Error>> {
+    pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
-        let mut errs = Vec::new();
 
-        while self.peek().is_ok() {
+        while self.try_peek().is_ok() {
             match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
-                Err(err) => {
-                    errs.push(err);
-                    // Skip to next item
-                    while let Ok(tok) = self.peek()
-                        && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
-                            .contains(&tok)
-                    {
-                        let _ = self.next();
-                    }
+                Err(()) => {
+                    // // Skip to next item
+                    // while let Ok(tok) = self.peek()
+                    //     && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
+                    //         .contains(&tok)
+                    // {
+                    //     let _ = self.next();
+                    // }
                 }
             }
         }
 
-        if errs.is_empty() { Ok(ast) } else { Err(errs) }
+        if self.errors.is_empty() {
+            Ok(ast)
+        } else {
+            for error in self.errors {
+                (self.err_handler)(&error.msg(), error.span())
+            }
+            Err(())
+        }
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_stmt(src: &'src str) -> Result<ast::exprs::Stmt> {
-        Self::new(lex::lex(src).unwrap()).stmt()
+        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).stmt()
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr> {
-        Self::new(lex::lex(src).unwrap()).expr()
+        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).expr()
     }
 
     #[cfg(any(test, feature = "test"))]
     pub fn parse_item(src: &'src str) -> Result<Item> {
-        Self::new(lex::lex(src).unwrap()).item()
+        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).item()
     }
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+    fn err(&mut self, error: Error) {
+        self.errors.push(error);
+    }
+
+    fn add_ctx(&mut self, ctx: impl Into<SmolStr>) {
+        if let Some(error) = self.errors.last_mut() {
+            error.add_ctx(ctx)
+        }
+    }
+
+    fn add_static_ctx(&mut self, ctx: &'static str) {
+        if let Some(error) = self.errors.last_mut() {
+            error.add_static_ctx(ctx)
+        }
+    }
+
     /// Get the next token.
     fn next(&mut self) -> Result<Tok<'src>> {
-        self.toks.next().ok_or_else(|| ErrorKind::Eof.span(0..0))
+        self.toks
+            .next()
+            .ok_or_else(|| self.err(ErrorKind::Eof.span(0..0)))
     }
 
     /// Look-ahead one token and see what kind of token it is.
     fn peek(&mut self) -> Result<TokKind> {
+        self.toks
+            .peek()
+            .map(|tok| tok.kind)
+            .ok_or_else(|| self.err(ErrorKind::Eof.span(0..0)))
+    }
+
+    /// Look-ahead one token and see what kind of token it is, returning any error rather than immediately reporting it.
+    fn try_peek(&mut self) -> result::Result<TokKind, Error> {
         self.toks
             .peek()
             .map(|tok| tok.kind)
@@ -88,7 +128,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
     /// Check if the next token is the same variant as another token.
     fn at(&mut self, token: TokKind) -> bool {
-        self.peek().is_ok_and(|tok| tok == token)
+        self.try_peek().is_ok_and(|tok| tok == token)
     }
 
     /// Move forward one token in the input and check
@@ -98,11 +138,14 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             if next.kind == expected {
                 Ok(next)
             } else {
-                Err(ErrorKind::Mismatched {
-                    expected,
-                    found: next.kind,
-                }
-                .span(next.span))
+                self.err(
+                    ErrorKind::Mismatched {
+                        expected,
+                        found: next.kind,
+                    }
+                    .span(next.span),
+                );
+                Err(())
             }
         })
     }

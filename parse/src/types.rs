@@ -65,7 +65,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
                 Ok(TyKind::Adt(ident.ident, generics).span(ident.span.start..end))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected)),
+            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
     }
 }

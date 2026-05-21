@@ -60,14 +60,15 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let span = start..expr.span.end;
                 Ok(ExprKind::Print(Box::new(expr)).span(span))
             }
-            TokKind::Let => Err(self
-                .err_next(ErrorKind::Unexpected)
-                .with_ctx("`let` is a statement, and can only be used within a block")),
-            _ => Err(self.err_next(ErrorKind::Unexpected)),
+            TokKind::Let => Err(self.err_next(
+                ErrorKind::Unexpected,
+                &["`let` is a statement, and can only be used within a block"],
+            )),
+            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }?;
 
         loop {
-            let op = match self.peek() {
+            let op = match self.try_peek() {
                 // Attach suffix to current lhs and re-loop
                 Ok(TokKind::Dot) => {
                     lhs = self.dot_suffixes(lhs)?;
@@ -163,7 +164,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             }
             TokKind::True => |_| LitExpr::Bool(true),
             TokKind::False => |_| LitExpr::Bool(false),
-            _ => return Err(self.err_next(ErrorKind::Unexpected)),
+            _ => return Err(self.err_next(ErrorKind::Unexpected, &[])),
         };
 
         self.consume(tok).map(|tok| (f(tok.src), tok.span))
@@ -183,12 +184,14 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     fn if_expr(&mut self) -> Result<Expr> {
         let start = self.consume(TokKind::If)?.span.start;
 
-        let cond = Box::new(self.expr()?);
-        let th = self.block_expr()?;
+        let cond = self.expr();
+        let th = self.block_expr();
         let el = self
             .consume_at(TokKind::Else)
             .map(|_| self.block_expr())
             .transpose()?;
+        let th = th?;
+        let cond = Box::new(cond?);
 
         let end = el.as_ref().map_or(th.span.end, |el| el.span.end);
         Ok(ExprKind::If { cond, th, el }.span(start..end))
@@ -197,10 +200,12 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     fn for_expr(&mut self) -> Result<Expr> {
         let start = self.consume(TokKind::For)?.span.start;
 
-        let pat = self.pattern()?;
+        let pat = self.pattern();
         self.consume(TokKind::In)?;
-        let iter = Box::new(self.expr()?);
+        let iter = self.expr();
         let body = self.block_expr()?;
+        let iter = Box::new(iter?);
+        let pat = pat?;
 
         let span = start..body.span.end;
         Ok(ExprKind::For { pat, iter, body }.span(span))
@@ -264,13 +269,13 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
         let mut stmts = vec![];
         while !self.at(TokKind::RBrace) {
-            stmts.push(self.stmt()?);
+            stmts.push(self.stmt());
         }
 
         let end = self.consume(TokKind::RBrace)?.span.end;
 
         Ok(BlockExpr {
-            stmts,
+            stmts: stmts.into_iter().try_collect()?,
             span: Span::from(start..end),
         })
     }
@@ -321,9 +326,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 }
                 .span(span))
             }
-            _ => Err(self
-                .err_next(ErrorKind::Unexpected)
-                .with_ctx("Expected `[` or identifier")),
+            _ => Err(self.err_next(ErrorKind::Unexpected, &["Expected `[` or identifier"])),
         }
     }
 
