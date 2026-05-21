@@ -3,6 +3,29 @@ use span::Span;
 
 pub type Result<T, E> = std::result::Result<T, Error<E>>;
 
+pub const TEST_HANDLER: ErrorHandler = ErrorHandler::new(&|str, _| eprintln!("{str}"));
+pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _| {});
+
+#[derive(Clone)]
+pub struct ErrorHandler<'a> {
+    f: &'a dyn Fn(&str, Span),
+    has_err: bool,
+}
+impl<'a> ErrorHandler<'a> {
+    pub const fn new(f: &'a dyn Fn(&str, Span)) -> Self {
+        Self { f, has_err: false }
+    }
+
+    pub fn err<E: ToString>(&mut self, error: Error<E>) {
+        self.has_err = true;
+        (self.f)(&error.msg(), error.span())
+    }
+
+    pub fn has_err(self) -> bool {
+        self.has_err
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error<E>(Box<ErrorInner<E>>);
 
@@ -32,14 +55,6 @@ impl<E> Error<E> {
     pub fn with_static_ctx(mut self, ctx: &'static str) -> Self {
         self.0.ctx.push(SmolStr::new_static(ctx));
         self
-    }
-
-    pub fn add_ctx(&mut self, ctx: impl Into<SmolStr>) {
-        self.0.ctx.push(ctx.into());
-    }
-
-    pub fn add_static_ctx(&mut self, ctx: &'static str) {
-        self.0.ctx.push(SmolStr::new_static(ctx));
     }
 
     pub fn kind(&self) -> &E {

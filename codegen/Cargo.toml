@@ -22,6 +22,7 @@ lex.path = "../lex"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"
+errors.path = "../errors"
 
 [lints]
 workspace = true

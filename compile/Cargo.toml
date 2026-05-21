@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 # Internal
 span.path = "../span"
+errors.path = "../errors"
 lex.path = "../lex"
 ast.path = "../ast"
 parse.path = "../parse"

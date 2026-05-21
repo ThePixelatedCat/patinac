@@ -7,7 +7,3 @@ fn fib(n: Float): Float ->
 
 fn foo(n: Float): Float ->
     if n >= 0.0 { n } else { 0.0 } *. 2.0
-
-fn bar() -> {
-    if true {()} else 6
-}

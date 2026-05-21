@@ -9,30 +9,26 @@ mod types;
 
 use std::{iter::Peekable, result, vec};
 
-use smol_str::SmolStr;
-
 use ast::Ast;
+use errors::ErrorHandler;
+#[cfg(any(test, feature = "test"))]
+use errors::TEST_HANDLER;
 use lex::{Tok, TokKind};
-use span::Span;
 
 pub use crate::error::{Error, ErrorKind, Result};
 
 use crate::items::Item;
 
-pub const TEST_HANDLER: &'static dyn Fn(&str, Span) = &|str, _| eprintln!("{str}");
-
 pub struct Parser<'src, I: Iterator<Item = Tok<'src>>> {
     toks: Peekable<I>,
-    err_handler: &'src dyn Fn(&str, Span),
-    errors: Vec<Error>,
+    handler: ErrorHandler<'src>,
 }
 
 impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
-    pub fn new(toks: Vec<Tok<'src>>, err_handler: &'src dyn Fn(&str, Span)) -> Self {
+    pub fn new(toks: Vec<Tok<'src>>, handler: ErrorHandler<'src>) -> Self {
         Self {
             toks: toks.into_iter().peekable(),
-            err_handler,
-            errors: Vec::new(),
+            handler,
         }
     }
 
@@ -60,13 +56,10 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
             }
         }
 
-        if self.errors.is_empty() {
-            Ok(ast)
-        } else {
-            for error in self.errors {
-                (self.err_handler)(&error.msg(), error.span())
-            }
+        if self.handler.has_err() {
             Err(())
+        } else {
+            Ok(ast)
         }
     }
 
@@ -87,27 +80,11 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
 }
 
 impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    fn err(&mut self, error: Error) {
-        self.errors.push(error);
-    }
-
-    fn add_ctx(&mut self, ctx: impl Into<SmolStr>) {
-        if let Some(error) = self.errors.last_mut() {
-            error.add_ctx(ctx)
-        }
-    }
-
-    fn add_static_ctx(&mut self, ctx: &'static str) {
-        if let Some(error) = self.errors.last_mut() {
-            error.add_static_ctx(ctx)
-        }
-    }
-
     /// Get the next token.
     fn next(&mut self) -> Result<Tok<'src>> {
         self.toks
             .next()
-            .ok_or_else(|| self.err(ErrorKind::Eof.span(0..0)))
+            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))
     }
 
     /// Look-ahead one token and see what kind of token it is.
@@ -115,7 +92,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         self.toks
             .peek()
             .map(|tok| tok.kind)
-            .ok_or_else(|| self.err(ErrorKind::Eof.span(0..0)))
+            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))
     }
 
     /// Look-ahead one token and see what kind of token it is, returning any error rather than immediately reporting it.
@@ -138,7 +115,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             if next.kind == expected {
                 Ok(next)
             } else {
-                self.err(
+                self.handler.err(
                     ErrorKind::Mismatched {
                         expected,
                         found: next.kind,

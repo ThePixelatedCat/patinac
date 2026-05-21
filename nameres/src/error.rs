@@ -1,10 +1,12 @@
+use std::result;
+
 use derive_more::Display;
 
-use errors::Error;
 use ident::Ident;
 use span::Span;
 
-pub type Result<T> = errors::Result<T, ErrorKind>;
+pub type Result<T> = result::Result<T, ()>;
+pub type Error = errors::Error<ErrorKind>;
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
@@ -27,7 +29,7 @@ pub enum ErrorKind {
 impl std::error::Error for ErrorKind {}
 
 impl ErrorKind {
-    pub fn span(self, span: impl Into<Span>) -> Error<Self> {
+    pub fn span(self, span: impl Into<Span>) -> Error {
         Error::new(self, span)
     }
 }

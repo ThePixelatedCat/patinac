@@ -11,9 +11,9 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let Ok(token) = self.next() else { return };
         let mut err = f(token.kind).span(token.span);
         for ctx in ctx {
-            err.add_static_ctx(ctx);
+            err = err.with_static_ctx(ctx);
         }
-        self.err(err);
+        self.handler.err(err);
     }
 
     pub(crate) fn ty_annot(&mut self) -> Result<Option<Ty>> {

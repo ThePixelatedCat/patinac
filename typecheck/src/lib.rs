@@ -31,7 +31,7 @@ pub struct TypeChecker {
 }
 
 impl TypeChecker {
-    pub fn type_program(&mut self, hir: &mut Hir) -> Result<TyMap> {
+    pub fn type_program(&mut self, hir: &Hir) -> Result<TyMap> {
         self.build_context(hir);
         for exec in &hir.execs {
             match &exec.kind {

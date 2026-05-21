@@ -1,7 +1,8 @@
 use ena::unify::UnifyKey;
 
+use errors::TEST_HANDLER;
 use hir::types::Param;
-use parse::{TEST_HANDLER, Parser};
+use parse::Parser;
 
 use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, types::TyVar};
 
@@ -19,7 +20,7 @@ fn check_expr(input: &str) -> Result<Ty> {
 fn check_full(input: &str) -> Result<()> {
     let toks = lex::lex(input).unwrap();
     let ast = Parser::new(toks, TEST_HANDLER).parse().unwrap();
-    let mut hir = nameres::resolve(ast).unwrap();
+    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
     TypeChecker::default().type_program(&mut hir)?;
     Ok(())
 }

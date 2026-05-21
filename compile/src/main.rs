@@ -2,6 +2,7 @@ use std::{fmt::Display, fs, path::PathBuf, time::Instant};
 
 use clap::Parser as CliParser;
 use codegen::{Codegen, CodegenMode, OptLevel};
+use errors::ErrorHandler;
 use yansi::Paint;
 
 use parse::Parser;
@@ -26,8 +27,9 @@ fn main() {
 
     let start = Instant::now();
 
-    let err_handler: &dyn for<'a> Fn(&'a str, Span) =
+    let handler_inner: &dyn Fn(&str, Span) =
         &|msg, span| print_diagnostic(DiagnosticKind::Error, msg, span, &src);
+    let err_handler = ErrorHandler::new(handler_inner);
 
     eprintln!("Lexing...");
     let toks = match lex::lex(&src) {
@@ -41,21 +43,17 @@ fn main() {
     };
 
     eprintln!("Parsing...");
-    let Ok(ast) = Parser::new(toks, err_handler).parse() else {
+    let Ok(ast) = Parser::new(toks, err_handler.clone()).parse() else {
         return;
     };
 
     eprintln!("Resolving...");
-    let mut hir = match nameres::resolve(ast) {
-        Ok(v) => v,
-        Err(err) => {
-            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            return;
-        }
+    let Ok(hir) = nameres::resolve(ast, err_handler.clone()) else {
+        return;
     };
 
     eprintln!("Typechecking...");
-    let ty_map = match TypeChecker::default().type_program(&mut hir) {
+    let ty_map = match TypeChecker::default().type_program(&hir) {
         Ok(v) => v,
         Err(err) => {
             print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);

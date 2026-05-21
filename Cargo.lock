@@ -197,6 +197,7 @@ name = "codegen"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "errors",
  "hir",
  "ident",
  "inkwell",
@@ -221,6 +222,7 @@ dependencies = [
  "ast",
  "clap",
  "codegen",
+ "errors",
  "lex",
  "nameres",
  "parse",
@@ -603,7 +605,6 @@ dependencies = [
  "itertools",
  "lex",
  "parse",
- "pretty_assertions",
  "smallvec",
  "span",
 ]

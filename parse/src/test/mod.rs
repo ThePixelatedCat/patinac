@@ -11,10 +11,11 @@ use ast::{
     patterns::PatKind,
     types::{Param as ParamTy, Return, TyKind},
 };
+use errors::TEST_HANDLER;
 use ident::Ident;
 use span::Span;
 
-use crate::{TEST_HANDLER, Parser};
+use crate::Parser;
 
 #[test]
 fn file() {
