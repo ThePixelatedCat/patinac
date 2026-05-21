@@ -1,15 +1,15 @@
 use parse::Parser;
 use typecheck::TypeChecker;
 
-use crate::Codegen;
+use crate::{Codegen, CodegenMode, OptLevel};
 
-fn check(input: &str, opts: bool) {
+fn check(input: &str, opt_level: OptLevel) {
     let toks = lex::lex(input).unwrap();
     let ast = Parser::new(toks).parse().unwrap();
     let mut hir = nameres::resolve(ast).unwrap();
     let ty_map = TypeChecker::default().type_program(&mut hir).unwrap();
     let ctx = crate::create_ctx();
-    Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opts);
+    Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn weird_sum() {
         foo + {m - 1}
     }
 ";
-    check(input, true);
+    check(input, OptLevel::O0);
 }
 
 #[test]
@@ -30,16 +30,16 @@ fn ifs() {
     fn foo(n: Float): Float -> 
         if n >= 0.0 { n } else { 0.0 } *. 2.0
 ";
-    check(input, true);
+    check(input, OptLevel::O0);
 
     let input = "
     fn foo(n: Float): Float -> {
-        let mut m = n *. 2.0
+        let mut m = n
         if n < 0.0 { m = 0.0 }
-        m
+        m *. 2.0
     }
 ";
-    check(input, true);
+    check(input, OptLevel::O0);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn nested_if() {
         out
     }
 ";
-    check(input, true)
+    check(input, OptLevel::O0)
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn call() {
     fn sum(n: Int, m: Int): Int -> n + m
     fn inc(n: Int): Int -> sum(n, 1)
 ";
-    check(input, true)
+    check(input, OptLevel::O0)
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn fib() {
     fn fib(n: Float): Float ->
         if n < 2.0 { n } else { fib(n -. 1.0) +. fib(n -. 2.0) }
 ";
-    check(input, true);
+    check(input, OptLevel::O0);
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn facs() {
     fn fac_rec(n: Float): Float -> 
         if n <= 0.0 { 1.0 } else { n *. fac_rec(n -. 1.0) }
 ";
-    check(input, false);
+    check(input, OptLevel::O0);
 
     //     let input = "
     //     fn fac_iter(n: Float): Float -> {
@@ -109,7 +109,7 @@ fn mut_loop() {
             n = n + 1
         }
 ";
-    check(input, true);
+    check(input, OptLevel::O0);
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn mut_arg() {
         inc(mut m)
     }
 ";
-    check(input, true)
+    check(input, OptLevel::O0)
 }
 
 #[test]
@@ -131,5 +131,5 @@ fn record_field() {
     fn get_x(self: Point): Float -> self.x
     fn get_y(self: Point): Float -> self.y
 ";
-    check(input, true)
+    check(input, OptLevel::O0)
 }

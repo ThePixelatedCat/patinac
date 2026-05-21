@@ -55,7 +55,7 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let mutable = this.consume_at(TokKind::Mut).is_some();
                 let pat = this.pattern()?;
                 this.consume(TokKind::Colon)
-                    .context("Type annotations are required on function parameters")?;
+                    .with_ctx("Type annotations are required on function parameters")?;
                 let ty = this.ty()?;
 
                 Ok(Param { mutable, pat, ty })

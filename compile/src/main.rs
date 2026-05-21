@@ -1,13 +1,92 @@
-use std::{env, fmt::Display, fs};
+use std::{fmt::Display, fs, path::PathBuf, time::Instant};
 
-use anyhow::anyhow;
-use codegen::Codegen;
+use clap::Parser as CliParser;
+use codegen::{Codegen, CodegenMode, OptLevel};
 use yansi::Paint;
 
 use parse::Parser;
 use span::Span;
 
 use typecheck::TypeChecker;
+
+#[derive(CliParser)]
+#[command(name = "PatinaC", version)]
+#[command(about = "The compiler for Patina", long_about = None)]
+struct Cli {
+    src_path: PathBuf,
+    #[arg(short = 'O', default_value_t)]
+    opt_level: OptLevel,
+    #[arg(short, long)]
+    dump: bool,
+}
+
+fn main() {
+    let cli = Cli::parse();
+    let src = fs::read_to_string(&cli.src_path).unwrap();
+
+    let start = Instant::now();
+
+    eprintln!("Lexing...");
+    let toks = match lex::lex(&src) {
+        Ok(tokens) => tokens,
+        Err(spans) => {
+            for span in spans {
+                print_diagnostic(DiagnosticKind::Error, "invalid token", span, &src);
+            }
+            return;
+        }
+    };
+
+    eprintln!("Parsing...");
+    let ast = match Parser::new(toks).parse() {
+        Ok(ast) => ast,
+        Err(errs) => {
+            for err in errs {
+                print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
+            }
+            return;
+        }
+    };
+
+    eprintln!("Resolving...");
+    let mut hir = match nameres::resolve(ast) {
+        Ok(v) => v,
+        Err(err) => {
+            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
+            return;
+        }
+    };
+
+    eprintln!("Typechecking...");
+    let ty_map = match TypeChecker::default().type_program(&mut hir) {
+        Ok(v) => v,
+        Err(err) => {
+            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
+            return;
+        }
+    };
+
+    eprintln!("Compiling...");
+    let mode = if cli.dump {
+        CodegenMode::IRDump
+    } else {
+        CodegenMode::Emit(cli.src_path.with_extension("o"))
+    };
+    let ctx = codegen::create_ctx();
+    Codegen::new(
+        &hir,
+        &ty_map,
+        &ctx,
+        &cli.src_path.file_name().unwrap().to_str().unwrap(),
+    )
+    .codegen(cli.opt_level, mode);
+
+    eprintln!(
+        "{} in {}ms",
+        "Done".bright_green(),
+        start.elapsed().as_millis()
+    );
+}
 
 #[derive(Clone, Copy)]
 enum DiagnosticKind {
@@ -22,53 +101,6 @@ impl Display for DiagnosticKind {
             Self::Warning => "warning".yellow().fmt(f),
         }
     }
-}
-
-fn main() {
-    let src_path = env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow!("source filepath argument missing"))
-        .unwrap();
-    let src = fs::read_to_string(&src_path).unwrap();
-
-    let toks = match lex::lex(&src) {
-        Ok(tokens) => tokens,
-        Err(spans) => {
-            for span in spans {
-                print_diagnostic(DiagnosticKind::Error, "invalid token", span, &src);
-            }
-            return;
-        }
-    };
-
-    let ast = match Parser::new(toks).parse() {
-        Ok(ast) => ast,
-        Err(errs) => {
-            for err in errs {
-                print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            }
-            return;
-        }
-    };
-
-    let mut hir = match nameres::resolve(ast) {
-        Ok(v) => v,
-        Err(err) => {
-            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            return;
-        }
-    };
-
-    let ty_map = match TypeChecker::default().type_program(&mut hir) {
-        Ok(v) => v,
-        Err(err) => {
-            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            return;
-        }
-    };
-
-    let ctx = codegen::create_ctx();
-    Codegen::new(&hir, &ty_map, &ctx, &src_path).codegen(true);
 }
 
 fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {

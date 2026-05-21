@@ -3,8 +3,9 @@ mod exprs;
 mod test;
 mod witnesses;
 
-use std::{borrow::Cow, iter, path::Path};
+use std::{borrow::Cow, fmt::Display, iter, path::PathBuf};
 
+use clap::ValueEnum;
 use inkwell::{
     AddressSpace,
     builder::Builder,
@@ -15,6 +16,7 @@ use inkwell::{
     types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, StructType},
     values::{FunctionValue, PointerValue},
 };
+use slotmap::SecondaryMap;
 
 use hir::{
     Hir, TyMap, VarId,
@@ -22,10 +24,43 @@ use hir::{
     items::{AdtId, ExecKind},
     types::Ty,
 };
-use slotmap::SecondaryMap;
 
-pub fn create_ctx() -> Context {
-    Context::create()
+#[derive(PartialEq, Eq)]
+pub enum CodegenMode {
+    IRDump,
+    Emit(PathBuf),
+    Silent,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[repr(u8)]
+pub enum OptLevel {
+    #[default]
+    #[value(name = "0")]
+    O0 = 0,
+    #[value(name = "1")]
+    O1 = 1,
+    #[value(name = "2")]
+    O2 = 2,
+    #[value(name = "3")]
+    O3 = 3,
+}
+
+impl Display for OptLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+impl OptLevel {
+    pub fn opt_string(self) -> String {
+        match self {
+            //Self::O3 => "mem2reg,instcombine,reassociate,gvn,sccp,dce,simplifycfg",
+            Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
+                format!("default<O{}>", self as u8)
+            }
+        }
+    }
 }
 
 pub struct Codegen<'ctx, 'hir> {
@@ -44,6 +79,10 @@ pub struct Codegen<'ctx, 'hir> {
 struct AllocInfo<'ctx> {
     ptr: PointerValue<'ctx>,
     ty: AnyTypeEnum<'ctx>,
+}
+
+pub fn create_ctx() -> Context {
+    Context::create()
 }
 
 impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
@@ -71,23 +110,10 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         module.add_function("printf", ty, None)
     }
 
-    pub fn codegen(&mut self, opts: bool) {
+    pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
         for exec in &self.hir.execs {
             match &exec.kind {
-                ExecKind::Const { .. } => {
-                    todo!("Constants");
-                    // let ty = self.convert_ty(self.ty_map.var_ty(exec.ident));
-                    // let name = self.hir.var_ident(exec.ident).ident.to_string();
-                    // let global = self.module.add_global(ty, None, &name);
-                    // global.set_initializer(&self.codegen_expr(*val));
-                    // self.vars.insert(
-                    //     exec.ident,
-                    //     AllocInfo {
-                    //         ptr: global.as_pointer_value(),
-                    //         ty: ty.as_any_type_enum(),
-                    //     },
-                    // );
-                }
+                ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, .. } => {
                     let Ty::Fn(_, ret_ty) = self.ty_map.var_ty(exec.ident) else {
                         unreachable!("ICE")
@@ -154,24 +180,23 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .set_data_layout(&target_machine.get_target_data().get_data_layout());
         self.module.set_triple(&triple);
 
-        if opts {
-            let pass_opts = PassBuilderOptions::create();
-            pass_opts.set_verify_each(true);
-            self.module
-                .run_passes(
-                    "mem2reg,instcombine,reassociate,gvn,sccp,dce,simplifycfg",
-                    &target_machine,
-                    pass_opts,
-                )
-                .unwrap();
-        }
-
-        let path = format!("{}.o", self.module.get_name().to_str().unwrap());
-        target_machine
-            .write_to_file(&self.module, FileType::Object, Path::new(&path))
+        self.module
+            .run_passes(
+                &opt_level.opt_string(),
+                &target_machine,
+                PassBuilderOptions::create(),
+            )
             .unwrap();
 
-        self.module.print_to_stderr();
+        match mode {
+            CodegenMode::IRDump => self.module.print_to_stderr(),
+            CodegenMode::Emit(path) => {
+                target_machine
+                    .write_to_file(&self.module, FileType::Object, &path)
+                    .unwrap();
+            }
+            CodegenMode::Silent => {}
+        }
     }
 
     fn report_warning(&self, msg: impl Into<Cow<'static, str>>) {
@@ -208,11 +233,8 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
             Ty::Array(_) => todo!(),
-            Ty::Fn(params, _) => todo!(),
-            Ty::Adt(id) => self
-                .ctx
-                .ptr_type(AddressSpace::default())
-                .as_basic_type_enum(),
+            Ty::Fn(_, _) => todo!(),
+            Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
     }
 

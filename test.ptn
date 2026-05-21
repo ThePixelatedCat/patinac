@@ -5,9 +5,5 @@ fn main() -> {
 fn fib(n: Float): Float ->
     if n < 2.0 { n } else { fib(n -. 1.0) +. fib(n -. 2.0) }
 
-record Point(x: Float, y: Float)
-fn get_x(self: Point): Float -> self.x
-fn get_y(self: Point): Float -> self.y
-
-record Link(value: Int, next: Link)
-fn get_next(self: Link): Link -> self.next
+fn foo(n: Float): Float ->
+    if n >= 0.0 { n } else { 0.0 } *. 2.0

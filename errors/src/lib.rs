@@ -1,5 +1,4 @@
-use std::borrow::Cow;
-
+use smol_str::SmolStr;
 use span::Span;
 
 pub type Result<T, E> = std::result::Result<T, Error<E>>;
@@ -11,7 +10,7 @@ pub struct Error<E>(Box<ErrorInner<E>>);
 struct ErrorInner<E> {
     kind: E,
     span: Span,
-    ctx: Vec<Cow<'static, str>>,
+    ctx: Vec<SmolStr>,
 }
 
 impl<E> Error<E> {
@@ -24,8 +23,14 @@ impl<E> Error<E> {
     }
 
     #[must_use]
-    pub fn with_ctx(mut self, ctx: impl Into<Cow<'static, str>>) -> Self {
+    pub fn with_ctx(mut self, ctx: impl Into<SmolStr>) -> Self {
         self.0.ctx.push(ctx.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_static_ctx(mut self, ctx: &'static str) -> Self {
+        self.0.ctx.push(SmolStr::new_static(ctx));
         self
     }
 
@@ -37,7 +42,7 @@ impl<E> Error<E> {
         self.0.span
     }
 
-    pub fn ctx(&self) -> &[Cow<'static, str>] {
+    pub fn ctx(&self) -> &[SmolStr] {
         &self.0.ctx
     }
 }
@@ -50,14 +55,24 @@ impl<E: ToString> Error<E> {
 
 pub trait ResultExt {
     #[must_use]
-    fn context(self, ctx: impl Into<Cow<'static, str>>) -> Self;
+    fn with_ctx(self, ctx: impl Into<SmolStr>) -> Self;
+
+    #[must_use]
+    fn with_static_ctx(self, ctx: &'static str) -> Self;
 }
 
 impl<T, E> ResultExt for Result<T, E> {
-    fn context(self, ctx: impl Into<Cow<'static, str>>) -> Self {
+    fn with_ctx(self, ctx: impl Into<SmolStr>) -> Self {
         match self {
             ok @ Ok(_) => ok,
             Err(e) => Err(e.with_ctx(ctx)),
+        }
+    }
+
+    fn with_static_ctx(self, ctx: &'static str) -> Self {
+        match self {
+            ok @ Ok(_) => ok,
+            Err(e) => Err(e.with_static_ctx(ctx)),
         }
     }
 }
