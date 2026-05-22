@@ -10,6 +10,7 @@ new_key_type! { pub struct AdtId; }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdtInfo {
     pub fields: Fields,
+    pub constructor_id: VarId,
 }
 
 #[derive(From, Debug, Clone, PartialEq, Eq, IntoIterator)]

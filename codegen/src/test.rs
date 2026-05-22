@@ -87,20 +87,6 @@ fn facs() {
         if n <= 0.0 { 1.0 } else { n *. fac_rec(n -. 1.0) }
 ";
     check(input, OptLevel::O0);
-
-    //     let input = "
-    //     fn fac_iter(n: Float): Float -> {
-    //         let mut f = 1
-    //         let mut i = 1
-    //         loop {
-    //             if i > n { break }
-    //             f = f * i
-    //             i = i + 1
-    //         }
-    //         f
-    //     }
-    // ";
-    //     check(input, true);
 }
 
 #[test]
@@ -131,7 +117,11 @@ fn record_field() {
     let input = "
     record Point(x: Float, y: Float)
     fn get_x(self: Point): Float -> self.x
-    fn get_y(self: Point): Float -> self.y
+    fn make_point(x: Float): Point -> Point(x, 0.0)
+    fn main() -> {
+        let point = make_point(1.0)
+        print get_x(point)
+    }
 ";
     check(input, OptLevel::O0);
 }

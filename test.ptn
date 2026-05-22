@@ -1,9 +1,22 @@
+// fn main() -> {
+//     print fib(35)
+// }
+
+// fn fib(n: UInt): UInt ->
+//     if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
+
+// fn foo(n: Float): Float ->
+//     if n >= 0.0 { n } else { 0.0 } *. 2.0
+
+
+
+fn get_x(self: Point): Float -> self.x
+
+fn make_point(x: Float): Point -> Point(x, 0.0)
+
 fn main() -> {
-    print fib(35)
+    let point = make_point(1.0)
+    print get_x(point)
 }
 
-fn fib(n: UInt): UInt ->
-    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
-
-fn foo(n: Float): Float ->
-    if n >= 0.0 { n } else { 0.0 } *. 2.0
+record Point(x: Float, y: Float)

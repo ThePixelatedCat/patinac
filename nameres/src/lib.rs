@@ -150,6 +150,7 @@ fn resolve_adt_item(
                 id,
                 AdtInfo {
                     fields: fields.into(),
+                    constructor_id,
                 },
             );
         }

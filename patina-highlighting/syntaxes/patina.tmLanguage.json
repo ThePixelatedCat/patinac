@@ -79,10 +79,10 @@
                             "name": "punctuation.brackets.round.patina"
                         }
                     },
-                    "end": "(\\{)",
+                    "end": "(->)",
                     "endCaptures": {
                         "1": {
-                            "name": "punctuation.brackets.curly.patina"
+                            "name": "keyword.operator.arrow.skinny.patina"
                         }
                     },
                     "patterns": [
