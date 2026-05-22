@@ -1,6 +1,7 @@
+use derive_more::From;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
-use ident::SpanIdent;
+use ident::{Ident, SpanIdent};
 use span::Span;
 
 use crate::{
@@ -15,17 +16,25 @@ pub mod types;
 
 #[derive(Debug, Default)]
 pub struct Hir {
-    pub execs: Vec<ExecItem>,
     main: Option<ExecItem>,
-    pub adts: SlotMap<AdtId, SpanIdent>,
+    execs: Vec<ExecItem>,
+    adts: SlotMap<AdtId, SpanIdent>,
     adt_info: SecondaryMap<AdtId, AdtInfo>,
     exprs: SlotMap<ExprId, Expr>,
     expr_spans: SecondaryMap<ExprId, Span>,
-    vars: SlotMap<VarId, SpanIdent>,
-    pub var_info: SecondaryMap<VarId, VarInfo>,
+    vars: SlotMap<VarId, VarInfo>,
+    var_tys: SecondaryMap<VarId, Ty>,
 }
 
 impl Hir {
+    pub fn execs(&self) -> &[ExecItem] {
+        &self.execs
+    }
+
+    pub fn add_execs(&mut self, execs: impl IntoIterator<Item = ExecItem>) {
+        self.execs.extend(execs);
+    }
+
     pub const fn main(&self) -> Option<&ExecItem> {
         self.main.as_ref()
     }
@@ -37,6 +46,10 @@ impl Hir {
 
 // Adt-related functions
 impl Hir {
+    pub fn adts(&self) -> impl Iterator<Item = (AdtId, SpanIdent)> {
+        self.adts.iter().map(|(id, ident)| (id, *ident))
+    }
+
     pub fn add_adt(&mut self, ident: SpanIdent, info: AdtInfo) -> AdtId {
         let id = self.reserve_adt(ident);
         self.fulfill_adt(id, info);
@@ -79,52 +92,44 @@ impl Hir {
 
 // Var-related functions
 impl Hir {
-    pub fn add_var(&mut self, ident: SpanIdent, info: VarInfo) -> VarId {
-        let id = self.reserve_var(ident);
-        self.fulfill_var(id, info);
-        id
+    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Span) -> VarId {
+        self.vars.insert(VarInfo {
+            ident,
+            mutable,
+            span,
+        })
     }
 
-    pub fn reserve_var(&mut self, ident: SpanIdent) -> VarId {
-        self.vars.insert(ident)
-    }
-
-    pub fn fulfill_var(&mut self, id: VarId, info: VarInfo) {
-        self.var_info.insert(id, info);
-    }
-
-    pub fn var_ident(&self, id: VarId) -> SpanIdent {
+    pub fn var_info(&self, id: VarId) -> VarInfo {
         self.vars[id]
     }
 
-    pub fn var_info(&self, id: VarId) -> &VarInfo {
-        &self.var_info[id]
+    pub fn add_var_ty(&mut self, id: VarId, ty: Ty) {
+        self.var_tys.insert(id, ty);
     }
 
-    pub fn try_var_info(&self, id: VarId) -> Option<&VarInfo> {
-        self.var_info.get(id)
+    pub fn var_ty(&self, id: VarId) -> &Ty {
+        &self.var_tys[id]
+    }
+
+    pub fn var_tys(&self) -> impl Iterator<Item = (VarId, Option<&Ty>)> {
+        self.vars.iter().map(|(id, _)| (id, self.var_tys.get(id)))
     }
 }
 
-pub struct TyMap(SecondaryMap<ExprId, Ty>, SecondaryMap<VarId, Ty>);
+#[derive(From)]
+pub struct TyMap(SecondaryMap<ExprId, Ty>);
 
 impl TyMap {
-    pub const fn new(expr_map: SecondaryMap<ExprId, Ty>, var_map: SecondaryMap<VarId, Ty>) -> Self {
-        Self(expr_map, var_map)
-    }
-
-    pub fn expr_ty(&self, expr: ExprId) -> &Ty {
+    pub fn ty(&self, expr: ExprId) -> &Ty {
         &self.0[expr]
-    }
-
-    pub fn var_ty(&self, var: VarId) -> &Ty {
-        &self.1[var]
     }
 }
 
 new_key_type! { pub struct VarId; }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VarInfo {
+    pub ident: Ident,
     pub mutable: bool,
-    pub ty: Option<Ty>,
+    pub span: Span,
 }

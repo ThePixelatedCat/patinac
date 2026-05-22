@@ -1,26 +1,26 @@
-use errors::TEST_HANDLER;
-use hir::types::Param;
+use errors::{Result, TEST_HANDLER};
+use hir::types::{Param, Ty};
 use parse::Parser;
 use span::Span;
 
-use crate::{Result, Ty, TypeChecker};
+use crate::TypeChecker;
 
 fn check_expr(input: &str) -> Result<Ty> {
     let expr = Parser::parse_expr(input).unwrap();
-    let (expr, hir) = nameres::test_resolve_expr(expr).unwrap();
+    let (expr, mut hir) = nameres::test_resolve_expr(expr).unwrap();
 
     let mut checker = TypeChecker::new(TEST_HANDLER);
     checker.build_context(&hir);
     checker.infer_expr(&hir, expr)?;
     checker.unify();
 
-    Ok(checker.sub_all(&hir)?.expr_ty(expr).clone())
+    Ok(checker.sub_all(&mut hir)?.ty(expr).clone())
 }
 
 fn check_full(input: &str) -> Result<()> {
     let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
-    let hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
-    TypeChecker::new(TEST_HANDLER).type_program(&hir)?;
+    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
+    TypeChecker::new(TEST_HANDLER).type_program(&mut hir)?;
     Ok(())
 }
 

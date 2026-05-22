@@ -72,10 +72,7 @@ impl Parser<'_> {
 
                 Ok(TyKind::Adt(ident.ident, generics).span(ident.span.start..end))
             }
-            _ => {
-                self.err_next(ErrorKind::Unexpected, &[]);
-                Err(())
-            }
+            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
     }
 }

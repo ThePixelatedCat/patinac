@@ -12,16 +12,16 @@ use ast::{
     patterns::{Pat, PatKind},
     types::{Ty as AstTy, TyKind as AstTyKind},
 };
-use errors::ErrorHandler;
+use errors::{ErrorHandler, HandledError, Result, TryCollectEager};
 use hir::{
-    Hir, VarId, VarInfo,
+    Hir, VarId,
     exprs::{ExprId, LitExpr as HirLitExpr},
     items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind},
     types::{Param as ParamTy, Ty as HirTy},
 };
 use ident::Ident;
 
-use crate::error::{ErrorKind, Result};
+use crate::error::ErrorKind;
 
 type Scope<Id> = im_rc::HashMap<Ident, Id, foldhash::fast::RandomState>;
 
@@ -35,9 +35,12 @@ pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
 
     for adt in &ast.adts {
         match adt_scope.get(&adt.ident.ident) {
-            Some(&id) => handler.err(
-                ErrorKind::DupItem(adt.ident.ident, hir.adt_ident(id).span).span(adt.ident.span),
-            ),
+            Some(&id) => {
+                handler.err(
+                    ErrorKind::DupItem(adt.ident.ident, hir.adt_ident(id).span)
+                        .span(adt.ident.span),
+                );
+            }
             None => {
                 let id = hir.reserve_adt(adt.ident);
                 adt_scope.insert(adt.ident.ident, id);
@@ -50,11 +53,14 @@ pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
 
     for exec in &ast.execs {
         match var_scope.get(&exec.ident.ident) {
-            Some(&id) => handler.err(
-                ErrorKind::DupItem(exec.ident.ident, hir.var_ident(id).span).span(exec.ident.span),
-            ),
+            Some(&id) => {
+                handler.err(
+                    ErrorKind::DupItem(exec.ident.ident, hir.var_info(id).span)
+                        .span(exec.ident.span),
+                );
+            }
             None => {
-                let id = hir.reserve_var(exec.ident);
+                let id = hir.add_var(exec.ident.ident, false, exec.ident.span);
                 var_scope.insert(exec.ident.ident, id);
             }
         }
@@ -70,13 +76,14 @@ pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
     {
         hir.set_main(main);
     }
-    hir.execs = ast
+    let execs: Vec<_> = ast
         .execs
         .into_iter()
         .flat_map(|exec| resolve_exec_item(&adt_scope, &var_scope, &mut hir, &mut handler, exec))
         .collect();
+    hir.add_execs(execs);
 
-    if handler.has_err() { Err(()) } else { Ok(hir) }
+    handler.checked(hir)
 }
 
 fn find_main(error_handler: &mut ErrorHandler, execs: &[AstExecItem]) -> Result<Option<usize>> {
@@ -87,8 +94,7 @@ fn find_main(error_handler: &mut ErrorHandler, execs: &[AstExecItem]) -> Result<
             return if params.is_empty() && ret_ty.kind == AstTyKind::unit() {
                 Ok(Some(idx))
             } else {
-                error_handler.err(ErrorKind::InvalidMain.span(item.ident.span));
-                Err(())
+                Err(error_handler.err(ErrorKind::InvalidMain.span(item.ident.span)))
             };
         }
     }
@@ -116,7 +122,7 @@ fn resolve_adt_item(
             let fields: Vec<_> = fields
                 .into_iter()
                 .flat_map(|field| {
-                    Ok::<_, ()>((field.ident, resolve_ty(adt_scope, handler, field.ty)?))
+                    Ok::<_, HandledError>((field.ident, resolve_ty(adt_scope, handler, field.ty)?))
                 })
                 .collect();
 
@@ -136,13 +142,8 @@ fn resolve_adt_item(
                     .collect(),
                 Box::new(HirTy::Adt(id)),
             );
-            let constructor_id = hir.add_var(
-                item.ident,
-                VarInfo {
-                    mutable: false,
-                    ty: Some(constructor_ty),
-                },
-            );
+            let constructor_id = hir.add_var(item.ident.ident, false, item.ident.span);
+            hir.add_var_ty(constructor_id, constructor_ty);
             var_scope.insert(item.ident.ident, constructor_id);
 
             hir.fulfill_adt(
@@ -171,19 +172,13 @@ fn resolve_exec_item(
 
     match item.kind {
         AstExecKind::Const { ty, val } => {
-            let ty = ty.map(|ty| resolve_ty(adt_scope, handler, ty)).transpose();
             let val = exprs::resolve_expr(adt_scope, var_scope, hir, handler, val);
-
-            hir.fulfill_var(
-                id,
-                VarInfo {
-                    mutable: false,
-                    ty: ty?,
-                },
-            );
+            if let Some(ty) = ty {
+                hir.add_var_ty(id, resolve_ty(adt_scope, handler, ty)?);
+            }
 
             Ok(HirExecItem {
-                ident: id,
+                id,
                 kind: HirExecKind::Const { val: val? },
             })
         }
@@ -218,24 +213,19 @@ fn resolve_exec_item(
                         },
                     ))
                 })
-                .try_collect();
-            let body = exprs::resolve_expr(adt_scope, &var_scope, hir, handler, body)?;
+                .try_collect_eager();
+            let body = exprs::resolve_expr(adt_scope, &var_scope, hir, handler, body);
+            let ret_ty = resolve_ty(adt_scope, handler, ret_ty)?;
             let (params, param_tys) = params?;
 
-            hir.fulfill_var(
-                id,
-                VarInfo {
-                    mutable: false,
-                    ty: Some(HirTy::Fn(
-                        param_tys,
-                        Box::new(resolve_ty(adt_scope, handler, ret_ty)?),
-                    )),
-                },
-            );
+            hir.add_var_ty(id, HirTy::Fn(param_tys, Box::new(ret_ty)));
 
             Ok(HirExecItem {
-                ident: id,
-                kind: HirExecKind::Fn { params, body },
+                id,
+                kind: HirExecKind::Fn {
+                    params,
+                    body: body?,
+                },
             })
         }
     }
@@ -284,9 +274,9 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
                         span: param.span,
                     })
                 })
-                .try_collect()?;
+                .try_collect_eager();
             let ret = Box::new(resolve_ty(adt_scope, handler, *ret.ty)?);
-            Ok(HirTy::Fn(params, ret))
+            Ok(HirTy::Fn(params?, ret))
         }
         AstTyKind::Adt(ident, mut args) => {
             if ident == "Array" {
@@ -294,10 +284,7 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
                     1 => resolve_ty(adt_scope, handler, args.swap_remove(0))
                         .map(Box::new)
                         .map(HirTy::Array),
-                    len => {
-                        handler.err(ErrorKind::GenericCount(1, len).span(ty.span));
-                        Err(())
-                    }
+                    len => Err(handler.err(ErrorKind::GenericCount(1, len).span(ty.span))),
                 }
             } else {
                 if !args.is_empty() {
@@ -306,10 +293,7 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
 
                 match adt_scope.get(&ident).copied() {
                     Some(id) => Ok(HirTy::Adt(id)),
-                    None => {
-                        handler.err(ErrorKind::UnknownType.span(ty.span));
-                        Err(())
-                    }
+                    None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
                 }
             }
         }
@@ -323,7 +307,7 @@ fn resolve_tys(
 ) -> Result<Vec<HirTy>> {
     tys.into_iter()
         .map(|ty| resolve_ty(adt_scope, handler, ty))
-        .try_collect()
+        .try_collect_eager()
 }
 
 fn resolve_pat(
@@ -335,7 +319,10 @@ fn resolve_pat(
 ) -> VarId {
     match pat.kind {
         PatKind::Ident(ident) => {
-            let id = hir.add_var(ident.span(pat.span), VarInfo { mutable, ty });
+            let id = hir.add_var(ident, mutable, pat.span);
+            if let Some(ty) = ty {
+                hir.add_var_ty(id, ty);
+            }
             var_scope.insert(ident, id);
             id
         }

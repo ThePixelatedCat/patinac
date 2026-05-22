@@ -9,12 +9,10 @@ mod test;
 mod types;
 
 use ast::Ast;
-use errors::ErrorHandler;
+use errors::{ErrorHandler, Result};
 use lex::{Lexer, Tok, TokKind};
 
-pub use crate::error::{Error, ErrorKind, Result};
-
-use crate::items::Item;
+use crate::{error::ErrorKind, items::Item};
 
 pub struct Parser<'src> {
     toks: Lexer<'src>,
@@ -41,7 +39,7 @@ impl<'src> Parser<'src> {
             match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
-                Err(()) => {
+                Err(_) => {
                     // // Skip to next item
                     // while let Ok(tok) = self.peek()
                     //     && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
@@ -53,11 +51,7 @@ impl<'src> Parser<'src> {
             }
         }
 
-        if self.handler.has_err() {
-            Err(())
-        } else {
-            Ok(ast)
-        }
+        self.handler.checked(ast)
     }
 
     /// Lexes the source and parses an expression in one function call, to simplify tests
@@ -108,14 +102,13 @@ impl<'src> Parser<'src> {
             if next.kind == expected {
                 Ok(next)
             } else {
-                self.handler.err(
+                Err(self.handler.err(
                     ErrorKind::Mismatched {
                         expected,
                         found: next.kind,
                     }
                     .span(next.span),
-                );
-                Err(())
+                ))
             }
         })
     }

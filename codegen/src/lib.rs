@@ -111,17 +111,17 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
-        for exec in &self.hir.execs {
+        for exec in self.hir.execs() {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, .. } => {
-                    let Ty::Fn(_, ret_ty) = self.ty_map.var_ty(exec.ident) else {
+                    let Ty::Fn(_, ret_ty) = self.hir.var_ty(exec.id) else {
                         unreachable!("ICE")
                     };
-                    let func = self.build_func(exec.ident, params, ret_ty);
-                    self.funcs.insert(exec.ident, func);
+                    let func = self.build_func(exec.id, params, ret_ty);
+                    self.funcs.insert(exec.id, func);
                     self.vars.insert(
-                        exec.ident,
+                        exec.id,
                         AllocInfo {
                             ptr: func.as_global_value().as_pointer_value(),
                             ty: func.get_type().as_any_type_enum(),
@@ -134,9 +134,9 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         if let Some(main) = self.hir.main() {
             let fn_ty = self.ctx.i32_type().fn_type(&[], false);
             let func = self.module.add_function("main", fn_ty, None);
-            self.funcs.insert(main.ident, func);
+            self.funcs.insert(main.id, func);
             self.vars.insert(
-                main.ident,
+                main.id,
                 AllocInfo {
                     ptr: func.as_global_value().as_pointer_value(),
                     ty: func.get_type().as_any_type_enum(),
@@ -157,11 +157,11 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             assert!(func.verify(true));
         }
 
-        for exec in &self.hir.execs {
+        for exec in self.hir.execs() {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, body } => {
-                    let func = self.funcs[exec.ident];
+                    let func = self.funcs[exec.id];
                     self.populate_func(func, params, *body);
                 }
             }
@@ -205,9 +205,8 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<AdtId, StructType<'ctx>> {
-        hir.adts
-            .iter()
-            .map(|(id, ident)| (id, ctx.opaque_struct_type(&ident.to_string())))
+        hir.adts()
+            .map(|(id, ident)| (id, ctx.opaque_struct_type(&ident.ident.str())))
             .collect()
     }
 
@@ -239,8 +238,6 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     fn build_func(&self, id: VarId, params: &[VarId], ret_ty: &Ty) -> FunctionValue<'ctx> {
-        let fn_name = self.hir.var_ident(id).ident.to_string();
-
         let param_tys: Vec<_> = params
             .iter()
             .map(|p| {
@@ -249,7 +246,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                         .ptr_type(AddressSpace::default())
                         .as_basic_type_enum()
                 } else {
-                    self.convert_ty(self.ty_map.var_ty(*p))
+                    self.convert_ty(self.hir.var_ty(*p))
                 }
                 .into()
             })
@@ -257,6 +254,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let ret_ty = self.convert_ty(ret_ty);
         let fn_ty = ret_ty.fn_type(&param_tys, false);
 
+        let fn_name = self.hir.var_info(id).ident.str();
         self.module.add_function(&fn_name, fn_ty, None)
     }
 
@@ -268,14 +266,14 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             let info = if self.hir.var_info(*param).mutable {
                 AllocInfo {
                     ptr: arg.into_pointer_value(),
-                    ty: self
-                        .convert_ty(self.ty_map.var_ty(*param))
-                        .as_any_type_enum(),
+                    ty: self.convert_ty(self.hir.var_ty(*param)).as_any_type_enum(),
                 }
             } else {
                 let ty = arg.get_type();
-                let name = self.hir.var_ident(*param).ident.to_string();
-                let ptr = self.builder.build_alloca(ty, &name).unwrap();
+                let ptr = self
+                    .builder
+                    .build_alloca(ty, &self.hir.var_info(*param).ident.str())
+                    .unwrap();
                 self.builder.build_store(ptr, arg).unwrap();
                 AllocInfo {
                     ptr,

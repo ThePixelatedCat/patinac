@@ -1,13 +1,12 @@
 use foldhash::HashSet;
-use itertools::Itertools;
 
 use ast::exprs::{
     BlockExpr as AstBlockExpr, Expr as AstExpr, ExprKind, InfixOp as AstInfixOp,
     PrefixOp as AstPrefixOp, Stmt as AstStmt,
 };
-use errors::ErrorHandler;
+use errors::{ErrorHandler, Result, TryCollectEager};
 use hir::{
-    Hir, VarId, VarInfo,
+    Hir, VarId,
     exprs::{
         Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
         PrefixOp as HirPrefixOp, Stmt as HirStmt,
@@ -15,8 +14,9 @@ use hir::{
     items::AdtId,
 };
 use ident::Ident;
+use smallvec::SmallVec;
 
-use crate::{ErrorKind, Result, Scope};
+use crate::{ErrorKind, Scope};
 
 pub fn resolve_expr(
     adt_scope: &Scope<AdtId>,
@@ -29,8 +29,7 @@ pub fn resolve_expr(
         ExprKind::Ident(ident) => match var_scope.get(&ident) {
             Some(&id) => HirExpr::Ident(id),
             None => {
-                handler.err(ErrorKind::UnboundVariable.span(expr.span));
-                return Err(());
+                return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span)));
             }
         },
         ExprKind::Lit(lit) => HirExpr::Lit(crate::convert_lit(lit)),
@@ -76,7 +75,7 @@ pub fn resolve_expr(
                         span: arg.span,
                     })
                 })
-                .try_collect();
+                .try_collect_eager();
             HirExpr::Call {
                 func: func?,
                 args: args?,
@@ -90,19 +89,11 @@ pub fn resolve_expr(
             // Rebind all mutable captures as immutable within the lambda body
             for capture in captures {
                 // Unbound variables will be caught in a few lines anyway, so doesn't matter if don't rebind them as immutable
-                // The only partially-resolved variables will be the top-level items, which are already always immutable
                 if let Some(&id) = var_scope.get(&capture)
-                    && let Some(info) = hir.try_var_info(id)
+                    && let info = hir.var_info(id)
                     && info.mutable
                 {
-                    let ident = hir.var_ident(id);
-                    let id = hir.add_var(
-                        ident,
-                        VarInfo {
-                            mutable: false,
-                            ..info.clone()
-                        },
-                    );
+                    let id = hir.add_var(info.ident, false, info.span);
                     var_scope.insert(capture, id);
                 }
             }
@@ -110,10 +101,13 @@ pub fn resolve_expr(
             let params = params
                 .into_iter()
                 .map(|param| crate::resolve_binding(adt_scope, &mut var_scope, hir, handler, param))
-                .try_collect()?;
-            let body = resolve_expr(adt_scope, &var_scope, hir, handler, *body)?;
+                .try_collect_eager();
+            let body = resolve_expr(adt_scope, &var_scope, hir, handler, *body);
 
-            HirExpr::Lambda { params, body }
+            HirExpr::Lambda {
+                params: params?,
+                body: body?,
+            }
         }
         ExprKind::If { cond, th, el } => {
             let cond = resolve_expr(adt_scope, var_scope, hir, handler, *cond);
@@ -164,11 +158,11 @@ fn resolve_exprs(
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     exprs: Vec<AstExpr>,
-) -> Result<Vec<ExprId>> {
+) -> Result<SmallVec<[ExprId; 3]>> {
     exprs
         .into_iter()
         .map(|expr| resolve_expr(adt_scope, var_scope, hir, handler, expr))
-        .try_collect()
+        .try_collect_eager()
 }
 
 fn resolve_block_expr(
@@ -183,7 +177,7 @@ fn resolve_block_expr(
         .stmts
         .into_iter()
         .map(|s| resolve_stmt(adt_scope, &mut var_scope, hir, handler, s))
-        .try_collect()?;
+        .try_collect_eager()?;
     Ok(HirBlockExpr {
         stmts,
         span: block_expr.span,

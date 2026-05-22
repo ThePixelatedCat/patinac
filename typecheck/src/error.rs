@@ -1,20 +1,10 @@
-use std::result;
-
 use derive_more::Display;
 
+use errors::Error;
 use ident::Ident;
 use span::Span;
 
 use crate::types::{Param, PartialTy, TyVar};
-
-pub type Result<T> = result::Result<T, ()>;
-pub type Error = errors::Error<ErrorKind>;
-
-impl ErrorKind {
-    pub fn span(self, span: impl Into<Span>) -> Error {
-        Error::new(self, span)
-    }
-}
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
@@ -40,4 +30,10 @@ pub enum ErrorKind {
     ParamCount(PartialTy, PartialTy),
     #[display("mismatched parameter mutability between parameters `{_0}` and `{_1}`")]
     ParamMutability(Param, Param),
+}
+
+impl ErrorKind {
+    pub fn span(self, span: impl Into<Span>) -> Error<Self> {
+        Error::new(self, span)
+    }
 }

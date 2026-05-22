@@ -1,10 +1,15 @@
 use std::{iter, mem};
 
+use errors::Error;
 use span::Span;
 
-use crate::{Error, ErrorKind, PartialTy, TyVar, TypeChecker, types::Param};
+use crate::{
+    TypeChecker,
+    error::ErrorKind,
+    types::{Param, PartialTy, TyVar},
+};
 
-fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error> {
+fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error<ErrorKind>> {
     match ty {
         PartialTy::Int
         | PartialTy::UInt
@@ -50,7 +55,7 @@ impl TypeChecker<'_> {
         span: Span,
         unnorm_lhs: PartialTy,
         unnorm_rhs: PartialTy,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<ErrorKind>> {
         let lhs = self.normalize_ty(unnorm_lhs);
         let rhs = self.normalize_ty(unnorm_rhs);
 
@@ -117,17 +122,27 @@ impl TypeChecker<'_> {
         constr_span: Span,
         left_tys: Vec<PartialTy>,
         right_tys: Vec<PartialTy>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<ErrorKind>> {
         iter::zip(left_tys, right_tys).try_for_each(|(l, r)| self.unify_ty_ty(constr_span, l, r))
     }
 
-    fn unify_var_var(&mut self, span: Span, lhs: TyVar, rhs: TyVar) -> Result<(), Error> {
+    fn unify_var_var(
+        &mut self,
+        span: Span,
+        lhs: TyVar,
+        rhs: TyVar,
+    ) -> Result<(), Error<ErrorKind>> {
         self.table
             .unify_var_var(lhs, rhs)
             .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))
     }
 
-    fn unify_var_value(&mut self, span: Span, var: TyVar, ty: PartialTy) -> Result<(), Error> {
+    fn unify_var_value(
+        &mut self,
+        span: Span,
+        var: TyVar,
+        ty: PartialTy,
+    ) -> Result<(), Error<ErrorKind>> {
         self.table
             .unify_var_value(var, Some(ty))
             .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))

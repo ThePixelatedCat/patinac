@@ -313,6 +313,8 @@ dependencies = [
 name = "errors"
 version = "0.1.0"
 dependencies = [
+ "derive_more",
+ "smallvec",
  "smol_str",
  "span",
 ]
@@ -404,6 +406,7 @@ dependencies = [
  "foldhash 0.2.0",
  "ident",
  "slotmap",
+ "smallvec",
  "span",
 ]
 

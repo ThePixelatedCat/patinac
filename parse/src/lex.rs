@@ -261,7 +261,7 @@ impl TokKind {
 
     /// Converts the token into a string that parses back into itself
     #[cfg(any(test, feature = "test"))]
-    pub fn reverse(self) -> String {
+    pub(crate) fn reverse(self) -> String {
         match self {
             Self::IntLit => String::from("1"),
             Self::FloatLit => String::from("1.1"),
@@ -274,7 +274,7 @@ impl TokKind {
 
     /// A strategy that produces random tokens, excluding [Eof][Self::Eof]
     #[cfg(any(test, feature = "test"))]
-    pub fn arb() -> impl Strategy<Value = Self> {
+    pub(crate) fn arb() -> impl Strategy<Value = Self> {
         Self::arbitrary().prop_filter("skipped eof", |&t| t != Self::Eof)
     }
 }

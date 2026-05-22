@@ -45,7 +45,7 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn codegen_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
-        let format_string = match self.ty_map.expr_ty(expr) {
+        let format_string = match self.ty_map.ty(expr) {
             Ty::Int => "%d",
             Ty::UInt => "%u",
             Ty::Byte => "%hhu",
@@ -75,7 +75,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         let ptr: PointerValue = match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id].ptr,
             Expr::Field { base, field } => {
-                let Ty::Adt(id) = self.ty_map.expr_ty(*base) else {
+                let Ty::Adt(id) = self.ty_map.ty(*base) else {
                     unreachable!("ICE")
                 };
                 let ty = self.structs[*id];
@@ -103,14 +103,14 @@ impl<'ctx> Codegen<'ctx, '_> {
             .build_load(
                 BasicTypeEnum::try_from(alloc.ty).unwrap(),
                 alloc.ptr,
-                &self.hir.var_ident(id).ident.to_string(),
+                &self.hir.var_info(id).ident.str(),
             )
             .unwrap()
     }
 
     fn codegen_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
         match lit {
-            LitExpr::Int(val) => match self.ty_map.expr_ty(expr) {
+            LitExpr::Int(val) => match self.ty_map.ty(expr) {
                 Ty::Int => {
                     let max = i64::MAX as u64;
                     let clamped_val = if *val > max {
@@ -283,7 +283,7 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn codegen_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
-        let Ty::Adt(id) = self.ty_map.expr_ty(base) else {
+        let Ty::Adt(id) = self.ty_map.ty(base) else {
             unreachable!("ICE")
         };
         let ty = self.structs[*id];
@@ -443,9 +443,8 @@ impl<'ctx> Codegen<'ctx, '_> {
     fn codegen_stmt(&mut self, stmt: &Stmt) -> BasicValueEnum<'ctx> {
         match stmt {
             Stmt::Decl { id, val, .. } => {
-                let ty = self.convert_ty(self.ty_map.var_ty(*id));
-                let name = self.hir.var_ident(*id).ident.to_string();
-                let alloc = self.alloca(ty, &name);
+                let ty = self.convert_ty(self.hir.var_ty(*id));
+                let alloc = self.alloca(ty, &self.hir.var_info(*id).ident.str());
                 self.vars.insert(*id, alloc);
 
                 let val = self.codegen_expr(*val);

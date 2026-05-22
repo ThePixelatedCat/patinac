@@ -1,5 +1,6 @@
 use itertools::Itertools;
 
+use errors::{Result, TryCollectEager};
 use hir::{
     Hir, VarId,
     exprs::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
@@ -7,7 +8,11 @@ use hir::{
 use ident::SpanIdent;
 use span::Span;
 
-use crate::{ErrorKind, PartialTy, Result, TypeChecker, types::Param};
+use crate::{
+    TypeChecker,
+    error::ErrorKind,
+    types::{Param, PartialTy},
+};
 
 impl TypeChecker<'_> {
     pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> Result<PartialTy> {
@@ -41,7 +46,10 @@ impl TypeChecker<'_> {
     }
 
     fn infer_exprs(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<Vec<PartialTy>> {
-        exprs.iter().map(|&e| self.infer_expr(hir, e)).try_collect()
+        exprs
+            .iter()
+            .map(|&e| self.infer_expr(hir, e))
+            .try_collect_eager()
     }
 
     fn infer_lit(&mut self, lit: &LitExpr) -> PartialTy {
@@ -200,15 +208,15 @@ impl TypeChecker<'_> {
         let base_ty = self.normalize_ty(base_ty);
 
         let PartialTy::Adt(base_id) = base_ty else {
-            self.handler
-                .err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base)));
-            return Err(());
+            return Err(self
+                .handler
+                .err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base))));
         };
 
         let Some(field_ty) = hir.adt_info(base_id).fields.get_ty(field.ident) else {
-            self.handler
-                .err(ErrorKind::MissingField(base_ty, field.ident).span(field.span));
-            return Err(());
+            return Err(self
+                .handler
+                .err(ErrorKind::MissingField(base_ty, field.ident).span(field.span)));
         };
 
         Ok(PartialTy::from(field_ty))
@@ -258,10 +266,13 @@ impl TypeChecker<'_> {
     fn infer_lambda(&mut self, hir: &Hir, params: &[VarId], body: ExprId) -> Result<PartialTy> {
         let param_tys = params
             .iter()
-            .map(|id| Param {
-                ty: self.ctx[*id].clone(),
-                mutable: hir.var_info(*id).mutable,
-                span: hir.var_ident(*id).span,
+            .map(|id| {
+                let info = hir.var_info(*id);
+                Param {
+                    ty: self.ctx[*id].clone(),
+                    mutable: info.mutable,
+                    span: info.span,
+                }
             })
             .collect();
         let body_ty = self.infer_expr(hir, body)?;
@@ -294,20 +305,18 @@ impl TypeChecker<'_> {
                 if hir.var_info(*id).mutable {
                     Ok(())
                 } else {
-                    self.handler
-                        .err(ErrorKind::Mutation.span(hir.expr_span(place)));
-                    Err(())
+                    Err(self
+                        .handler
+                        .err(ErrorKind::Mutation.span(hir.expr_span(place))))
                 }
             }
             Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
                 self.check_place_mut(hir, *base)
             }
             Expr::Call { .. } => todo!("Projections"),
-            _ => {
-                self.handler
-                    .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)));
-                Err(())
-            }
+            _ => Err(self
+                .handler
+                .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)))),
         }
     }
 
@@ -315,11 +324,10 @@ impl TypeChecker<'_> {
         match hir.expr_info(place_b) {
             info @ Expr::Ident(_) => {
                 if hir.expr_info(place_a) == info {
-                    self.handler.err(
+                    Err(self.handler.err(
                         ErrorKind::OverlappingPlace(hir.expr_span(place_a))
                             .span(hir.expr_span(place_b)),
-                    );
-                    Err(())
+                    ))
                 } else {
                     Ok(())
                 }
@@ -328,11 +336,9 @@ impl TypeChecker<'_> {
                 self.check_places_unique(hir, place_a, *base)
             }
             Expr::Call { .. } => todo!("Projections"),
-            _ => {
-                self.handler
-                    .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b)));
-                Err(())
-            }
+            _ => Err(self
+                .handler
+                .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b)))),
         }
     }
 }

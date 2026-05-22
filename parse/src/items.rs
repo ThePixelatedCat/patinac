@@ -23,10 +23,7 @@ impl Parser<'_> {
             TokKind::Fn => self.func_item().map(Item::from),
             TokKind::Record => self.record_item().map(Item::from),
             TokKind::Enum => self.enum_item().map(Item::from),
-            _ => {
-                self.err_next(ErrorKind::Unexpected, &["expected the start of an item"]);
-                Err(())
-            }
+            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
         }
     }
 

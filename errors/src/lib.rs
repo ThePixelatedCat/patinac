@@ -1,39 +1,21 @@
+use derive_more::{Display, Error};
+use smallvec::SmallVec;
 use smol_str::SmolStr;
 use span::Span;
 
-pub type Result<T, E> = std::result::Result<T, Error<E>>;
+pub type Result<T, E = HandledError> = std::result::Result<T, E>;
 
 pub const TEST_HANDLER: ErrorHandler = ErrorHandler::new(&|str, span| eprintln!("{span}: {str}"));
 pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _| {});
 
-#[derive(Clone)]
-pub struct ErrorHandler<'a> {
-    f: &'a dyn Fn(&str, Span),
-    has_err: bool,
-}
-impl<'a> ErrorHandler<'a> {
-    pub const fn new(f: &'a dyn Fn(&str, Span)) -> Self {
-        Self { f, has_err: false }
-    }
-
-    pub fn err<E: ToString>(&mut self, error: Error<E>) {
-        self.has_err = true;
-        (self.f)(&error.msg(), error.span());
-    }
-
-    pub const fn has_err(&self) -> bool {
-        self.has_err
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Error<E>(Box<ErrorInner<E>>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 struct ErrorInner<E> {
     kind: E,
     span: Span,
-    ctx: Vec<SmolStr>,
+    ctx: SmallVec<[SmolStr; 1]>,
 }
 
 impl<E> Error<E> {
@@ -41,7 +23,7 @@ impl<E> Error<E> {
         Self(Box::new(ErrorInner {
             kind: err,
             span: span.into(),
-            ctx: Vec::new(),
+            ctx: SmallVec::new(),
         }))
     }
 
@@ -76,26 +58,74 @@ impl<E: ToString> Error<E> {
     }
 }
 
-pub trait ResultExt {
-    #[must_use]
-    fn with_ctx(self, ctx: impl Into<SmolStr>) -> Self;
+#[derive(Clone)]
+pub struct ErrorHandler<'a> {
+    f: &'a dyn Fn(&str, Span),
+    has_err: bool,
+}
+impl<'a> ErrorHandler<'a> {
+    pub const fn new(f: &'a dyn Fn(&str, Span)) -> Self {
+        Self { f, has_err: false }
+    }
 
-    #[must_use]
-    fn with_static_ctx(self, ctx: &'static str) -> Self;
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "Semantically useful to enforce that an error can only be reported once"
+    )]
+    pub fn err<E: ToString>(&mut self, error: Error<E>) -> HandledError {
+        self.has_err = true;
+        (self.f)(&error.msg(), error.span());
+        HandledError
+    }
+
+    /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors
+    ///
+    /// # Errors
+    /// [`HandledError`] if this handler has reported any errors
+    pub fn checked<T>(&self, val: T) -> Result<T> {
+        if self.has_err {
+            Err(HandledError)
+        } else {
+            Ok(val)
+        }
+    }
 }
 
-impl<T, E> ResultExt for Result<T, E> {
-    fn with_ctx(self, ctx: impl Into<SmolStr>) -> Self {
-        match self {
-            ok @ Ok(_) => ok,
-            Err(e) => Err(e.with_ctx(ctx)),
-        }
-    }
+/// Indicates that an error occurred, and detailed information was provided to an [`ErrorHandler`]
+#[derive(Error, Debug, Display, Clone, Copy, PartialEq, Eq)]
+#[display("Detailed error was printed to stderr")]
+#[non_exhaustive]
+pub struct HandledError;
 
-    fn with_static_ctx(self, ctx: &'static str) -> Self {
-        match self {
-            ok @ Ok(_) => ok,
-            Err(e) => Err(e.with_static_ctx(ctx)),
-        }
+pub trait TryCollectEager<T, E> {
+    /// Equivalent to [`try_collect`][`Iterator::try_collect`],
+    /// but eagerly collecting all elements of the iterator before returning an error if any of the elements were errors.
+    /// Only for unit error types.
+    ///
+    /// # Errors
+    /// Returns the error value if any of the elements of the iterator were an error
+    fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, E>;
+}
+
+impl<T, I: Iterator<Item = Result<T>>> TryCollectEager<T, HandledError> for I {
+    fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, HandledError> {
+        try_collect_eager_helper(self, HandledError)
     }
+}
+
+impl<T, I: Iterator<Item = Result<T>>> TryCollectEager<T, ()> for I {
+    fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, ()> {
+        try_collect_eager_helper(self, ())
+    }
+}
+
+fn try_collect_eager_helper<T, U: FromIterator<T>, E>(
+    iter: impl Iterator<Item = Result<T>>,
+    err: E,
+) -> Result<U, E> {
+    let mut has_err = false;
+    let out = iter
+        .flat_map(|v| v.inspect_err(|_| has_err = true))
+        .collect();
+    if has_err { Err(err) } else { Ok(out) }
 }

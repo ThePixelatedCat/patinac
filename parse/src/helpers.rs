@@ -1,4 +1,5 @@
 use ast::{exprs::Binding, types::Ty};
+use errors::HandledError;
 use ident::{Ident, SpanIdent};
 use itertools::Itertools;
 use span::Span;
@@ -6,13 +7,20 @@ use span::Span;
 use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
-    pub(crate) fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind, ctx: &[&'static str]) {
-        let Ok(token) = self.next() else { return };
+    pub(crate) fn err_next(
+        &mut self,
+        f: impl Fn(TokKind) -> ErrorKind,
+        ctx: &[&'static str],
+    ) -> HandledError {
+        let token = match self.next() {
+            Ok(t) => t,
+            Err(e) => return e,
+        };
         let mut err = f(token.kind).span(token.span);
         for ctx in ctx {
             err = err.with_static_ctx(ctx);
         }
-        self.handler.err(err);
+        self.handler.err(err)
     }
 
     pub(crate) fn ty_annot(&mut self) -> Result<Option<Ty>> {

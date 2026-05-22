@@ -1,6 +1,7 @@
 use slotmap::new_key_type;
 
 use ident::SpanIdent;
+use smallvec::SmallVec;
 use span::Span;
 
 use crate::VarId;
@@ -17,8 +18,8 @@ pub enum Stmt {
 pub enum Expr {
     Ident(VarId),
     Lit(LitExpr),
-    Array(Vec<ExprId>),
-    Tuple(Vec<ExprId>),
+    Array(SmallVec<[ExprId; 3]>),
+    Tuple(SmallVec<[ExprId; 3]>),
     Infix {
         op: InfixOp,
         lhs: ExprId,
@@ -41,7 +42,7 @@ pub enum Expr {
         args: Vec<Arg>,
     },
     Lambda {
-        params: Vec<VarId>,
+        params: SmallVec<[VarId; 3]>,
         body: ExprId,
     },
     If {

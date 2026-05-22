@@ -1,13 +1,12 @@
 use std::{
     fmt::{self, Display},
+    ops::Deref,
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
 use derive_more::Display;
 use span::Span;
-
-type Symbol = string_interner::symbol::SymbolU32;
-type Interner = string_interner::DefaultStringInterner;
+use string_interner::{DefaultStringInterner as Interner, symbol::SymbolU32};
 
 fn interner() -> MutexGuard<'static, Interner> {
     static INTERNER: LazyLock<Mutex<Interner>> = LazyLock::new(Mutex::default);
@@ -21,7 +20,7 @@ fn get_str(interner: &Interner, ident: Ident) -> &str {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ident(Symbol);
+pub struct Ident(SymbolU32);
 
 impl fmt::Debug for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,6 +54,13 @@ impl Ident {
             span: span.into(),
         }
     }
+
+    pub fn str<'a>(self) -> StrGuard<'a> {
+        StrGuard {
+            ident: self,
+            guard: interner(),
+        }
+    }
 }
 
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
@@ -62,4 +68,17 @@ impl Ident {
 pub struct SpanIdent {
     pub ident: Ident,
     pub span: Span,
+}
+
+pub struct StrGuard<'a> {
+    ident: Ident,
+    guard: MutexGuard<'a, Interner>,
+}
+
+impl Deref for StrGuard<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        get_str(&self.guard, self.ident)
+    }
 }

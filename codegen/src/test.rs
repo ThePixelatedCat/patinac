@@ -6,8 +6,10 @@ use crate::{Codegen, CodegenMode, OptLevel};
 
 fn check(input: &str, opt_level: OptLevel) {
     let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
-    let hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
-    let ty_map = TypeChecker::new(TEST_HANDLER).type_program(&hir).unwrap();
+    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
+    let ty_map = TypeChecker::new(TEST_HANDLER)
+        .type_program(&mut hir)
+        .unwrap();
     let ctx = crate::create_ctx();
     Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
 }

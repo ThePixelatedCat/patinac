@@ -2,6 +2,7 @@ use derive_more::{From, IntoIterator};
 use slotmap::new_key_type;
 
 use ident::{Ident, SpanIdent};
+use smallvec::SmallVec;
 
 use crate::{VarId, exprs::ExprId, types::Ty};
 
@@ -34,12 +35,17 @@ impl Fields {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExecItem {
-    pub ident: VarId,
+    pub id: VarId,
     pub kind: ExecKind,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExecKind {
-    Const { val: ExprId },
-    Fn { params: Vec<VarId>, body: ExprId },
+    Const {
+        val: ExprId,
+    },
+    Fn {
+        params: SmallVec<[VarId; 3]>,
+        body: ExprId,
+    },
 }

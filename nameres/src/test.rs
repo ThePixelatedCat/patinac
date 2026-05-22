@@ -1,8 +1,8 @@
-use errors::TEST_HANDLER;
+use errors::{Result, TEST_HANDLER};
 use hir::Hir;
 use parse::Parser;
 
-use crate::{Scope, error::Result, exprs, resolve};
+use crate::{Scope, exprs, resolve};
 
 fn test_resolve_expr(input: &str) -> Result<Hir> {
     let expr = Parser::parse_expr(input).unwrap();

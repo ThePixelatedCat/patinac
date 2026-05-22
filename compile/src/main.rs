@@ -37,12 +37,12 @@ fn main() {
     };
 
     eprintln!("Resolving...");
-    let Ok(hir) = nameres::resolve(ast, handler.clone()) else {
+    let Ok(mut hir) = nameres::resolve(ast, handler.clone()) else {
         return;
     };
 
     eprintln!("Typechecking...");
-    let Ok(ty_map) = TypeChecker::new(handler.clone()).type_program(&hir) else {
+    let Ok(ty_map) = TypeChecker::new(handler.clone()).type_program(&mut hir) else {
         return;
     };
 

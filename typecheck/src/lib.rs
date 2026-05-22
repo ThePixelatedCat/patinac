@@ -8,12 +8,11 @@ mod unify;
 
 use ena::unify::{InPlaceUnificationTable, UnificationTable};
 
-use errors::ErrorHandler;
+use errors::{ErrorHandler, Result};
 use hir::{Hir, TyMap, VarId, exprs::ExprId, items::ExecKind, types::Ty};
 use slotmap::SecondaryMap;
 use span::Span;
 
-pub use crate::error::{Error, ErrorKind, Result};
 use crate::types::{PartialTy, TyVar};
 
 #[derive(Debug)]
@@ -44,23 +43,19 @@ impl<'err> TypeChecker<'err> {
 }
 
 impl TypeChecker<'_> {
-    pub fn type_program(&mut self, hir: &Hir) -> Result<TyMap> {
+    pub fn type_program(&mut self, hir: &mut Hir) -> Result<TyMap> {
         self.build_context(hir);
 
-        for exec in &hir.execs {
+        for exec in hir.execs() {
             match &exec.kind {
                 ExecKind::Const { val, .. } => {
                     if let Ok(val_ty) = self.infer_expr(hir, *val) {
-                        self.constrain_eq(
-                            val_ty,
-                            self.ctx[exec.ident].clone(),
-                            hir.expr_span(*val),
-                        );
+                        self.constrain_eq(val_ty, self.ctx[exec.id].clone(), hir.expr_span(*val));
                     }
                 }
                 ExecKind::Fn { body, .. } => {
                     if let Ok(body_ty) = self.infer_expr(hir, *body) {
-                        let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.ident] else {
+                        let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.id] else {
                             unreachable!("ICE: Function was given non-function type during nameres")
                         };
                         self.constrain_eq(body_ty, *ret_ty.clone(), hir.expr_span(*body));
@@ -84,9 +79,8 @@ impl TypeChecker<'_> {
 
     fn build_context(&mut self, hir: &Hir) {
         self.ctx = hir
-            .var_info
-            .iter()
-            .map(|(var, info)| (var, self.convert(info.ty.as_ref())))
+            .var_tys()
+            .map(|(var, ty)| (var, self.convert(ty)))
             .collect::<SecondaryMap<_, _>>();
     }
 

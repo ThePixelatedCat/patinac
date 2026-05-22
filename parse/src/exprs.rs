@@ -67,8 +67,7 @@ impl Parser<'_> {
                     TokKind::Match => ["`match` is postfix"].as_slice(),
                     _ => [].as_slice(),
                 };
-                self.err_next(ErrorKind::Unexpected, ctx);
-                Err(())
+                Err(self.err_next(ErrorKind::Unexpected, ctx))
             }
         }?;
 
@@ -170,10 +169,7 @@ impl Parser<'_> {
             TokKind::True => |_| LitExpr::Bool(true),
             TokKind::False => |_| LitExpr::Bool(false),
             _ => {
-                return {
-                    self.err_next(ErrorKind::Unexpected, &[]);
-                    Err(())
-                };
+                return Err(self.err_next(ErrorKind::Unexpected, &["Expected a literal"]));
             }
         };
 
@@ -336,13 +332,10 @@ impl Parser<'_> {
                 }
                 .span(span))
             }
-            _ => {
-                self.err_next(
-                    ErrorKind::Unexpected,
-                    &["Expected indexing, match, or field access"],
-                );
-                Err(())
-            }
+            _ => Err(self.err_next(
+                ErrorKind::Unexpected,
+                &["Expected indexing, match, or field access"],
+            )),
         }
     }
 

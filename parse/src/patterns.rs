@@ -48,10 +48,7 @@ impl Parser<'_> {
                 self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
                     .map(|(pats, span)| PatKind::Tuple(pats).span(start..span.end))
             }
-            _ => {
-                self.err_next(ErrorKind::Unexpected, &[]);
-                Err(())
-            }
+            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
     }
 }
