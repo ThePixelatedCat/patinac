@@ -24,7 +24,6 @@ itertools = "0.14.0"
 [dev-dependencies]
 # Internal
 parse = { path = "../parse", features = ["test"] }
-lex = { path = "../lex", features = ["test"] }
 # External
 
 [lints]

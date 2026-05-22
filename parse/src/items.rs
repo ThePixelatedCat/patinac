@@ -6,10 +6,9 @@ use ast::{
     types::TyKind,
 };
 use ident::{Ident, SpanIdent};
-use lex::TokKind;
 use span::Span;
 
-use crate::{ErrorKind, Parser, Result};
+use crate::{ErrorKind, Parser, Result, TokKind};
 
 #[derive(From, PartialEq, Debug)]
 pub enum Item {

@@ -1,13 +1,12 @@
 use ast::types::{Param, Return, Ty, TyKind};
-use lex::TokKind;
 use span::Span;
 
-use crate::{ErrorKind, Parser, Result};
+use crate::{ErrorKind, Parser, Result, TokKind};
 
 macro_rules! primitive {
     ($self:ident, $ty:ident) => {
         $self
-            .consume(lex::TokKind::$ty)
+            .consume($crate::TokKind::$ty)
             .map(|t| ast::types::TyKind::$ty.span(t.span))
     };
 }

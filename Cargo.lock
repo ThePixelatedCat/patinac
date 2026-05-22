@@ -201,7 +201,6 @@ dependencies = [
  "hir",
  "ident",
  "inkwell",
- "lex",
  "nameres",
  "parse",
  "slotmap",
@@ -508,19 +507,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
-name = "lex"
-version = "0.1.0"
-dependencies = [
- "displaydoc",
- "itertools",
- "logos",
- "pretty_assertions",
- "proptest",
- "proptest-derive",
- "span",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -602,7 +588,6 @@ dependencies = [
  "ident",
  "im-rc",
  "itertools",
- "lex",
  "parse",
  "smallvec",
  "span",
@@ -635,12 +620,14 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "derive_more",
+ "displaydoc",
  "errors",
  "ident",
  "itertools",
- "lex",
+ "logos",
  "pretty_assertions",
  "proptest",
+ "proptest-derive",
  "smallvec",
  "smol_str",
  "span",
@@ -1014,7 +1001,6 @@ dependencies = [
  "hir",
  "ident",
  "itertools",
- "lex",
  "nameres",
  "parse",
  "slotmap",

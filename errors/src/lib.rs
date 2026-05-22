@@ -18,10 +18,10 @@ impl<'a> ErrorHandler<'a> {
 
     pub fn err<E: ToString>(&mut self, error: Error<E>) {
         self.has_err = true;
-        (self.f)(&error.msg(), error.span())
+        (self.f)(&error.msg(), error.span());
     }
 
-    pub fn has_err(&self) -> bool {
+    pub const fn has_err(&self) -> bool {
         self.has_err
     }
 }

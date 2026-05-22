@@ -3,10 +3,9 @@ use std::str::FromStr;
 use itertools::Itertools;
 
 use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
-use lex::TokKind;
 use span::Span;
 
-use crate::{ErrorKind, Parser, Result};
+use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn stmt(&mut self) -> Result<Stmt> {

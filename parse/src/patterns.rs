@@ -1,8 +1,7 @@
 use ast::patterns::{Pat, PatKind};
 use ident::SpanIdent;
-use lex::TokKind;
 
-use crate::{ErrorKind, Parser, Result};
+use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn pattern(&mut self) -> Result<Pat> {

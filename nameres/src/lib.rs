@@ -84,12 +84,12 @@ fn find_main(error_handler: &mut ErrorHandler, execs: &[AstExecItem]) -> Result<
         if let AstExecKind::Fn { params, ret_ty, .. } = &item.kind
             && item.ident.ident == "main"
         {
-            if params.is_empty() && ret_ty.kind == AstTyKind::unit() {
-                return Ok(Some(idx));
+            return if params.is_empty() && ret_ty.kind == AstTyKind::unit() {
+                Ok(Some(idx))
             } else {
                 error_handler.err(ErrorKind::InvalidMain.span(item.ident.span));
-                return Err(());
-            }
+                Err(())
+            };
         }
     }
 

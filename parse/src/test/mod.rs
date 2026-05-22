@@ -1,8 +1,10 @@
 mod exprs;
 mod items;
-mod prop;
+mod lex;
 
+use itertools::Itertools;
 use pretty_assertions::assert_eq;
+use proptest::{collection::vec, prelude::*};
 use smallvec::smallvec;
 
 use ast::{
@@ -11,11 +13,11 @@ use ast::{
     patterns::PatKind,
     types::{Param as ParamTy, Return, TyKind},
 };
-use errors::TEST_HANDLER;
+use errors::{DUMMY_HANDLER, TEST_HANDLER};
 use ident::Ident;
 use span::Span;
 
-use crate::Parser;
+use crate::{Parser, TokKind};
 
 #[allow(clippy::too_many_lines, reason = "It's a test function")]
 #[test]
@@ -225,4 +227,17 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
             ])
         }
     );
+}
+
+proptest! {
+    #[test]
+    fn doesnt_crash_toks(in_toks in vec(TokKind::arb(), 8..=512)) {
+        let raw = in_toks.iter().map(|t| t.reverse()).join(" ");
+        let _ = Parser::new(&raw, DUMMY_HANDLER).parse();
+    }
+
+    #[test]
+    fn doesnt_crash_string(s in r"\PC*") {
+        let _ = Parser::new(&s, DUMMY_HANDLER).parse();
+    }
 }

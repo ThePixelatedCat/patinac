@@ -18,7 +18,6 @@ clap = { version = "4.6.1", features = [
 
 [dev-dependencies]
 # Internal
-lex.path = "../lex"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"

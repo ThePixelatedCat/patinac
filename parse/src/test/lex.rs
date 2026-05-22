@@ -4,13 +4,13 @@ use proptest::{collection::vec, prelude::*};
 
 use span::Span;
 
-use crate::{TokKind as T, token::Tok};
+use crate::{Tok, TokKind as T, lex};
 
 fn lex(src: &str) -> Result<Vec<Tok<'_>>, Vec<Span>> {
     let mut out = Vec::new();
     let mut errs = Vec::new();
 
-    for tok in crate::lex(src) {
+    for tok in lex::lex(src) {
         match tok {
             Ok(tok) => out.push(tok),
             Err(span) => errs.push(span),
@@ -245,7 +245,7 @@ proptest! {
 
     #[test]
     fn reverse(in_toks in vec(T::arb(), 8..=512)) {
-        let raw = in_toks.iter().map(T::reverse).join(" ");
+        let raw = in_toks.iter().map(|t| t.reverse()).join(" ");
 
         let out_toks: Vec<_> = lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();
 

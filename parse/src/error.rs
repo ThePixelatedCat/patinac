@@ -1,8 +1,10 @@
-use derive_more::Display;
 use std::result;
 
-use lex::TokKind;
+use derive_more::Display;
+
 use span::Span;
+
+use crate::TokKind;
 
 pub type Result<T> = result::Result<T, ()>;
 pub type Error = errors::Error<ErrorKind>;

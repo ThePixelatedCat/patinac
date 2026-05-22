@@ -1,8 +1,26 @@
+use std::iter::Peekable;
+
 use displaydoc::Display;
 use logos::Logos;
 #[cfg(any(test, feature = "test"))]
 use proptest::{arbitrary::Arbitrary, prelude::Strategy};
+
 use span::Span;
+
+pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok<'src>, Span>> + 'src>>;
+
+/// Tokenises raw, UTF-8 source code
+///
+/// # Errors
+/// If any invalid tokens are encountered, the function will continue, but will return an error with the span of every invalid token
+pub fn lex(src: &str) -> Lexer<'_> {
+    let iter = TokKind::lexer(src).spanned().map(|(tok, span)| match tok {
+        Ok(tok) => Ok(tok.span(src, span)),
+        Err(()) => Err(Span::from(span)),
+    });
+    let boxed_iter = Box::new(iter) as Box<dyn Iterator<Item = _>>;
+    boxed_iter.peekable()
+}
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Tok<'src> {
@@ -243,7 +261,7 @@ impl TokKind {
 
     /// Converts the token into a string that parses back into itself
     #[cfg(any(test, feature = "test"))]
-    pub fn reverse(&self) -> String {
+    pub fn reverse(self) -> String {
         match self {
             Self::IntLit => String::from("1"),
             Self::FloatLit => String::from("1.1"),

@@ -1,10 +1,9 @@
 use ast::{exprs::Binding, types::Ty};
 use ident::{Ident, SpanIdent};
 use itertools::Itertools;
-use lex::TokKind;
 use span::Span;
 
-use crate::{ErrorKind, Parser, Result};
+use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind, ctx: &[&'static str]) {

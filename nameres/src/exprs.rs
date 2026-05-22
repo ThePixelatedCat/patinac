@@ -18,7 +18,7 @@ use ident::Ident;
 
 use crate::{ErrorKind, Result, Scope};
 
-pub(super) fn resolve_expr(
+pub fn resolve_expr(
     adt_scope: &Scope<AdtId>,
     var_scope: &Scope<VarId>,
     hir: &mut Hir,

@@ -2,6 +2,7 @@ mod error;
 mod exprs;
 mod helpers;
 mod items;
+mod lex;
 mod patterns;
 #[cfg(test)]
 mod test;
