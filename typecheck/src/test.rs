@@ -6,7 +6,8 @@ use span::Span;
 use crate::{Result, Ty, TypeChecker};
 
 fn check_expr(input: &str) -> Result<Ty> {
-    let (expr, hir) = nameres::test_resolve_expr(Parser::parse_expr(input).unwrap()).unwrap();
+    let expr = Parser::parse_expr(input).unwrap();
+    let (expr, hir) = nameres::test_resolve_expr(expr).unwrap();
 
     let mut checker = TypeChecker::new(TEST_HANDLER);
     checker.build_context(&hir);

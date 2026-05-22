@@ -38,7 +38,18 @@ fn single_char_tokens() {
 
 #[test]
 fn unknown_input() {
-    assert_eq!(lex("$$$$$$$+"), Err(vec![Span::from(0..7)]));
+    assert_eq!(
+        lex("$$$$$$$+"),
+        Err(vec![
+            Span::from(0..1),
+            Span::from(1..2),
+            Span::from(2..3),
+            Span::from(3..4),
+            Span::from(4..5),
+            Span::from(5..6),
+            Span::from(6..7),
+        ])
+    );
 }
 
 #[test]

@@ -56,7 +56,7 @@ impl Parser<'_> {
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
 
-                let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
+                let start = mut_tok.map_or(pat.span.start, |tok| tok.span.start);
                 let span = Span::from(start..ty.span.end);
 
                 Ok(Param {

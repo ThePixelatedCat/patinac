@@ -7,6 +7,7 @@ use ast::{
     patterns::PatKind,
     types::TyKind,
 };
+use errors::TEST_HANDLER;
 use ident::Ident;
 use span::Span;
 
@@ -15,7 +16,11 @@ use crate::{Parser, items::Item};
 #[test]
 fn const_items() {
     assert_eq!(
-        Parser::parse_item(r#"const hello_world: String = "Hello, World!""#),
+        Parser::new(
+            r#"const hello_world: String = "Hello, World!""#,
+            TEST_HANDLER
+        )
+        .item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("hello_world").span(6..17),
             kind: ExecKind::Const {
@@ -26,7 +31,7 @@ fn const_items() {
     );
 
     assert_eq!(
-        Parser::parse_item("const id = fn(x) -> x"),
+        Parser::new("const id = fn(x) -> x", TEST_HANDLER).item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("id").span(6..8),
             kind: ExecKind::Const {
@@ -48,7 +53,7 @@ fn const_items() {
 #[test]
 fn record_items() {
     assert_eq!(
-        Parser::parse_item("record Point(x: Int, y: Int)"),
+        Parser::new("record Point(x: Int, y: Int)", TEST_HANDLER).item(),
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Point").span(7..12),
             generics: smallvec![],
@@ -71,7 +76,7 @@ record Foo[T, U](
     bar: Bar[Baz[T]]
     )";
     assert_eq!(
-        Parser::parse_item(input),
+        Parser::new(input, TEST_HANDLER).item(),
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Foo").span(8..11),
             generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
@@ -107,7 +112,7 @@ enum Foo {
 ";
 
     assert_eq!(
-        Parser::parse_item(input),
+        Parser::new(input, TEST_HANDLER).item(),
         Ok(Item::AdtItem(AdtItem {
             ident: Ident::new("Foo").span(6..9),
             generics: smallvec![],
@@ -144,7 +149,7 @@ enum Foo {
 #[test]
 fn function_items() {
     assert_eq!(
-        Parser::parse_item("fn sum(mut a: Byte, b: Byte) -> a = a + b"),
+        Parser::new("fn sum(mut a: Byte, b: Byte) -> a = a + b", TEST_HANDLER).item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
@@ -184,7 +189,19 @@ fn function_items() {
 
 #[test]
 fn malformed_items() {
-    assert!(Parser::parse_item("const fn: Int = 5").is_err(),);
-    assert!(Parser::parse_item("const NO_DICTS: [String: Int] = 5").is_err(),);
-    assert!(Parser::parse_item("let global = false").is_err(),);
+    assert!(
+        Parser::new("const fn: Int = 5", TEST_HANDLER)
+            .item()
+            .is_err(),
+    );
+    assert!(
+        Parser::new("const NO_DICTS: [String: Int] = 5", TEST_HANDLER)
+            .item()
+            .is_err(),
+    );
+    assert!(
+        Parser::new("let global = false", TEST_HANDLER)
+            .item()
+            .is_err(),
+    );
 }

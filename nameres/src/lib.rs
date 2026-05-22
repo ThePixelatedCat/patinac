@@ -355,10 +355,8 @@ fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
 
 #[cfg(any(test, feature = "test"))]
 pub fn test_resolve_expr(expr: ast::exprs::Expr) -> Result<(ExprId, Hir)> {
-    use errors::TEST_HANDLER;
-
     let mut hir = Hir::default();
-    let mut handler = TEST_HANDLER;
+    let mut handler = errors::TEST_HANDLER;
     let expr = exprs::resolve_expr(
         &Scope::default(),
         &Scope::default(),

@@ -403,7 +403,6 @@ dependencies = [
  "derive_more",
  "foldhash 0.2.0",
  "ident",
- "itertools",
  "slotmap",
  "span",
 ]

@@ -10,8 +10,6 @@ mod types;
 
 use ast::Ast;
 use errors::ErrorHandler;
-#[cfg(any(test, feature = "test"))]
-use errors::TEST_HANDLER;
 use lex::{Lexer, Tok, TokKind};
 
 pub use crate::error::{Error, ErrorKind, Result};
@@ -69,17 +67,7 @@ impl<'src> Parser<'src> {
     /// If the lexer produces an error
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr> {
-        Self::new(src, TEST_HANDLER).expr()
-    }
-
-    /// Lexes the source and parses an item in one function call, to simplify tests
-    /// # Errors
-    /// If the source cannot be parsed as an item
-    /// # Panics
-    /// If the lexer produces an error
-    #[cfg(any(test, feature = "test"))]
-    pub fn parse_item(src: &'src str) -> Result<Item> {
-        Self::new(src, TEST_HANDLER).item()
+        Self::new(src, errors::TEST_HANDLER).expr()
     }
 
     /// Get the next token, producing an error if we're at EOF
