@@ -116,21 +116,22 @@ fn resolve_adt_item(
             let fields: Vec<_> = fields
                 .into_iter()
                 .flat_map(|field| {
-                    Ok::<_, ()>((field.ident.ident, resolve_ty(adt_scope, handler, field.ty)?))
+                    Ok::<_, ()>((field.ident, resolve_ty(adt_scope, handler, field.ty)?))
                 })
                 .collect();
 
             if let Some((dup, _)) = fields.iter().duplicates_by(|(id, _)| id).next() {
-                handler.err(ErrorKind::DupFields(*dup).span(item.ident.span));
+                handler.err(ErrorKind::DupFields(dup.ident).span(item.ident.span));
                 return;
             }
 
             let constructor_ty = HirTy::Fn(
                 fields
                     .iter()
-                    .map(|(_, ty)| ParamTy {
-                        mutable: false,
+                    .map(|(ident, ty)| ParamTy {
                         ty: ty.clone(),
+                        mutable: false,
+                        span: ident.span,
                     })
                     .collect(),
                 Box::new(HirTy::Adt(id)),
@@ -213,6 +214,7 @@ fn resolve_exec_item(
                         ParamTy {
                             ty,
                             mutable: p.mutable,
+                            span: p.span,
                         },
                     ))
                 })
@@ -277,8 +279,9 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
                 .into_iter()
                 .map(|param| {
                     Ok(ParamTy {
-                        mutable: param.mutable,
                         ty: resolve_ty(adt_scope, handler, param.ty)?,
+                        mutable: param.mutable,
+                        span: param.span,
                     })
                 })
                 .try_collect()?;

@@ -17,6 +17,7 @@ use span::Span;
 
 use crate::Parser;
 
+#[allow(clippy::too_many_lines, reason = "It's a test function")]
 #[test]
 fn file() {
     #[rustfmt::skip]
@@ -34,9 +35,7 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
 record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
 ";
 
-    let items = Parser::new(lex::lex(input).unwrap(), TEST_HANDLER)
-        .parse()
-        .unwrap();
+    let items = Parser::new(input, TEST_HANDLER).parse().unwrap();
 
     assert_eq!(
         items.execs[0],
@@ -46,12 +45,12 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                 generics: smallvec![],
                 params: vec![
                     Param {
-                        mutable: true,
                         pat: PatKind::ident("x").span(18..19),
-                        ty: TyKind::Bool.span(21..25)
+                        ty: TyKind::Bool.span(21..25),
+                        mutable: true,
+                        span: Span::from(14..25)
                     },
                     Param {
-                        mutable: false,
                         pat: PatKind::ident("bar").span(27..30),
                         ty: TyKind::Adt(
                             Ident::new("Bar"),
@@ -64,14 +63,17 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                 TyKind::named("U").span(44..45)
                             ]
                         )
-                        .span(32..46)
+                        .span(32..46),
+                        mutable: false,
+                        span: Span::from(27..46)
                     }
                 ],
                 ret_mut: true,
                 ret_ty: TyKind::Fn(
                     vec![ParamTy {
+                        ty: TyKind::Int.span(60..63),
                         mutable: true,
-                        ty: TyKind::Int.span(60..63)
+                        span: Span::from(56..63)
                     }],
                     Return {
                         mutable: false,
@@ -99,8 +101,9 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                 rhs: ExprKind::Call {
                                     func: ExprKind::ident("sin").span(111..114).into(),
                                     args: vec![Arg {
+                                        val: ExprKind::ident("y").span(115..116),
                                         mutable: false,
-                                        val: ExprKind::ident("y").span(115..116)
+                                        span: Span::from(115..116)
                                     }]
                                 }
                                 .span(111..117)
@@ -166,12 +169,14 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                             func: ExprKind::ident("fizz").span(210..214).into(),
                                             args: vec![
                                                 Arg {
+                                                    val: ExprKind::int(3).span(215..216),
                                                     mutable: false,
-                                                    val: ExprKind::int(3).span(215..216)
+                                                    span: Span::from(215..216)
                                                 },
                                                 Arg {
+                                                    val: ExprKind::float(5.1).span(218..221),
                                                     mutable: false,
-                                                    val: ExprKind::float(5.1).span(218..221)
+                                                    span: Span::from(218..221)
                                                 }
                                             ]
                                         }

@@ -1,3 +1,4 @@
+use errors::TEST_HANDLER;
 use pretty_assertions::assert_eq;
 
 use ast::{
@@ -97,6 +98,7 @@ fn unop_expressions() {
     );
 }
 
+#[allow(clippy::too_many_lines, reason = "It's a test function")]
 #[test]
 fn binop_expressions() {
     assert_eq!(
@@ -244,16 +246,19 @@ fn compound_expressions() {
             func: ExprKind::ident("bar").span(0..3).into(),
             args: vec![
                 Arg {
+                    val: ExprKind::ident("x").span(11..12),
                     mutable: true,
-                    val: ExprKind::ident("x").span(11..12)
+                    span: Span::from(7..12)
                 },
                 Arg {
+                    val: ExprKind::int(2).span(14..15),
                     mutable: false,
-                    val: ExprKind::int(2).span(14..15)
+                    span: Span::from(14..15)
                 },
                 Arg {
+                    val: ExprKind::ident("bar").span(17..20),
                     mutable: false,
-                    val: ExprKind::ident("bar").span(17..20)
+                    span: Span::from(17..20)
                 },
             ],
         }
@@ -292,12 +297,14 @@ fn compound_expressions() {
             .into(),
             args: vec![
                 Arg {
+                    val: ExprKind::int(1).span(33..34),
                     mutable: true,
-                    val: ExprKind::int(1).span(33..34)
+                    span: Span::from(29..34)
                 },
                 Arg {
+                    val: ExprKind::int(2).span(36..37),
                     mutable: false,
-                    val: ExprKind::int(2).span(36..37).into()
+                    span: Span::from(36..37)
                 },
             ]
         }
@@ -338,7 +345,7 @@ fn compound_expressions() {
 #[test]
 fn var_expressions() {
     assert_eq!(
-        Parser::parse_stmt("let x = 7 + sin(3.0)"),
+        Parser::new("let x = 7 + sin(3.0)", TEST_HANDLER).stmt(),
         Ok(Stmt::Decl {
             binding: Binding {
                 mutable: false,
@@ -351,28 +358,28 @@ fn var_expressions() {
                 rhs: ExprKind::Call {
                     func: ExprKind::ident("sin").span(12..15).into(),
                     args: vec![Arg {
+                        val: ExprKind::float(3.0).span(16..19),
                         mutable: false,
-                        val: ExprKind::float(3.0).span(16..19)
+                        span: Span::from(16..19)
                     }]
                 }
                 .span(12..20)
                 .into()
             }
-            .span(8..20)
-            .into(),
+            .span(8..20),
             span: Span::from(0..20)
         })
     );
 
     assert_eq!(
-        Parser::parse_stmt("let mut y: Float = 7.0"),
+        Parser::new("let mut y: Float = 7.0", TEST_HANDLER).stmt(),
         Ok(Stmt::Decl {
             binding: Binding {
                 mutable: true,
                 pat: PatKind::ident("y").span(8..9),
                 ty: Some(TyKind::Float.span(11..16))
             },
-            val: ExprKind::float(7.0).span(19..22).into(),
+            val: ExprKind::float(7.0).span(19..22),
             span: Span::from(0..22)
         })
     );
@@ -524,7 +531,7 @@ if y < 3 {
                         pat: PatKind::ident("y").span(9..10),
                         ty: None
                     },
-                    val: ExprKind::int(5).span(13..14).into(),
+                    val: ExprKind::int(5).span(13..14),
                     span: Span::from(1..14)
                 },
                 Stmt::Expr(
@@ -566,7 +573,7 @@ if y < 3 {
                                         pat: PatKind::ident("a").span(50..51),
                                         ty: None
                                     },
-                                    val: ExprKind::int(5).span(54..55).into(),
+                                    val: ExprKind::int(5).span(54..55),
                                     span: Span::from(46..55)
                                 },
                                 Stmt::Expr(ExprKind::ident("a").span(60..61))
@@ -589,6 +596,10 @@ fn malformed_expressions() {
     assert!(Parser::parse_expr("let x = 7 + sin(3.0)").is_err(),);
     assert!(Parser::parse_expr("[1, 3, 4, 5").is_err(),);
     assert!(Parser::parse_expr("*5").is_err(),);
-    assert!(Parser::parse_stmt("let foo: fn(let UInt) -> UInt = fn()").is_err(),);
+    assert!(
+        Parser::new("let foo: fn(let UInt) -> UInt = fn()", TEST_HANDLER)
+            .stmt()
+            .is_err(),
+    );
     assert!(Parser::parse_expr("foo.0").is_err(),);
 }

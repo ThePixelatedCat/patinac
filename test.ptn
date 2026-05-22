@@ -1,9 +1,9 @@
 fn main() -> {
-    print fib(35.0)
+    print fib(35)
 }
 
-fn fib(n: Float): Float ->
-    if n < 2.0 { n } else { fib(n -. 1.0) +. fib(n -. 2.0) }
+fn fib(n: UInt): UInt ->
+    if n < 2 { n } else { fib(n - 1) + fib(n - 2) }
 
 fn foo(n: Float): Float ->
     if n >= 0.0 { n } else { 0.0 } *. 2.0

@@ -26,12 +26,12 @@ pub struct Hir {
 }
 
 impl Hir {
-    pub fn main(&self) -> Option<&ExecItem> {
+    pub const fn main(&self) -> Option<&ExecItem> {
         self.main.as_ref()
     }
 
     pub fn set_main(&mut self, main: ExecItem) {
-        self.main = Some(main)
+        self.main = Some(main);
     }
 }
 
@@ -109,7 +109,7 @@ impl Hir {
 pub struct TyMap(SecondaryMap<ExprId, Ty>, SecondaryMap<VarId, Ty>);
 
 impl TyMap {
-    pub fn new(expr_map: SecondaryMap<ExprId, Ty>, var_map: SecondaryMap<VarId, Ty>) -> Self {
+    pub const fn new(expr_map: SecondaryMap<ExprId, Ty>, var_map: SecondaryMap<VarId, Ty>) -> Self {
         Self(expr_map, var_map)
     }
 

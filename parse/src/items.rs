@@ -6,7 +6,7 @@ use ast::{
     types::TyKind,
 };
 use ident::{Ident, SpanIdent};
-use lex::{Tok, TokKind};
+use lex::TokKind;
 use span::Span;
 
 use crate::{ErrorKind, Parser, Result};
@@ -17,14 +17,17 @@ pub enum Item {
     AdtItem(AdtItem),
 }
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+impl Parser<'_> {
     pub(crate) fn item(&mut self) -> Result<Item> {
         match self.peek()? {
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
             TokKind::Record => self.record_item().map(Item::from),
             TokKind::Enum => self.enum_item().map(Item::from),
-            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
+            _ => {
+                self.err_next(ErrorKind::Unexpected, &["expected the start of an item"]);
+                Err(())
+            }
         }
     }
 
@@ -49,12 +52,20 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
         let (generics, _) = self.generic_params()?;
         let (params, params_span) = self.delimited_list(
             |this| {
-                let mutable = this.consume_at(TokKind::Mut).is_some();
+                let mut_tok = this.consume_at(TokKind::Mut);
                 let pat = this.pattern()?;
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
 
-                Ok(Param { mutable, pat, ty })
+                let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
+                let span = Span::from(start..ty.span.end);
+
+                Ok(Param {
+                    mutable: mut_tok.is_some(),
+                    pat,
+                    ty,
+                    span,
+                })
             },
             TokKind::LParen,
             TokKind::RParen,

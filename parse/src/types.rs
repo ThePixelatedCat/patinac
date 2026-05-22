@@ -1,5 +1,6 @@
 use ast::types::{Param, Return, Ty, TyKind};
-use lex::{Tok, TokKind};
+use lex::TokKind;
+use span::Span;
 
 use crate::{ErrorKind, Parser, Result};
 
@@ -11,7 +12,7 @@ macro_rules! primitive {
     };
 }
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+impl Parser<'_> {
     pub(crate) fn ty(&mut self) -> Result<Ty> {
         match self.peek()? {
             TokKind::Int => primitive!(self, Int),
@@ -31,9 +32,16 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
                 let (params, _) = self.delimited_list(
                     |this| {
+                        let mut_tok = this.consume_at(TokKind::Mut);
+                        let ty = this.ty()?;
+
+                        let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
+                        let span = Span::from(start..ty.span.end);
+
                         Ok(Param {
-                            mutable: this.consume_at(TokKind::Mut).is_some(),
-                            ty: this.ty()?,
+                            ty,
+                            mutable: mut_tok.is_some(),
+                            span,
                         })
                     },
                     TokKind::LParen,
@@ -65,7 +73,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
 
                 Ok(TyKind::Adt(ident.ident, generics).span(ident.span.start..end))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
+            _ => {
+                self.err_next(ErrorKind::Unexpected, &[]);
+                Err(())
+            }
         }
     }
 }

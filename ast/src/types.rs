@@ -61,8 +61,9 @@ impl TyKind {
 /// A parameter of a function type
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
-    pub mutable: bool,
     pub ty: Ty,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 impl Display for Param {

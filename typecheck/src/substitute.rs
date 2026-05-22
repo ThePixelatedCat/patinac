@@ -1,4 +1,4 @@
-use std::{mem, result};
+use std::mem;
 
 use itertools::Itertools;
 
@@ -11,8 +11,8 @@ use crate::error::{ErrorKind, Result};
 
 use crate::{PartialTy, TypeChecker};
 
-impl TypeChecker {
-    fn sub_ty(&mut self, ty: PartialTy) -> result::Result<Ty, ErrorKind> {
+impl TypeChecker<'_> {
+    fn sub_ty(&mut self, ty: PartialTy) -> Result<Ty> {
         match ty {
             PartialTy::Int => Ok(Ty::Int),
             PartialTy::UInt => Ok(Ty::UInt),
@@ -26,9 +26,10 @@ impl TypeChecker {
                 let params = params
                     .into_iter()
                     .map(|param| {
-                        self.sub_ty(param.ty).map(|ty| Param {
+                        Ok(Param {
+                            ty: self.sub_ty(param.ty)?,
                             mutable: param.mutable,
-                            ty,
+                            span: param.span,
                         })
                     })
                     .try_collect()?;
@@ -39,36 +40,43 @@ impl TypeChecker {
             PartialTy::Var(var) | PartialTy::IntVar(var) => self
                 .table
                 .probe_value(var)
-                .map_or(Err(ErrorKind::UninferredType), |ty| self.sub_ty(ty)),
+                .map_or(Err(()), |ty| self.sub_ty(ty)),
         }
     }
 
-    fn sub_tys(&mut self, tys: Vec<PartialTy>) -> result::Result<Vec<Ty>, ErrorKind> {
+    fn sub_tys(&mut self, tys: Vec<PartialTy>) -> Result<Vec<Ty>> {
         tys.into_iter().map(|ty| self.sub_ty(ty)).collect()
     }
 
     pub(super) fn sub_all(&mut self, hir: &Hir) -> Result<TyMap> {
+        // Don't even try if we have outstanding errors
+        if self.handler.has_err() {
+            return Err(());
+        }
+
         let expr_map = mem::take(&mut self.substitution)
             .into_iter()
-            .map(|(expr, ty)| {
-                Ok((
-                    expr,
-                    self.sub_ty(ty)
-                        .map_err(|err| err.span(hir.expr_span(expr)))?,
-                ))
+            .map(|(expr, ty)| match self.sub_ty(ty) {
+                Ok(ty) => Ok((expr, ty)),
+                Err(()) => {
+                    self.handler
+                        .err(ErrorKind::UninferredExprType.span(hir.expr_span(expr)));
+                    Err(())
+                }
             })
-            .try_collect()?;
+            .try_collect();
         let var_map = mem::take(&mut self.ctx)
             .into_iter()
-            .map(|(var, ty)| {
-                Ok((
-                    var,
-                    self.sub_ty(ty)
-                        .map_err(|err| err.span(hir.var_ident(var).span))?,
-                ))
+            .map(|(var, ty)| match self.sub_ty(ty) {
+                Ok(ty) => Ok((var, ty)),
+                Err(()) => {
+                    self.handler
+                        .err(ErrorKind::UninferredExprType.span(hir.var_ident(var).span));
+                    Err(())
+                }
             })
-            .try_collect()?;
+            .try_collect();
 
-        Ok(TyMap::new(expr_map, var_map))
+        Ok(TyMap::new(expr_map?, var_map?))
     }
 }

@@ -223,7 +223,6 @@ dependencies = [
  "clap",
  "codegen",
  "errors",
- "lex",
  "nameres",
  "parse",
  "span",
@@ -405,6 +404,7 @@ dependencies = [
  "derive_more",
  "foldhash 0.2.0",
  "ident",
+ "itertools",
  "slotmap",
  "span",
 ]
@@ -517,7 +517,6 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "proptest-derive",
- "rangemap",
  "span",
 ]
 
@@ -794,12 +793,6 @@ checksum = "6f97cdb2a36ed4183de61b2f824cc45c9f1037f28afe0a322e9fff4c108b5aaa"
 dependencies = [
  "rand_core 0.6.4",
 ]
-
-[[package]]
-name = "rangemap"
-version = "1.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "973443cf09a9c8656b574a866ab68dfa19f0867d0340648c7d2f6a71b8a8ea68"
 
 [[package]]
 name = "regex-automata"

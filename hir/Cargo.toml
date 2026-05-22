@@ -15,6 +15,7 @@ derive_more = { version = "2.1.1", features = [
 ], default-features = false }
 slotmap = "1.1.1"
 foldhash = "0.2.0"
+itertools = "0.14.0"
 
 [lints]
 workspace = true

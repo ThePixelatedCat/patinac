@@ -71,8 +71,9 @@ pub(super) fn resolve_expr(
                 .into_iter()
                 .map(|arg| {
                     Ok(Arg {
-                        mutable: arg.mutable,
                         val: resolve_expr(adt_scope, var_scope, hir, handler, arg.val)?,
+                        mutable: arg.mutable,
+                        span: arg.span,
                     })
                 })
                 .try_collect();

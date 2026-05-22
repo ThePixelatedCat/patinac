@@ -3,6 +3,7 @@ use std::fmt::Display;
 use ena::unify::{EqUnifyValue, UnifyKey};
 
 use hir::{items::AdtId, types::Ty};
+use span::Span;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
@@ -56,8 +57,9 @@ impl From<&Ty> for PartialTy {
                 let params = params
                     .iter()
                     .map(|param| Param {
-                        mutable: param.mutable,
                         ty: (&param.ty).into(),
+                        mutable: param.mutable,
+                        span: param.span,
                     })
                     .collect();
                 let ret = Box::new(Self::from(&**ret));
@@ -105,8 +107,9 @@ impl PartialTy {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
-    pub mutable: bool,
     pub ty: PartialTy,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 impl Display for Param {

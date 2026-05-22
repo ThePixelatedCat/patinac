@@ -1,7 +1,7 @@
 use derive_more::{From, IntoIterator};
 use slotmap::new_key_type;
 
-use ident::Ident;
+use ident::{Ident, SpanIdent};
 
 use crate::{VarId, exprs::ExprId, types::Ty};
 
@@ -13,17 +13,20 @@ pub struct AdtInfo {
 
 #[derive(From, Debug, Clone, PartialEq, Eq, IntoIterator)]
 #[into_iterator(ref, ref_mut, owned)]
-pub struct Fields(Vec<(Ident, Ty)>);
+pub struct Fields(Vec<(SpanIdent, Ty)>);
 impl Fields {
     pub fn get_ty(&self, ident: Ident) -> Option<&Ty> {
-        self.0.iter().find(|(id, _)| *id == ident).map(|(_, ty)| ty)
+        self.0
+            .iter()
+            .find(|(id, _)| id.ident == ident)
+            .map(|(_, ty)| ty)
     }
 
     pub fn get_idx(&self, ident: Ident) -> u32 {
         self.0
             .iter()
             .enumerate()
-            .find(|(_, (id, _))| *id == ident)
+            .find(|(_, (id, _))| id.ident == ident)
             .unwrap()
             .0 as u32
     }

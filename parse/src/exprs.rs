@@ -3,12 +3,12 @@ use std::str::FromStr;
 use itertools::Itertools;
 
 use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
-use lex::{Tok, TokKind};
+use lex::TokKind;
 use span::Span;
 
 use crate::{ErrorKind, Parser, Result};
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+impl Parser<'_> {
     pub(crate) fn stmt(&mut self) -> Result<Stmt> {
         match self.peek()? {
             TokKind::Let => {
@@ -60,44 +60,50 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 let span = start..expr.span.end;
                 Ok(ExprKind::Print(Box::new(expr)).span(span))
             }
-            TokKind::Let => Err(self.err_next(
-                ErrorKind::Unexpected,
-                &["`let` is a statement, and can only be used within a block"],
-            )),
-            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
+            err_tok => {
+                let ctx = match err_tok {
+                    TokKind::Let => {
+                        ["`let` is a statement, and can only be used within a block"].as_slice()
+                    }
+                    TokKind::Match => ["`match` is postfix"].as_slice(),
+                    _ => [].as_slice(),
+                };
+                self.err_next(ErrorKind::Unexpected, ctx);
+                Err(())
+            }
         }?;
 
         loop {
             let op = match self.try_peek() {
                 // Attach suffix to current lhs and re-loop
-                Ok(TokKind::Dot) => {
+                Some(TokKind::Dot) => {
                     lhs = self.dot_suffixes(lhs)?;
                     continue;
                 }
-                Ok(TokKind::LParen) => {
+                Some(TokKind::LParen) => {
                     lhs = self.call_suffix(lhs)?;
                     continue;
                 }
                 // Continue current iteration with given binop
-                Ok(TokKind::Eq) => InfixOp::Assign,
-                Ok(TokKind::Plus) => InfixOp::Add,
-                Ok(TokKind::PlusF) => InfixOp::AddF,
-                Ok(TokKind::Minus) => InfixOp::Sub,
-                Ok(TokKind::MinusF) => InfixOp::SubF,
-                Ok(TokKind::Times) => InfixOp::Mul,
-                Ok(TokKind::TimesF) => InfixOp::MulF,
-                Ok(TokKind::Divide) => InfixOp::Div,
-                Ok(TokKind::DivideF) => InfixOp::DivF,
-                Ok(TokKind::Exponent) => InfixOp::Exp,
-                Ok(TokKind::Eqq) => InfixOp::Eqq,
-                Ok(TokKind::Neq) => InfixOp::Neq,
-                Ok(TokKind::And) => InfixOp::And,
-                Ok(TokKind::Or) => InfixOp::Or,
-                Ok(TokKind::Xor) => InfixOp::Xor,
-                Ok(TokKind::Lt) => InfixOp::Lt,
-                Ok(TokKind::Leq) => InfixOp::Leq,
-                Ok(TokKind::Gt) => InfixOp::Gt,
-                Ok(TokKind::Geq) => InfixOp::Geq,
+                Some(TokKind::Eq) => InfixOp::Assign,
+                Some(TokKind::Plus) => InfixOp::Add,
+                Some(TokKind::PlusF) => InfixOp::AddF,
+                Some(TokKind::Minus) => InfixOp::Sub,
+                Some(TokKind::MinusF) => InfixOp::SubF,
+                Some(TokKind::Times) => InfixOp::Mul,
+                Some(TokKind::TimesF) => InfixOp::MulF,
+                Some(TokKind::Divide) => InfixOp::Div,
+                Some(TokKind::DivideF) => InfixOp::DivF,
+                Some(TokKind::Exponent) => InfixOp::Exp,
+                Some(TokKind::Eqq) => InfixOp::Eqq,
+                Some(TokKind::Neq) => InfixOp::Neq,
+                Some(TokKind::And) => InfixOp::And,
+                Some(TokKind::Or) => InfixOp::Or,
+                Some(TokKind::Xor) => InfixOp::Xor,
+                Some(TokKind::Lt) => InfixOp::Lt,
+                Some(TokKind::Leq) => InfixOp::Leq,
+                Some(TokKind::Gt) => InfixOp::Gt,
+                Some(TokKind::Geq) => InfixOp::Geq,
                 _ => break,
             };
 
@@ -164,7 +170,12 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
             }
             TokKind::True => |_| LitExpr::Bool(true),
             TokKind::False => |_| LitExpr::Bool(false),
-            _ => return Err(self.err_next(ErrorKind::Unexpected, &[])),
+            _ => {
+                return {
+                    self.err_next(ErrorKind::Unexpected, &[]);
+                    Err(())
+                };
+            }
         };
 
         self.consume(tok).map(|tok| (f(tok.src), tok.span))
@@ -326,7 +337,13 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 }
                 .span(span))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected, &["Expected `[` or identifier"])),
+            _ => {
+                self.err_next(
+                    ErrorKind::Unexpected,
+                    &["Expected indexing, match, or field access"],
+                );
+                Err(())
+            }
         }
     }
 
@@ -344,9 +361,16 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
     }
 
     fn arg(&mut self) -> Result<Arg> {
+        let mut_tok = self.consume_at(TokKind::Mut);
+        let val = self.expr()?;
+
+        let start = mut_tok.map_or(val.span.start, |tok| tok.span.start);
+        let span = Span::from(start..val.span.end);
+
         Ok(Arg {
-            mutable: self.consume_at(TokKind::Mut).is_some(),
-            val: self.expr()?,
+            mutable: mut_tok.is_some(),
+            val,
+            span,
         })
     }
 }

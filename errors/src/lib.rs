@@ -3,7 +3,7 @@ use span::Span;
 
 pub type Result<T, E> = std::result::Result<T, Error<E>>;
 
-pub const TEST_HANDLER: ErrorHandler = ErrorHandler::new(&|str, _| eprintln!("{str}"));
+pub const TEST_HANDLER: ErrorHandler = ErrorHandler::new(&|str, span| eprintln!("{span}: {str}"));
 pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _| {});
 
 #[derive(Clone)]
@@ -21,7 +21,7 @@ impl<'a> ErrorHandler<'a> {
         (self.f)(&error.msg(), error.span())
     }
 
-    pub fn has_err(self) -> bool {
+    pub fn has_err(&self) -> bool {
         self.has_err
     }
 }

@@ -29,36 +29,21 @@ fn main() {
 
     let handler_inner: &dyn Fn(&str, Span) =
         &|msg, span| print_diagnostic(DiagnosticKind::Error, msg, span, &src);
-    let err_handler = ErrorHandler::new(handler_inner);
-
-    eprintln!("Lexing...");
-    let toks = match lex::lex(&src) {
-        Ok(tokens) => tokens,
-        Err(spans) => {
-            for span in spans {
-                print_diagnostic(DiagnosticKind::Error, "invalid token", span, &src);
-            }
-            return;
-        }
-    };
+    let handler = ErrorHandler::new(handler_inner);
 
     eprintln!("Parsing...");
-    let Ok(ast) = Parser::new(toks, err_handler.clone()).parse() else {
+    let Ok(ast) = Parser::new(&src, handler.clone()).parse() else {
         return;
     };
 
     eprintln!("Resolving...");
-    let Ok(hir) = nameres::resolve(ast, err_handler.clone()) else {
+    let Ok(hir) = nameres::resolve(ast, handler.clone()) else {
         return;
     };
 
     eprintln!("Typechecking...");
-    let ty_map = match TypeChecker::default().type_program(&hir) {
-        Ok(v) => v,
-        Err(err) => {
-            print_diagnostic(DiagnosticKind::Error, &err.msg(), err.span(), &src);
-            return;
-        }
+    let Ok(ty_map) = TypeChecker::new(handler.clone()).type_program(&hir) else {
+        return;
     };
 
     eprintln!("Compiling...");
@@ -72,7 +57,7 @@ fn main() {
         &hir,
         &ty_map,
         &ctx,
-        &cli.src_path.file_name().unwrap().to_str().unwrap(),
+        cli.src_path.file_name().unwrap().to_str().unwrap(),
     )
     .codegen(cli.opt_level, mode);
 

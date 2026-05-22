@@ -1,12 +1,12 @@
 use ast::{exprs::Binding, types::Ty};
 use ident::{Ident, SpanIdent};
 use itertools::Itertools;
-use lex::{Tok, TokKind};
+use lex::TokKind;
 use span::Span;
 
 use crate::{ErrorKind, Parser, Result};
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+impl Parser<'_> {
     pub(crate) fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind, ctx: &[&'static str]) {
         let Ok(token) = self.next() else { return };
         let mut err = f(token.kind).span(token.span);

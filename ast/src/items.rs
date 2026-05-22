@@ -1,6 +1,7 @@
 use smallvec::SmallVec;
 
 use ident::SpanIdent;
+use span::Span;
 
 use crate::{exprs::Expr, patterns::Pat, types::Ty};
 
@@ -27,9 +28,10 @@ pub enum ExecKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
-    pub mutable: bool,
     pub pat: Pat,
     pub ty: Ty,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

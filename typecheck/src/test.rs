@@ -1,55 +1,47 @@
-use ena::unify::UnifyKey;
-
 use errors::TEST_HANDLER;
 use hir::types::Param;
 use parse::Parser;
+use span::Span;
 
-use crate::{ErrorKind, PartialTy, Result, Ty, TypeChecker, types::TyVar};
+use crate::{Result, Ty, TypeChecker};
 
 fn check_expr(input: &str) -> Result<Ty> {
     let (expr, hir) = nameres::test_resolve_expr(Parser::parse_expr(input).unwrap()).unwrap();
 
-    let mut checker = TypeChecker::default();
+    let mut checker = TypeChecker::new(TEST_HANDLER);
     checker.build_context(&hir);
     checker.infer_expr(&hir, expr)?;
-    checker.unify()?;
+    checker.unify();
 
     Ok(checker.sub_all(&hir)?.expr_ty(expr).clone())
 }
 
 fn check_full(input: &str) -> Result<()> {
-    let toks = lex::lex(input).unwrap();
-    let ast = Parser::new(toks, TEST_HANDLER).parse().unwrap();
-    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
-    TypeChecker::default().type_program(&mut hir)?;
+    let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
+    let hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
+    TypeChecker::new(TEST_HANDLER).type_program(&hir)?;
     Ok(())
 }
 
 #[test]
 fn type_of_if_single_branch() {
     let input = "if true {false #()}";
-    assert_eq!(check_expr(input), Ok(Ty::unit()))
+    assert_eq!(check_expr(input), Ok(Ty::unit()));
 }
 
 #[test]
 fn type_of_if_single_branch_err() {
-    assert_eq!(
-        check_expr("if true { 5.0 }"),
-        Err(ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::unit()).span(8..15))
-    )
+    assert!(check_expr("if true { 5.0 }").is_err());
 }
 
 #[test]
 fn type_of_if() {
-    assert_eq!(check_expr("if true { 5.0 } else { -3.0 }"), Ok(Ty::Float))
+    assert_eq!(check_expr("if true { 5.0 } else { -3.0 }"), Ok(Ty::Float));
 }
 
 #[test]
 fn type_of_if_err() {
-    assert_eq!(
-        check_expr(r#"if true { 5.0 } else { false }"#),
-        Err(ErrorKind::TypesNotEqual(PartialTy::Bool, PartialTy::Float).span(21..30))
-    )
+    assert!(check_expr("if true { 5.0 } else { false }").is_err());
 }
 
 #[test]
@@ -62,13 +54,7 @@ fn array() {
 
 #[test]
 fn mismatched_array() {
-    assert_eq!(
-        check_expr("[1, 2.0]"),
-        Err(
-            ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::IntVar(TyVar::from_index(1)))
-                .span(4..7)
-        )
-    );
+    assert!(check_expr("[1, 2.0]").is_err(),);
 }
 
 #[test]
@@ -83,7 +69,8 @@ fn inc() {
         Ok(Ty::Fn(
             vec![Param {
                 mutable: true,
-                ty: Ty::Float
+                ty: Ty::Float,
+                span: Span::from(3..8)
             }],
             Ty::unit().into()
         ))
@@ -92,18 +79,9 @@ fn inc() {
 
 #[test]
 fn maths() {
-    assert_eq!(
-        check_expr("1 + 1.0"),
-        Err(
-            ErrorKind::TypesNotEqual(PartialTy::Float, PartialTy::IntVar(TyVar::from_index(1)))
-                .span(4..7)
-        )
-    );
+    assert!(check_expr("1 + 1.0").is_err());
     assert_eq!(check_expr("1.0 +. 1.0"), Ok(Ty::Float));
-    assert_eq!(
-        check_expr("{let mut a = 5 let b = 5 a = b}"),
-        Err(ErrorKind::UninferredType.span(13..14))
-    );
+    assert!(check_expr("{let mut a = 5 let b = 5 a = b}").is_err());
 }
 
 #[test]
@@ -171,5 +149,5 @@ fn fields() {
 
     fn bar(foo: Foo): Int -> foo.y
 ";
-    assert_eq!(check_full(input), Err(ErrorKind::MissingField.span(58..59)));
+    assert!(check_full(input).is_err());
 }

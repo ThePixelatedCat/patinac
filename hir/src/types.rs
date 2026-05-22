@@ -1,3 +1,5 @@
+use span::Span;
+
 use crate::AdtId;
 
 /// The kinds of types
@@ -27,4 +29,5 @@ impl Ty {
 pub struct Param {
     pub ty: Ty,
     pub mutable: bool,
+    pub span: Span,
 }

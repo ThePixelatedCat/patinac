@@ -1,8 +1,10 @@
 use std::{iter, mem};
 
-use crate::{ErrorKind, PartialTy, TyVar, TypeChecker, types::Param};
+use span::Span;
 
-fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
+use crate::{Error, ErrorKind, PartialTy, TyVar, TypeChecker, types::Param};
+
+fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error> {
     match ty {
         PartialTy::Int
         | PartialTy::UInt
@@ -11,17 +13,17 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
         | PartialTy::Bool
         | PartialTy::Char
         | PartialTy::Adt(_) => Ok(()),
-        PartialTy::Tuple(tys) => tys.iter().try_for_each(|ty| occurs_check(ty, var)),
-        PartialTy::Array(ty) => occurs_check(ty, var),
+        PartialTy::Tuple(tys) => tys.iter().try_for_each(|ty| occurs_check(span, ty, var)),
+        PartialTy::Array(ty) => occurs_check(span, ty, var),
         PartialTy::Fn(params, ret) => {
             params
                 .iter()
-                .try_for_each(|param| occurs_check(&param.ty, var))?;
-            occurs_check(&ret, var)
+                .try_for_each(|param| occurs_check(param.span, &param.ty, var))?;
+            occurs_check(span, ret, var)
         }
         PartialTy::Var(this_var) | PartialTy::IntVar(this_var) => {
             if *this_var == var {
-                Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)))
+                Err(ErrorKind::Infinite(var, PartialTy::Var(*this_var)).span(span))
             } else {
                 Ok(())
             }
@@ -29,14 +31,14 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> Result<(), ErrorKind> {
     }
 }
 
-impl TypeChecker {
+impl TypeChecker<'_> {
     /// Unifies all types in the unification table, clearing all of our constraints in the process
-    pub(super) fn unify(&mut self) -> crate::Result<()> {
+    pub(super) fn unify(&mut self) {
         for constr in mem::take(&mut self.constraints) {
-            self.unify_ty_ty(constr.ty_a, constr.ty_b)
-                .map_err(|kind| kind.span(constr.span))?;
+            if let Err(err) = self.unify_ty_ty(constr.span, constr.ty_a, constr.ty_b) {
+                self.handler.err(err);
+            }
         }
-        Ok(())
     }
 
     /// Recursively traverse two types until at least one is a type variable,
@@ -45,9 +47,10 @@ impl TypeChecker {
     /// at which point we error
     pub(super) fn unify_ty_ty(
         &mut self,
+        span: Span,
         unnorm_lhs: PartialTy,
         unnorm_rhs: PartialTy,
-    ) -> Result<(), ErrorKind> {
+    ) -> Result<(), Error> {
         let lhs = self.normalize_ty(unnorm_lhs);
         let rhs = self.normalize_ty(unnorm_rhs);
 
@@ -63,36 +66,39 @@ impl TypeChecker {
                     return Err(ErrorKind::TypesNotEqual(
                         PartialTy::Tuple(lhs_inners),
                         PartialTy::Tuple(rhs_inners),
-                    ));
+                    )
+                    .span(span));
                 }
-                self.unify_tys(lhs_inners, rhs_inners)
+                self.unify_tys(span, lhs_inners, rhs_inners)
             }
             (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
-                self.unify_ty_ty(*lhs_inner, *rhs_inner)
+                self.unify_ty_ty(span, *lhs_inner, *rhs_inner)
             }
             (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
                 if lhs_params.len() != rhs_params.len() {
                     return Err(ErrorKind::ParamCount(
                         PartialTy::Fn(lhs_params, lhs_ret),
                         PartialTy::Fn(rhs_params, rhs_ret),
-                    ));
+                    )
+                    .span(span));
                 }
                 iter::zip(lhs_params, rhs_params).try_for_each(|(l, r)| {
                     if l.mutable != r.mutable {
-                        return Err(ErrorKind::ParamMutability(l, r));
+                        let span = r.span;
+                        return Err(ErrorKind::ParamMutability(l, r).span(span));
                     }
-                    self.unify_ty_ty(l.ty, r.ty)
+                    self.unify_ty_ty(r.span, l.ty, r.ty)
                 })?;
-                self.unify_ty_ty(*lhs_ret, *rhs_ret)
+                self.unify_ty_ty(span, *lhs_ret, *rhs_ret)
             }
             (PartialTy::Adt(a), PartialTy::Adt(b)) if a == b => Ok(()),
             (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
             | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
-                self.unify_var_var(lhs_var, rhs_var)
+                self.unify_var_var(span, lhs_var, rhs_var)
             }
             (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
-                occurs_check(&ty, var)?;
-                self.unify_var_value(var, ty)
+                occurs_check(span, &ty, var)?;
+                self.unify_var_value(span, var, ty)
             }
             (
                 PartialTy::IntVar(int_var),
@@ -101,32 +107,33 @@ impl TypeChecker {
             | (
                 int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
                 PartialTy::IntVar(int_var),
-            ) => self.unify_var_value(int_var, int_ty),
-            (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs)),
+            ) => self.unify_var_value(span, int_var, int_ty),
+            (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs).span(span)),
         }
     }
 
     fn unify_tys(
         &mut self,
+        constr_span: Span,
         left_tys: Vec<PartialTy>,
         right_tys: Vec<PartialTy>,
-    ) -> Result<(), ErrorKind> {
-        iter::zip(left_tys, right_tys).try_for_each(|(l, r)| self.unify_ty_ty(l, r))
+    ) -> Result<(), Error> {
+        iter::zip(left_tys, right_tys).try_for_each(|(l, r)| self.unify_ty_ty(constr_span, l, r))
     }
 
-    fn unify_var_var(&mut self, lhs: TyVar, rhs: TyVar) -> Result<(), ErrorKind> {
+    fn unify_var_var(&mut self, span: Span, lhs: TyVar, rhs: TyVar) -> Result<(), Error> {
         self.table
             .unify_var_var(lhs, rhs)
-            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r))
+            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))
     }
 
-    fn unify_var_value(&mut self, var: TyVar, ty: PartialTy) -> Result<(), ErrorKind> {
+    fn unify_var_value(&mut self, span: Span, var: TyVar, ty: PartialTy) -> Result<(), Error> {
         self.table
             .unify_var_value(var, Some(ty))
-            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r))
+            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))
     }
 
-    fn normalize_ty(&mut self, ty: PartialTy) -> PartialTy {
+    pub(crate) fn normalize_ty(&mut self, ty: PartialTy) -> PartialTy {
         match ty {
             PartialTy::Int
             | PartialTy::UInt

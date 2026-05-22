@@ -15,6 +15,8 @@ impl ErrorKind {
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
+    #[display("invalid token")]
+    BadToken,
     #[display("expected {expected}, found {found}")]
     Mismatched { expected: TokKind, found: TokKind },
     #[display("Unexpected token {_0}")]

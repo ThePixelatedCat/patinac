@@ -74,8 +74,9 @@ pub enum LitExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
-    pub mutable: bool,
     pub val: ExprId,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

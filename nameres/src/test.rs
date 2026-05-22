@@ -20,9 +20,7 @@ fn test_resolve_expr(input: &str) -> Result<Hir> {
 
 fn test_resolve_full(input: &str) -> Result<Hir> {
     resolve(
-        Parser::new(lex::lex(input).unwrap(), TEST_HANDLER)
-            .parse()
-            .unwrap(),
+        Parser::new(input, TEST_HANDLER).parse().unwrap(),
         TEST_HANDLER,
     )
 }

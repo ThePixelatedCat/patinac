@@ -7,7 +7,6 @@ edition = "2024"
 # Internal
 span.path = "../span"
 errors.path = "../errors"
-lex.path = "../lex"
 ast.path = "../ast"
 parse.path = "../parse"
 nameres.path = "../nameres"

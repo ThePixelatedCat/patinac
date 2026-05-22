@@ -133,8 +133,9 @@ pub struct Binding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arg {
-    pub mutable: bool,
     pub val: Expr,
+    pub mutable: bool,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]

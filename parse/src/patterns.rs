@@ -1,10 +1,10 @@
 use ast::patterns::{Pat, PatKind};
 use ident::SpanIdent;
-use lex::{Tok, TokKind};
+use lex::TokKind;
 
 use crate::{ErrorKind, Parser, Result};
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
+impl Parser<'_> {
     pub(crate) fn pattern(&mut self) -> Result<Pat> {
         match self.peek()? {
             TokKind::Minus
@@ -49,7 +49,10 @@ impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
                 self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
                     .map(|(pats, span)| PatKind::Tuple(pats).span(start..span.end))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
+            _ => {
+                self.err_next(ErrorKind::Unexpected, &[]);
+                Err(())
+            }
         }
     }
 }

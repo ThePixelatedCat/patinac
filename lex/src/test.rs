@@ -4,7 +4,21 @@ use proptest::{collection::vec, prelude::*};
 
 use span::Span;
 
-use crate::{TokKind as T, lex, token::Tok};
+use crate::{TokKind as T, token::Tok};
+
+fn lex(src: &str) -> Result<Vec<Tok<'_>>, Vec<Span>> {
+    let mut out = Vec::new();
+    let mut errs = Vec::new();
+
+    for tok in crate::lex(src) {
+        match tok {
+            Ok(tok) => out.push(tok),
+            Err(span) => errs.push(span),
+        }
+    }
+
+    if errs.is_empty() { Ok(out) } else { Err(errs) }
+}
 
 #[test]
 fn single_char_tokens() {
@@ -235,6 +249,6 @@ proptest! {
 
         let out_toks: Vec<_> = lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();
 
-        prop_assert_eq!(in_toks, out_toks)
+        prop_assert_eq!(in_toks, out_toks);
     }
 }

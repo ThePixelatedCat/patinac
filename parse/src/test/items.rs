@@ -8,6 +8,7 @@ use ast::{
     types::TyKind,
 };
 use ident::Ident;
+use span::Span;
 
 use crate::{Parser, items::Item};
 
@@ -137,7 +138,7 @@ enum Foo {
                 },
             ])
         }))
-    )
+    );
 }
 
 #[test]
@@ -150,14 +151,16 @@ fn function_items() {
                 generics: smallvec![],
                 params: vec![
                     Param {
-                        mutable: true,
                         pat: PatKind::ident("a").span(11..12),
-                        ty: TyKind::Byte.span(14..18)
+                        ty: TyKind::Byte.span(14..18),
+                        mutable: true,
+                        span: Span::from(7..18)
                     },
                     Param {
-                        mutable: false,
                         pat: PatKind::ident("b").span(20..21),
-                        ty: TyKind::Byte.span(23..27)
+                        ty: TyKind::Byte.span(23..27),
+                        mutable: false,
+                        span: Span::from(20..27)
                     }
                 ],
                 ret_mut: false,
@@ -176,7 +179,7 @@ fn function_items() {
                 .span(32..41)
             }
         }))
-    )
+    );
 }
 
 #[test]

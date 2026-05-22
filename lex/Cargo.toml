@@ -9,7 +9,6 @@ span.path = "../span"
 # External
 displaydoc = "0.2.5"
 logos = "0.16.1"
-rangemap = "1.7.1"
 proptest-derive = { version = "0.8.0", optional = true }
 proptest = { version = "1.11.0", optional = true }
 

@@ -5,17 +5,18 @@ use hir::{
     exprs::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
 };
 use ident::SpanIdent;
+use span::Span;
 
 use crate::{ErrorKind, PartialTy, Result, TypeChecker, types::Param};
 
-impl TypeChecker {
+impl TypeChecker<'_> {
     pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> Result<PartialTy> {
         match hir.expr_info(expr) {
             Expr::Ident(id) => Ok(self.ctx[*id].clone()),
             Expr::Lit(lit) => Ok(self.infer_lit(lit)),
             Expr::Array(exprs) => self.infer_array(hir, exprs),
             Expr::Tuple(exprs) => self.infer_tuple(hir, exprs),
-            Expr::Call { func, args } => self.infer_call(hir, *func, args),
+            Expr::Call { func, args } => self.infer_call(hir, hir.expr_span(expr), *func, args),
             Expr::Infix { op, lhs, rhs } => self.infer_infix(hir, *op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.infer_prefix(hir, *op, *expr),
             Expr::Index { arr, idx } => self.infer_indexing(hir, *arr, *idx),
@@ -40,7 +41,7 @@ impl TypeChecker {
     }
 
     fn infer_exprs(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<Vec<PartialTy>> {
-        exprs.iter().map(|&e| self.infer_expr(hir, e)).collect()
+        exprs.iter().map(|&e| self.infer_expr(hir, e)).try_collect()
     }
 
     fn infer_lit(&mut self, lit: &LitExpr) -> PartialTy {
@@ -55,10 +56,16 @@ impl TypeChecker {
 
     fn infer_array(&mut self, hir: &Hir, exprs: &[ExprId]) -> Result<PartialTy> {
         let inner_ty = self.fresh_var();
-        for &expr in exprs {
-            let ty = self.infer_expr(hir, expr)?;
-            self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(expr));
-        }
+
+        let () = exprs
+            .iter()
+            .map(|expr| {
+                let ty = self.infer_expr(hir, *expr)?;
+                self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(*expr));
+                Ok(())
+            })
+            .try_collect()?;
+
         Ok(PartialTy::Array(Box::new(inner_ty)))
     }
 
@@ -67,36 +74,41 @@ impl TypeChecker {
         Ok(PartialTy::Tuple(tys))
     }
 
-    fn infer_call(&mut self, hir: &Hir, func: ExprId, args: &[Arg]) -> Result<PartialTy> {
+    fn infer_call(
+        &mut self,
+        hir: &Hir,
+        span: Span,
+        func: ExprId,
+        args: &[Arg],
+    ) -> Result<PartialTy> {
+        let func_ty = self.infer_expr(hir, func);
+        let arg_tys = args
+            .iter()
+            .map(|arg| {
+                let ty = self.infer_expr(hir, arg.val);
+                if arg.mutable {
+                    self.check_place_mut(hir, arg.val)?;
+                }
+                Ok(Param {
+                    ty: ty?,
+                    mutable: arg.mutable,
+                    span: arg.span,
+                })
+            })
+            .try_collect();
+        let ret_ty = self.fresh_var();
+
         // Verify uniqueness of mutable arguments
         args.iter()
             .permutations(2)
             .map(|p| (p[0], p[1]))
             .filter(|(a, b)| a.mutable || b.mutable)
-            .try_for_each(|(a, b)| check_places_unique(hir, a.val, b.val))?; // TODO optimise???
-
-        let func_ty = self.infer_expr(hir, func)?;
-        let arg_tys = args
-            .iter()
-            .map(|arg| {
-                let ty = self.infer_expr(hir, arg.val)?;
-
-                if arg.mutable {
-                    check_place_mut(hir, arg.val)?;
-                }
-
-                Ok(Param {
-                    mutable: arg.mutable,
-                    ty,
-                })
-            })
-            .try_collect()?;
-        let ret_ty = self.fresh_var();
+            .try_for_each(|(a, b)| self.check_places_unique(hir, a.val, b.val))?; // TODO optimise???
 
         self.constrain_eq(
-            func_ty,
-            PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
-            hir.expr_span(func),
+            func_ty?,
+            PartialTy::Fn(arg_tys?, Box::new(ret_ty.clone())),
+            span,
         );
 
         Ok(ret_ty)
@@ -104,17 +116,18 @@ impl TypeChecker {
 
     fn infer_infix(
         &mut self,
-
         hir: &Hir,
         op: InfixOp,
         lhs: ExprId,
         rhs: ExprId,
     ) -> Result<PartialTy> {
-        let lhs_ty = self.infer_expr(hir, lhs)?;
+        let lhs_ty = self.infer_expr(hir, lhs);
         let rhs_ty = self.infer_expr(hir, rhs)?;
+        let lhs_ty = lhs_ty?;
+
         match op {
             InfixOp::Assign => {
-                check_place_mut(hir, lhs)?;
+                self.check_place_mut(hir, lhs)?;
                 self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs));
                 Ok(PartialTy::unit())
             }
@@ -167,15 +180,16 @@ impl TypeChecker {
     }
 
     fn infer_indexing(&mut self, hir: &Hir, arr: ExprId, idx: ExprId) -> Result<PartialTy> {
-        let arr_ty = self.infer_expr(hir, arr)?;
+        let arr_ty = self.infer_expr(hir, arr);
+        let idx_ty = self.infer_expr(hir, idx)?;
+        let arr_ty = arr_ty?;
+
         let inner_ty = self.fresh_var();
         self.constrain_eq(
             arr_ty,
             PartialTy::Array(Box::new(inner_ty.clone())),
             hir.expr_span(arr),
         );
-
-        let idx_ty = self.infer_expr(hir, idx)?;
         self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx));
 
         Ok(inner_ty)
@@ -183,19 +197,21 @@ impl TypeChecker {
 
     fn infer_field(&mut self, hir: &Hir, base: ExprId, field: SpanIdent) -> Result<PartialTy> {
         let base_ty = self.infer_expr(hir, base)?;
+        let base_ty = self.normalize_ty(base_ty);
 
-        let PartialTy::Adt(base_ty) = base_ty else {
-            return Err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base)));
+        let PartialTy::Adt(base_id) = base_ty else {
+            self.handler
+                .err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base)));
+            return Err(());
         };
 
-        let field_ty = PartialTy::from(
-            hir.adt_info(base_ty)
-                .fields
-                .get_ty(field.ident)
-                .ok_or_else(|| ErrorKind::MissingField.span(field.span))?,
-        );
+        let Some(field_ty) = hir.adt_info(base_id).fields.get_ty(field.ident) else {
+            self.handler
+                .err(ErrorKind::MissingField(base_ty, field.ident).span(field.span));
+            return Err(());
+        };
 
-        Ok(field_ty)
+        Ok(PartialTy::from(field_ty))
     }
 
     fn infer_if(
@@ -206,35 +222,31 @@ impl TypeChecker {
         th: &BlockExpr,
         el: Option<&BlockExpr>,
     ) -> Result<PartialTy> {
-        let cond_ty = self.infer_expr(hir, cond)?;
-        self.constrain_eq(cond_ty, PartialTy::Bool, hir.expr_span(cond));
-
-        let th_ty = self.infer_block_expr(hir, th)?;
+        let cond_ty = self.infer_expr(hir, cond);
+        let th_ty = self.infer_block_expr(hir, th);
 
         match el {
             Some(el) => {
                 let el_ty = self.infer_block_expr(hir, el)?;
-                self.constrain_eq(el_ty, th_ty.clone(), el.span);
+                self.constrain_eq(el_ty, th_ty.clone()?, el.span);
             }
-            None => self.constrain_eq(th_ty.clone(), PartialTy::unit(), th.span),
+            None => self.constrain_eq(th_ty.clone()?, PartialTy::unit(), th.span),
         }
+        self.constrain_eq(cond_ty?, PartialTy::Bool, hir.expr_span(cond));
 
-        Ok(th_ty)
+        th_ty
     }
 
     fn infer_for(
         &mut self,
-
         hir: &Hir,
         id: VarId,
         iter: ExprId,
         body: &BlockExpr,
     ) -> Result<PartialTy> {
-        let iter_ty = self.infer_expr(hir, iter)?;
-        self.constrain_eq(self.ctx[id].clone(), iter_ty, hir.expr_span(iter));
-
+        let iter_ty = self.infer_expr(hir, iter);
         self.infer_block_expr(hir, body)?;
-
+        self.constrain_eq(self.ctx[id].clone(), iter_ty?, hir.expr_span(iter));
         Ok(PartialTy::unit())
     }
 
@@ -247,12 +259,12 @@ impl TypeChecker {
         let param_tys = params
             .iter()
             .map(|id| Param {
-                mutable: hir.var_info(*id).mutable,
                 ty: self.ctx[*id].clone(),
+                mutable: hir.var_info(*id).mutable,
+                span: hir.var_ident(*id).span,
             })
             .collect();
         let body_ty = self.infer_expr(hir, body)?;
-
         Ok(PartialTy::Fn(param_tys, Box::new(body_ty)))
     }
 
@@ -270,44 +282,57 @@ impl TypeChecker {
             Stmt::Decl { id, val, .. } => {
                 let val_ty = self.infer_expr(hir, *val)?;
                 self.constrain_eq(val_ty, self.ctx[*id].clone(), hir.expr_span(*val));
-
                 Ok(PartialTy::unit())
             }
             Stmt::Expr(expr) => self.infer_expr(hir, *expr),
         }
     }
-}
 
-fn check_place_mut(hir: &Hir, place: ExprId) -> Result<()> {
-    let span = hir.expr_span(place);
-    match hir.expr_info(place) {
-        Expr::Ident(id) => {
-            if hir.var_info(*id).mutable {
-                Ok(())
-            } else {
-                Err(ErrorKind::Mutation.span(span))
+    fn check_place_mut(&mut self, hir: &Hir, place: ExprId) -> Result<()> {
+        match hir.expr_info(place) {
+            Expr::Ident(id) => {
+                if hir.var_info(*id).mutable {
+                    Ok(())
+                } else {
+                    self.handler
+                        .err(ErrorKind::Mutation.span(hir.expr_span(place)));
+                    Err(())
+                }
+            }
+            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
+                self.check_place_mut(hir, *base)
+            }
+            Expr::Call { .. } => todo!("Projections"),
+            _ => {
+                self.handler
+                    .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)));
+                Err(())
             }
         }
-        Expr::Field { base, .. } | Expr::Index { arr: base, .. } => check_place_mut(hir, *base),
-        Expr::Call { .. } => todo!("Projections"),
-        _ => Err(ErrorKind::NotPlaceExpr.span(span)),
     }
-}
 
-fn check_places_unique(hir: &Hir, place_a: ExprId, place_b: ExprId) -> Result<()> {
-    match hir.expr_info(place_b) {
-        info @ Expr::Ident(_) => {
-            if hir.expr_info(place_a) == info {
-                Err(ErrorKind::OverlappingPlace(hir.expr_span(place_a))
-                    .span(hir.expr_span(place_b)))
-            } else {
-                Ok(())
+    fn check_places_unique(&mut self, hir: &Hir, place_a: ExprId, place_b: ExprId) -> Result<()> {
+        match hir.expr_info(place_b) {
+            info @ Expr::Ident(_) => {
+                if hir.expr_info(place_a) == info {
+                    self.handler.err(
+                        ErrorKind::OverlappingPlace(hir.expr_span(place_a))
+                            .span(hir.expr_span(place_b)),
+                    );
+                    Err(())
+                } else {
+                    Ok(())
+                }
+            }
+            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
+                self.check_places_unique(hir, place_a, *base)
+            }
+            Expr::Call { .. } => todo!("Projections"),
+            _ => {
+                self.handler
+                    .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b)));
+                Err(())
             }
         }
-        Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
-            check_places_unique(hir, place_a, *base)
-        }
-        Expr::Call { .. } => todo!("Projections"),
-        _ => Err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b))),
     }
 }

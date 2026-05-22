@@ -7,27 +7,25 @@ mod patterns;
 mod test;
 mod types;
 
-use std::{iter::Peekable, result, vec};
-
 use ast::Ast;
 use errors::ErrorHandler;
 #[cfg(any(test, feature = "test"))]
 use errors::TEST_HANDLER;
-use lex::{Tok, TokKind};
+use lex::{Lexer, Tok, TokKind};
 
 pub use crate::error::{Error, ErrorKind, Result};
 
 use crate::items::Item;
 
-pub struct Parser<'src, I: Iterator<Item = Tok<'src>>> {
-    toks: Peekable<I>,
+pub struct Parser<'src> {
+    toks: Lexer<'src>,
     handler: ErrorHandler<'src>,
 }
 
-impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
-    pub fn new(toks: Vec<Tok<'src>>, handler: ErrorHandler<'src>) -> Self {
+impl<'src> Parser<'src> {
+    pub fn new(src: &'src str, handler: ErrorHandler<'src>) -> Self {
         Self {
-            toks: toks.into_iter().peekable(),
+            toks: lex::lex(src),
             handler,
         }
     }
@@ -40,7 +38,7 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
-        while self.try_peek().is_ok() {
+        while self.try_peek().is_some() {
             match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
@@ -63,49 +61,55 @@ impl<'src> Parser<'src, vec::IntoIter<Tok<'src>>> {
         }
     }
 
-    #[cfg(any(test, feature = "test"))]
-    pub fn parse_stmt(src: &'src str) -> Result<ast::exprs::Stmt> {
-        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).stmt()
-    }
-
+    /// Lexes the source and parses an expression in one function call, to simplify tests
+    /// # Errors
+    /// If the source cannot be parsed as an expression
+    /// # Panics
+    /// If the lexer produces an error
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr> {
-        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).expr()
+        Self::new(src, TEST_HANDLER).expr()
     }
 
+    /// Lexes the source and parses an item in one function call, to simplify tests
+    /// # Errors
+    /// If the source cannot be parsed as an item
+    /// # Panics
+    /// If the lexer produces an error
     #[cfg(any(test, feature = "test"))]
     pub fn parse_item(src: &'src str) -> Result<Item> {
-        Self::new(lex::lex(src).unwrap(), TEST_HANDLER).item()
+        Self::new(src, TEST_HANDLER).item()
     }
-}
 
-impl<'src, I: Iterator<Item = Tok<'src>>> Parser<'src, I> {
-    /// Get the next token.
+    /// Get the next token, producing an error if we're at EOF
     fn next(&mut self) -> Result<Tok<'src>> {
         self.toks
             .next()
-            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))
+            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))?
+            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
     }
 
-    /// Look-ahead one token and see what kind of token it is.
+    /// Look-ahead one token and see what kind of token it is, producing an error if we're at EOF
     fn peek(&mut self) -> Result<TokKind> {
         self.toks
             .peek()
+            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))?
+            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
             .map(|tok| tok.kind)
-            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))
     }
 
-    /// Look-ahead one token and see what kind of token it is, returning any error rather than immediately reporting it.
-    fn try_peek(&mut self) -> result::Result<TokKind, Error> {
+    /// Look-ahead one token and see what kind of token it is, returning None if we're at EOF
+    fn try_peek(&mut self) -> Option<TokKind> {
         self.toks
-            .peek()
+            .peek()?
+            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
+            .ok()
             .map(|tok| tok.kind)
-            .ok_or_else(|| ErrorKind::Eof.span(0..0))
     }
 
     /// Check if the next token is the same variant as another token.
     fn at(&mut self, token: TokKind) -> bool {
-        self.try_peek().is_ok_and(|tok| tok == token)
+        self.try_peek().is_some_and(|tok| tok == token)
     }
 
     /// Move forward one token in the input and check
