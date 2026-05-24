@@ -71,7 +71,7 @@ fn inc() {
             vec![Param {
                 mutable: true,
                 ty: Ty::Float,
-                span: Span::from(3..8)
+                span: Span::from(7..8)
             }],
             Ty::unit().into()
         ))

@@ -255,7 +255,7 @@ proptest! {
     }
 
     #[test]
-    fn reverse(in_toks in vec(T::arb(), 8..=512)) {
+    fn reverse(in_toks in vec(T::arbitrary(), 8..=512)) {
         let raw = in_toks.iter().map(|t| t.reverse()).join(" ");
 
         let out_toks: Vec<_> = lex(&raw).unwrap().into_iter().map(|tok| tok.kind).collect();

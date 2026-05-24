@@ -6,7 +6,6 @@ use hir::{
 use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
-    types::BasicTypeEnum,
     values::{BasicValue, BasicValueEnum, PointerValue},
 };
 
@@ -14,34 +13,31 @@ use crate::Codegen;
 
 impl<'ctx> Codegen<'ctx, '_> {
     #[allow(unused)]
-    pub fn codegen_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    pub fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
-            Expr::Ident(id) => self.codegen_ident(*id),
-            Expr::Lit(lit) => self.codegen_lit(expr, lit),
+            Expr::Ident(id) => self.emit_ident(*id),
+            Expr::Lit(lit) => self.emit_lit(expr, lit),
             Expr::Array(expr_ids) => todo!("Arrays"),
-            Expr::Tuple(exprs) => {
-                //self.ctx.struct_type(field_types, packed).
-                todo!()
-            }
-            Expr::Infix { op, lhs, rhs } => self.codegen_infix(*op, *lhs, *rhs),
-            Expr::Prefix { op, expr } => self.codegen_prefix(*op, *expr),
-            Expr::Field { base, field } => self.codegen_field(*base, *field),
+            Expr::Tuple(exprs) => todo!(),
+            Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
+            Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
+            Expr::Field { base, field } => self.emit_field(expr, *base, *field),
             Expr::Index { arr, idx } => todo!("Arrays"),
-            Expr::Call { func, args } => self.codegen_call(expr, *func, args),
+            Expr::Call { func, args } => self.emit_call(expr, *func, args),
             Expr::Lambda { params, body } => todo!("Closures"),
-            Expr::If { cond, th, el } => self.codegen_if(*cond, th, el.as_ref()),
+            Expr::If { cond, th, el } => self.emit_if(*cond, th, el.as_ref()),
             Expr::For { id, iter, body } => todo!(),
-            Expr::Loop(body) => self.codegen_loop(body),
+            Expr::Loop(body) => self.emit_loop(body),
             Expr::Break => todo!("Unconditional Control Flow"),
             Expr::Continue => todo!("Unconditional Control Flow"),
             Expr::Return(expr) => todo!("Unconditional Control Flow"),
-            Expr::Block(stmts) => self.codegen_block_expr(stmts),
+            Expr::Block(stmts) => self.emit_block_expr(stmts),
 
-            Expr::Print(expr) => self.codegen_print(*expr),
+            Expr::Print(expr) => self.emit_print(*expr),
         }
     }
 
-    fn codegen_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    fn emit_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         let format_string = match self.ty_map.ty(expr) {
             Ty::Int => "%d",
             Ty::UInt => "%u",
@@ -59,7 +55,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap()
             .as_pointer_value();
 
-        let expr = self.codegen_expr(expr);
+        let expr = self.emit_expr(expr);
         self.builder
             .build_call(self.printf, &[format_ptr.into(), expr.into()], "print")
             .unwrap();
@@ -67,44 +63,45 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.unit()
     }
 
-    fn codegen_place_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
-        let ptr: PointerValue = match self.hir.expr_info(expr) {
-            Expr::Ident(id) => self.vars[*id].ptr,
+    fn emit_place(&self, expr: ExprId) -> PointerValue<'ctx> {
+        match self.hir.expr_info(expr) {
+            Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
                 let Ty::Adt(id) = self.ty_map.ty(*base) else {
                     unreachable!("ICE")
                 };
-                let ty = self.structs[*id];
                 let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
-
-                let base = self.codegen_expr(*base);
                 self.builder
-                    .build_struct_gep(ty, base.into_pointer_value(), idx, "geptmp")
+                    .build_struct_gep(self.structs[*id], self.emit_place(*base), idx, "fieldptr")
                     .unwrap()
             }
             Expr::Index { arr, idx } => todo!("Arrays"),
             Expr::Call { func, args } => todo!("Projections"),
-            _ => unreachable!("ICE: Tried to codegen non-place expr as place expr"),
-        };
-        ptr.as_basic_value_enum()
+            _ => unreachable!("ICE: Tried to use non-place expr as place"),
+        }
     }
 
     fn unit(&self) -> BasicValueEnum<'ctx> {
         self.ctx.const_struct(&[], false).as_basic_value_enum()
     }
 
-    fn codegen_ident(&self, id: VarId) -> BasicValueEnum<'ctx> {
+    fn emit_ident(&self, id: VarId) -> BasicValueEnum<'ctx> {
         let alloc = self.vars[id];
-        self.builder
-            .build_load(
-                BasicTypeEnum::try_from(alloc.ty).unwrap(),
-                alloc.ptr,
-                &self.hir.var_info(id).ident.str(),
-            )
-            .unwrap()
+        let ty = self.hir.var_ty(id);
+
+        if crate::is_indirect(ty) {
+            let new_alloc =
+                self.emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(id).ident.str());
+            self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
+            new_alloc.as_basic_value_enum()
+        } else {
+            self.builder
+                .build_load(self.lower_ty(ty), alloc, &self.hir.var_info(id).ident.str())
+                .unwrap()
+        }
     }
 
-    fn codegen_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
+    fn emit_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
         match lit {
             LitExpr::Int(val) => match self.ty_map.ty(expr) {
                 Ty::Int => {
@@ -150,20 +147,37 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
-        let lhs = match op {
-            InfixOp::Assign => self.codegen_place_expr(lhs),
-            _ => self.codegen_expr(lhs),
-        };
-        let rhs = self.codegen_expr(rhs);
-
+    fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
+        let ty = self.ty_map.ty(lhs);
         match op {
             InfixOp::Assign => {
-                self.builder
-                    .build_store(lhs.into_pointer_value(), rhs)
-                    .unwrap();
+                let dst = self.emit_place(lhs);
+                let tmp = self.emit_expr(rhs);
+
+                self.emit_drop(ty, dst.as_basic_value_enum());
+
+                self.emit_copy(ty, tmp, dst);
+                self.emit_drop(ty, tmp);
+
                 self.unit()
             }
+            _ => {
+                let lhs = self.emit_expr(lhs);
+                let rhs = self.emit_expr(rhs);
+                self.emit_math_infix(ty, op, lhs, rhs)
+            }
+        }
+    }
+
+    fn emit_math_infix(
+        &self,
+        ty: &Ty,
+        op: InfixOp,
+        lhs: BasicValueEnum<'ctx>,
+        rhs: BasicValueEnum<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match op {
+            InfixOp::Assign => unreachable!("ICE: Should not be called when the op is assignment"),
             InfixOp::Add => self
                 .builder
                 .build_int_add(lhs.into_int_value(), rhs.into_int_value(), "iaddtmp")
@@ -216,8 +230,17 @@ impl<'ctx> Codegen<'ctx, '_> {
                 .build_xor(lhs.into_int_value(), rhs.into_int_value(), "xortmp")
                 .unwrap()
                 .as_basic_value_enum(),
-            InfixOp::Eqq => todo!(),
-            InfixOp::Neq => todo!(),
+            op @ (InfixOp::Eqq | InfixOp::Neq) => {
+                let equals = self.emit_equals(ty, lhs, rhs);
+                if op == InfixOp::Neq {
+                    self.builder
+                        .build_not(equals.into_int_value(), "not_equals")
+                        .unwrap()
+                        .as_basic_value_enum()
+                } else {
+                    equals
+                }
+            }
             InfixOp::Gt => self
                 .builder
                 .build_float_compare(
@@ -261,8 +284,8 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_prefix(&mut self, op: PrefixOp, expr: ExprId) -> BasicValueEnum<'ctx> {
-        let expr = self.codegen_expr(expr);
+    fn emit_prefix(&mut self, op: PrefixOp, expr: ExprId) -> BasicValueEnum<'ctx> {
+        let expr = self.emit_expr(expr);
 
         match op {
             PrefixOp::Not => self
@@ -278,28 +301,37 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
+    fn emit_field(&mut self, expr: ExprId, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
         let Ty::Adt(id) = self.ty_map.ty(base) else {
             unreachable!("ICE")
         };
-        let ty = self.structs[*id];
-        let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
 
-        let base = self.codegen_expr(base);
-        let field_ptr = self
+        let base = self.emit_expr(base);
+
+        let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
+        let alloc = self
             .builder
-            .build_struct_gep(ty, base.into_pointer_value(), idx, "geptmp")
-            .unwrap();
-        self.builder
-            .build_load(
-                ty.get_field_type_at_index(idx).unwrap(),
-                field_ptr,
-                "fieldtmp",
+            .build_struct_gep(
+                self.structs[*id],
+                base.into_pointer_value(),
+                idx,
+                "fieldptr",
             )
-            .unwrap()
+            .unwrap();
+
+        let ty = self.ty_map.ty(expr);
+        if crate::is_indirect(ty) {
+            let new_alloc = self.emit_alloca_entry(self.lower_ty(ty), &field.ident.str());
+            self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
+            new_alloc.as_basic_value_enum()
+        } else {
+            self.builder
+                .build_load(self.lower_ty(ty), alloc, &field.ident.str())
+                .unwrap()
+        }
     }
 
-    fn codegen_call(&mut self, expr: ExprId, func: ExprId, args: &[Arg]) -> BasicValueEnum<'ctx> {
+    fn emit_call(&mut self, expr: ExprId, func: ExprId, args: &[Arg]) -> BasicValueEnum<'ctx> {
         let func = if let Expr::Ident(id) = self.hir.expr_info(func)
             && let Some(func) = self.funcs.get(*id)
         {
@@ -308,13 +340,15 @@ impl<'ctx> Codegen<'ctx, '_> {
             todo!("Closures")
         };
 
+        todo!("Fix argument passing?");
+
         let mut args: Vec<_> = args
             .iter()
             .map(|a| {
                 if a.mutable {
-                    self.codegen_place_expr(a.val)
+                    self.emit_place(a.val).as_basic_value_enum()
                 } else {
-                    self.codegen_expr(a.val)
+                    self.emit_expr(a.val)
                 }
                 .into()
             })
@@ -340,25 +374,25 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn codegen_if(
+    fn emit_if(
         &mut self,
         cond: ExprId,
         th: &BlockExpr,
         el: Option<&BlockExpr>,
     ) -> BasicValueEnum<'ctx> {
         match el {
-            Some(el) => self.codegen_if_else(cond, th, el),
-            None => self.codegen_if_no_else(cond, th),
+            Some(el) => self.emit_if_else(cond, th, el),
+            None => self.emit_if_no_else(cond, th),
         }
     }
 
-    fn codegen_if_else(
+    fn emit_if_else(
         &mut self,
         cond: ExprId,
         th: &BlockExpr,
         el: &BlockExpr,
     ) -> BasicValueEnum<'ctx> {
-        let cond = self.codegen_expr(cond);
+        let cond = self.emit_expr(cond);
 
         let function = self.curr_function();
 
@@ -370,7 +404,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap();
 
         self.builder.position_at_end(th_block);
-        let th = self.codegen_block_expr(th);
+        let th = self.emit_block_expr(th);
         self.builder
             .build_unconditional_branch(merge_block)
             .unwrap();
@@ -380,7 +414,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .move_after(function.get_last_basic_block().unwrap())
             .unwrap();
         self.builder.position_at_end(el_block);
-        let el = self.codegen_block_expr(el);
+        let el = self.emit_block_expr(el);
         self.builder
             .build_unconditional_branch(merge_block)
             .unwrap();
@@ -395,8 +429,8 @@ impl<'ctx> Codegen<'ctx, '_> {
         phi.as_basic_value()
     }
 
-    fn codegen_if_no_else(&mut self, cond: ExprId, th: &BlockExpr) -> BasicValueEnum<'ctx> {
-        let cond = self.codegen_expr(cond);
+    fn emit_if_no_else(&mut self, cond: ExprId, th: &BlockExpr) -> BasicValueEnum<'ctx> {
+        let cond = self.emit_expr(cond);
 
         let function = self.curr_function();
 
@@ -407,7 +441,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap();
 
         self.builder.position_at_end(th_block);
-        let _ = self.codegen_block_expr(th);
+        let _ = self.emit_block_expr(th);
         self.builder
             .build_unconditional_branch(merge_block)
             .unwrap();
@@ -419,7 +453,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.unit()
     }
 
-    fn codegen_loop(&mut self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn emit_loop(&mut self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
         let function = self
             .builder
             .get_insert_block()
@@ -431,7 +465,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.builder.build_unconditional_branch(body_block).unwrap();
 
         self.builder.position_at_end(body_block);
-        let _ = self.codegen_block_expr(body);
+        let _ = self.emit_block_expr(body);
         self.builder.build_unconditional_branch(body_block).unwrap();
 
         let post_block = self.ctx.append_basic_block(function, "post");
@@ -440,32 +474,28 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.unit()
     }
 
-    fn codegen_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn emit_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
         block
             .stmts
             .iter()
-            .map(|s| self.codegen_stmt(s))
+            .map(|s| self.emit_stmt(s))
             .last()
+            .flatten()
             .unwrap_or_else(|| self.unit())
     }
 
-    fn codegen_stmt(&mut self, stmt: &Stmt) -> BasicValueEnum<'ctx> {
+    fn emit_stmt(&mut self, stmt: &Stmt) -> Option<BasicValueEnum<'ctx>> {
         match stmt {
             Stmt::Decl { id, val, .. } => {
                 let ty = self.hir.var_ty(*id);
-                let ty = if crate::is_indirect(ty) {
-                    self.ptr_ty()
-                } else {
-                    self.lower_ty(self.hir.var_ty(*id))
-                };
-                let alloc = self.alloca_entry(ty, *id);
-
-                let val = self.codegen_expr(*val);
-                self.builder.build_store(alloc.ptr, val).unwrap();
-
-                self.unit()
+                let ptr =
+                    self.emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(*id).ident.str());
+                self.vars.insert(*id, ptr);
+                let val = self.emit_expr(*val);
+                self.emit_copy(ty, val, ptr);
+                None
             }
-            Stmt::Expr(expr) => self.codegen_expr(*expr),
+            Stmt::Expr(expr) => Some(self.emit_expr(*expr)),
         }
     }
 }

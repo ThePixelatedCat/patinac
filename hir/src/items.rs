@@ -32,6 +32,10 @@ impl Fields {
             .unwrap()
             .0 as u32
     }
+
+    pub fn idx_tys(&self) -> impl Iterator<Item = (usize, &Ty)> {
+        self.0.iter().map(|(_, ty)| ty).enumerate()
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -2,8 +2,6 @@ use std::iter::Peekable;
 
 use displaydoc::Display;
 use logos::Logos;
-#[cfg(any(test, feature = "test"))]
-use proptest::{arbitrary::Arbitrary, prelude::Strategy};
 
 use span::Span;
 
@@ -245,8 +243,6 @@ pub enum TokKind {
     /// identifier
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
-    /// end of file
-    Eof,
 }
 
 impl TokKind {
@@ -260,7 +256,11 @@ impl TokKind {
     }
 
     /// Converts the token into a string that parses back into itself
-    #[cfg(any(test, feature = "test"))]
+    /// Mainly for testing
+    #[expect(
+        unused,
+        reason = "It's used in tests, but the linter doesn't consider that apparently"
+    )]
     pub(crate) fn reverse(self) -> String {
         match self {
             Self::IntLit => String::from("1"),
@@ -270,11 +270,5 @@ impl TokKind {
             Self::Ident => String::from("foo"),
             _ => self.to_string().trim_matches('`').to_string(),
         }
-    }
-
-    /// A strategy that produces random tokens, excluding [Eof][Self::Eof]
-    #[cfg(any(test, feature = "test"))]
-    pub(crate) fn arb() -> impl Strategy<Value = Self> {
-        Self::arbitrary().prop_filter("skipped eof", |&t| t != Self::Eof)
     }
 }

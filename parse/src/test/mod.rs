@@ -231,7 +231,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
 
 proptest! {
     #[test]
-    fn doesnt_crash_toks(in_toks in vec(TokKind::arb(), 8..=512)) {
+    fn doesnt_crash_toks(in_toks in vec(TokKind::arbitrary(), 8..=512)) {
         let raw = in_toks.iter().map(|t| t.reverse()).join(" ");
         let _ = Parser::new(&raw, DUMMY_HANDLER).parse();
     }

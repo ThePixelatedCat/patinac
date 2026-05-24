@@ -1,5 +1,6 @@
-use std::{iter, mem};
+use std::iter;
 
+use ena::unify::InPlaceUnificationTable;
 use errors::Error;
 use span::Span;
 
@@ -37,10 +38,12 @@ fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error<Erro
 }
 
 impl TypeChecker<'_> {
-    /// Unifies all types in the unification table, clearing all of our constraints in the process
+    /// Unifies all types in the unification table
     pub(super) fn unify(&mut self) {
-        for constr in mem::take(&mut self.constraints) {
-            if let Err(err) = self.unify_ty_ty(constr.span, constr.ty_a, constr.ty_b) {
+        for constr in &self.constraints {
+            if let Err(err) =
+                Self::unify_ty_ty(&mut self.table, constr.span, &constr.ty_a, &constr.ty_b)
+            {
                 self.handler.err(err);
             }
         }
@@ -51,13 +54,13 @@ impl TypeChecker<'_> {
     /// or until we can no longer traverse them or we know they're mismatched,
     /// at which point we error
     pub(super) fn unify_ty_ty(
-        &mut self,
+        table: &mut InPlaceUnificationTable<TyVar>,
         span: Span,
-        unnorm_lhs: PartialTy,
-        unnorm_rhs: PartialTy,
+        unnorm_lhs: &PartialTy,
+        unnorm_rhs: &PartialTy,
     ) -> Result<(), Error<ErrorKind>> {
-        let lhs = self.normalize_ty(unnorm_lhs);
-        let rhs = self.normalize_ty(unnorm_rhs);
+        let lhs = Self::normalize_ty(table, unnorm_lhs);
+        let rhs = Self::normalize_ty(table, unnorm_rhs);
 
         match (lhs, rhs) {
             (PartialTy::Int, PartialTy::Int)
@@ -74,10 +77,10 @@ impl TypeChecker<'_> {
                     )
                     .span(span));
                 }
-                self.unify_tys(span, lhs_inners, rhs_inners)
+                Self::unify_tys(table, span, &lhs_inners, &rhs_inners)
             }
             (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
-                self.unify_ty_ty(span, *lhs_inner, *rhs_inner)
+                Self::unify_ty_ty(table, span, &lhs_inner, &rhs_inner)
             }
             (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
                 if lhs_params.len() != rhs_params.len() {
@@ -92,18 +95,18 @@ impl TypeChecker<'_> {
                         let span = r.span;
                         return Err(ErrorKind::ParamMutability(l, r).span(span));
                     }
-                    self.unify_ty_ty(r.span, l.ty, r.ty)
+                    Self::unify_ty_ty(table, r.span, &l.ty, &r.ty)
                 })?;
-                self.unify_ty_ty(span, *lhs_ret, *rhs_ret)
+                Self::unify_ty_ty(table, span, &lhs_ret, &rhs_ret)
             }
             (PartialTy::Adt(a), PartialTy::Adt(b)) if a == b => Ok(()),
             (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
             | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
-                self.unify_var_var(span, lhs_var, rhs_var)
+                Self::unify_var_var(table, span, lhs_var, rhs_var)
             }
             (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
                 occurs_check(span, &ty, var)?;
-                self.unify_var_value(span, var, ty)
+                Self::unify_var_value(table, span, var, ty)
             }
             (
                 PartialTy::IntVar(int_var),
@@ -112,73 +115,78 @@ impl TypeChecker<'_> {
             | (
                 int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
                 PartialTy::IntVar(int_var),
-            ) => self.unify_var_value(span, int_var, int_ty),
+            ) => Self::unify_var_value(table, span, int_var, int_ty),
             (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs).span(span)),
         }
     }
 
     fn unify_tys(
-        &mut self,
+        table: &mut InPlaceUnificationTable<TyVar>,
         constr_span: Span,
-        left_tys: Vec<PartialTy>,
-        right_tys: Vec<PartialTy>,
+        left_tys: &[PartialTy],
+        right_tys: &[PartialTy],
     ) -> Result<(), Error<ErrorKind>> {
-        iter::zip(left_tys, right_tys).try_for_each(|(l, r)| self.unify_ty_ty(constr_span, l, r))
+        iter::zip(left_tys, right_tys)
+            .try_for_each(|(l, r)| Self::unify_ty_ty(table, constr_span, l, r))
     }
 
     fn unify_var_var(
-        &mut self,
+        table: &mut InPlaceUnificationTable<TyVar>,
         span: Span,
         lhs: TyVar,
         rhs: TyVar,
     ) -> Result<(), Error<ErrorKind>> {
-        self.table
+        table
             .unify_var_var(lhs, rhs)
             .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))
     }
 
     fn unify_var_value(
-        &mut self,
+        table: &mut InPlaceUnificationTable<TyVar>,
         span: Span,
         var: TyVar,
         ty: PartialTy,
     ) -> Result<(), Error<ErrorKind>> {
-        self.table
+        table
             .unify_var_value(var, Some(ty))
             .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span))
     }
 
-    pub(crate) fn normalize_ty(&mut self, ty: PartialTy) -> PartialTy {
+    pub(crate) fn normalize_ty(
+        table: &mut InPlaceUnificationTable<TyVar>,
+        ty: &PartialTy,
+    ) -> PartialTy {
         match ty {
             PartialTy::Int
             | PartialTy::UInt
             | PartialTy::Byte
             | PartialTy::Float
             | PartialTy::Bool
-            | PartialTy::Char => ty,
+            | PartialTy::Char => ty.clone(),
             PartialTy::Tuple(tys) => {
-                PartialTy::Tuple(tys.into_iter().map(|ty| self.normalize_ty(ty)).collect())
+                PartialTy::Tuple(tys.iter().map(|ty| Self::normalize_ty(table, ty)).collect())
             }
-            PartialTy::Array(ty) => PartialTy::Array(Box::new(self.normalize_ty(*ty))),
+            PartialTy::Array(ty) => PartialTy::Array(Box::new(Self::normalize_ty(table, ty))),
             PartialTy::Fn(params, ret) => {
                 let params = params
-                    .into_iter()
+                    .iter()
                     .map(|param| Param {
-                        ty: self.normalize_ty(param.ty),
-                        ..param
+                        ty: Self::normalize_ty(table, &param.ty),
+                        mutable: param.mutable,
+                        span: param.span,
                     })
                     .collect();
-                let ret = Box::new(self.normalize_ty(*ret));
+                let ret = Box::new(Self::normalize_ty(table, ret));
                 PartialTy::Fn(params, ret)
             }
-            PartialTy::Adt(id) => PartialTy::Adt(id),
-            PartialTy::Var(v) => match self.table.probe_value(v) {
-                Some(ty) => self.normalize_ty(ty),
-                None => PartialTy::Var(self.table.find(v)),
+            PartialTy::Adt(id) => PartialTy::Adt(*id),
+            PartialTy::Var(v) => match table.probe_value(*v) {
+                Some(ty) => Self::normalize_ty(table, &ty),
+                None => PartialTy::Var(table.find(*v)),
             },
-            PartialTy::IntVar(v) => match self.table.probe_value(v) {
-                Some(ty) => self.normalize_ty(ty),
-                None => PartialTy::IntVar(self.table.find(v)),
+            PartialTy::IntVar(v) => match table.probe_value(*v) {
+                Some(ty) => Self::normalize_ty(table, &ty),
+                None => PartialTy::IntVar(table.find(*v)),
             },
         }
     }

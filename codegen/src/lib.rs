@@ -14,7 +14,7 @@ use inkwell::{
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
-    types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, StructType},
+    types::{BasicType, BasicTypeEnum, StructType},
     values::{FunctionValue, PointerValue},
 };
 use slotmap::SecondaryMap;
@@ -70,17 +70,18 @@ pub struct Codegen<'ctx, 'hir> {
     ctx: &'ctx Context,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
+    target: TargetMachine,
     structs: SecondaryMap<AdtId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
-    vars: SecondaryMap<VarId, AllocInfo<'ctx>>,
+    vars: SecondaryMap<VarId, PointerValue<'ctx>>,
     printf: FunctionValue<'ctx>,
 }
 
-#[derive(Clone, Copy)]
-struct AllocInfo<'ctx> {
-    ptr: PointerValue<'ctx>,
-    ty: AnyTypeEnum<'ctx>,
-}
+// #[derive(Debug, Clone, Copy)]
+// struct AllocInfo<'ctx> {
+//     ptr: PointerValue<'ctx>,
+//     ty: AnyTypeEnum<'ctx>,
+// }
 
 pub fn create_ctx() -> Context {
     Context::create()
@@ -89,6 +90,14 @@ pub fn create_ctx() -> Context {
 impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     pub fn new(hir: &'hir Hir, ty_map: &'hir TyMap, ctx: &'ctx Context, module_name: &str) -> Self {
         let module = ctx.create_module(module_name);
+
+        Target::initialize_native(&InitializationConfig::default()).unwrap();
+        let triple = TargetMachine::get_default_triple();
+        let target = Target::from_triple(&triple).unwrap();
+        let target_machine = target
+            .create_target_machine_from_options(&triple, TargetMachineOptions::default())
+            .unwrap();
+
         let this = Self {
             printf: Self::printf(ctx, &module),
             hir,
@@ -96,6 +105,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             ctx,
             builder: ctx.create_builder(),
             module,
+            target: target_machine,
             structs: Self::build_structs(hir, ctx),
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
@@ -140,7 +150,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
             let entry_block = self.ctx.append_basic_block(func, "entry");
             self.builder.position_at_end(entry_block);
-            let _ = self.codegen_expr(body);
+            let _ = self.emit_expr(body);
             self.builder
                 .build_return(Some(&self.ctx.i32_type().const_zero()))
                 .unwrap();
@@ -152,28 +162,24 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, body } => {
-                    self.populate_func(self.funcs[exec.id], params, *body);
+                    let Ty::Fn(_, ret_ty) = self.hir.var_ty(exec.id) else {
+                        unreachable!("ICE")
+                    };
+                    self.populate_func(self.funcs[exec.id], params, ret_ty, *body);
                 }
             }
         }
 
         self.module.verify().unwrap();
 
-        Target::initialize_native(&InitializationConfig::default()).unwrap();
-        let triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&triple).unwrap();
-        let target_machine = target
-            .create_target_machine_from_options(&triple, TargetMachineOptions::default())
-            .unwrap();
-
         self.module
-            .set_data_layout(&target_machine.get_target_data().get_data_layout());
-        self.module.set_triple(&triple);
+            .set_data_layout(&self.target.get_target_data().get_data_layout());
+        self.module.set_triple(&self.target.get_triple());
 
         self.module
             .run_passes(
                 &opt_level.opt_string(),
-                &target_machine,
+                &self.target,
                 PassBuilderOptions::create(),
             )
             .unwrap();
@@ -181,7 +187,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         match mode {
             CodegenMode::IRDump => self.module.print_to_stderr(),
             CodegenMode::Emit(path) => {
-                target_machine
+                self.target
                     .write_to_file(&self.module, FileType::Object, &path)
                     .unwrap();
             }
@@ -216,6 +222,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             unreachable!("ICE")
         };
 
+        todo!("Fix argument passing?");
         let param_tys: Vec<_> = iter::once(self.ptr_ty().into())
             .chain(param_tys.iter().map(|p| {
                 if is_indirect(&p.ty) {
@@ -250,6 +257,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     fn build_func(&self, id: VarId, params: &[VarId], ret_ty: &Ty) -> FunctionValue<'ctx> {
+        todo!("Fix argument passing?");
         let mut param_tys: Vec<_> = params
             .iter()
             .map(|p| {
@@ -265,7 +273,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
         let fn_ty = if is_indirect(ret_ty) {
             param_tys.insert(0, self.ptr_ty().into());
-            self.ctx.void_type().fn_type(dbg!(&param_tys), false)
+            self.ctx.void_type().fn_type(&param_tys, false)
         } else {
             self.lower_ty(ret_ty).fn_type(&param_tys, false)
         };
@@ -274,31 +282,42 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         self.module.add_function(&fn_name, fn_ty, None)
     }
 
-    fn populate_func(&mut self, func: FunctionValue<'ctx>, params: &[VarId], body: ExprId) {
+    fn populate_func(
+        &mut self,
+        func: FunctionValue<'ctx>,
+        params: &[VarId],
+        ret_ty: &Ty,
+        body: ExprId,
+    ) {
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        for (param, arg) in iter::zip(params, func.get_param_iter()) {
-            if self.hir.var_info(*param).mutable {
-                self.vars.insert(
-                    *param,
-                    AllocInfo {
-                        ptr: arg.into_pointer_value(),
-                        ty: self.lower_ty(self.hir.var_ty(*param)).as_any_type_enum(),
-                    },
-                );
+        todo!("Fix argument passing?");
+        // 1 if function returns void, aka returns via first argument
+        let offset = usize::from(func.get_type().get_return_type().is_none());
+        for (param, arg) in iter::zip(params, func.get_param_iter().skip(offset)) {
+            let ty = self.hir.var_ty(*param);
+            if self.hir.var_info(*param).mutable || is_indirect(ty) {
+                self.vars.insert(*param, arg.into_pointer_value());
             } else {
-                let alloc = self.alloca(arg.get_type(), *param);
-                self.builder.build_store(alloc.ptr, arg).unwrap();
+                let ptr = self.emit_alloca(arg.get_type(), &self.hir.var_info(*param).ident.str());
+                self.vars.insert(*param, ptr);
+                self.builder.build_store(ptr, arg).unwrap();
             }
         }
 
-        let body = self.codegen_expr(body);
+        let body = self.emit_expr(body);
 
         let void = func.get_type().get_return_type().is_none();
         if void {
+            let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+
+            let ret_ty = self.lower_ty(ret_ty);
+            let size = ret_ty.size_of().unwrap();
+            let align = self.target.get_target_data().get_abi_alignment(&ret_ty);
+
             self.builder
-                .build_store(func.get_first_param().unwrap().into_pointer_value(), body)
+                .build_memmove(out_ptr, align, body.into_pointer_value(), align, size)
                 .unwrap();
             self.builder.build_return(None).unwrap();
         } else {
@@ -331,20 +350,27 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .as_basic_type_enum()
     }
 
-    fn alloca(&mut self, ty: BasicTypeEnum<'ctx>, id: VarId) -> AllocInfo<'ctx> {
-        let ptr = self
-            .builder
-            .build_alloca(ty, &self.hir.var_info(id).ident.str())
-            .unwrap();
-        let info = AllocInfo {
-            ptr,
-            ty: ty.as_any_type_enum(),
-        };
-        self.vars.insert(id, info);
-        info
+    // fn int_ty(&self) -> BasicTypeEnum<'ctx> {
+    //     self.ctx.i64_type().as_basic_type_enum()
+    // }
+
+    // fn uint_ty(&self) -> BasicTypeEnum<'ctx> {
+    //     self.ctx.i64_type().as_basic_type_enum()
+    // }
+
+    // fn byte_ty(&self) -> BasicTypeEnum<'ctx> {
+    //     self.ctx.i8_type().as_basic_type_enum()
+    // }
+
+    // fn float_ty(&self) -> BasicTypeEnum<'ctx> {
+    //     self.ctx.f64_type().as_basic_type_enum()
+    // }
+
+    fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
+        self.builder.build_alloca(ty, name).unwrap()
     }
 
-    fn alloca_entry(&mut self, ty: BasicTypeEnum<'ctx>, id: VarId) -> AllocInfo<'ctx> {
+    fn emit_alloca_entry(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let curr_block = self.builder.get_insert_block().unwrap();
         let head_block = curr_block
             .get_parent()
@@ -353,9 +379,9 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .unwrap();
 
         self.builder.position_at_end(head_block);
-        let info = self.alloca(ty, id);
+        let ptr = self.emit_alloca(ty, name);
         self.builder.position_at_end(curr_block);
-        info
+        ptr
     }
 
     fn curr_function(&self) -> FunctionValue<'ctx> {
@@ -364,6 +390,18 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .unwrap()
             .get_parent()
             .unwrap()
+    }
+
+    fn is_trivial(&self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
+            Ty::Array(_) => false,
+            Ty::Fn(_, _) => todo!(),
+            Ty::Tuple(inner) => inner.iter().all(|ty| self.is_trivial(ty)),
+            Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
+                .into_iter()
+                .all(|(_, ty)| self.is_trivial(ty)),
+        }
     }
 }
 

@@ -205,7 +205,8 @@ impl TypeChecker<'_> {
 
     fn infer_field(&mut self, hir: &Hir, base: ExprId, field: SpanIdent) -> Result<PartialTy> {
         let base_ty = self.infer_expr(hir, base)?;
-        let base_ty = self.normalize_ty(base_ty);
+        self.unify();
+        let base_ty = Self::normalize_ty(&mut self.table, &base_ty);
 
         let PartialTy::Adt(base_id) = base_ty else {
             return Err(self
