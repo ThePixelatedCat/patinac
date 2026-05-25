@@ -1,12 +1,18 @@
 record Point(x: Float, y: Float)
+record Line(a: Point, b: Point)
 
 fn main() -> {
-    let mut point = Point(1.0, 0.0)
-    point.y = 5.0
-    swap(mut point)
-    inc(mut point.y)
+    let point = Point(1.0, 0.0)
+    let mut line = straight_line(point, 5.0)
+    line.a.y = 5.0
+    swap(mut line.a)
+    inc(mut line.a.y)
     print point.x
-    print point.y
+    print line.a.x
+}
+
+fn straight_line(start: Point, length: Float): Line -> {
+    Line(start, Point(start.x +. length, start.y))
 }
 
 fn inc(mut n: Float) -> n = n +. 1.0
