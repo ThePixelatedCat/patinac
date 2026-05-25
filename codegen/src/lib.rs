@@ -185,7 +185,6 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     fn report_warning(&self, msg: impl Into<Cow<'static, str>>) {
-        drop(msg);
         todo!("warnings");
     }
 

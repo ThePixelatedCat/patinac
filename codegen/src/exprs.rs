@@ -39,14 +39,16 @@ impl<'ctx> Codegen<'ctx, '_> {
 
     fn emit_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         let format_string = match self.ty_map.ty(expr) {
-            Ty::Int => "%d",
-            Ty::UInt => "%u",
-            Ty::Byte => "%hhu",
-            Ty::Float => "%f",
-            Ty::Bool => "%d",
+            Ty::Int => "%lld\n",
+            Ty::UInt => "%llu\n",
+            Ty::Byte => "%hhu\n",
+            Ty::Float => "%f\n",
+            Ty::Bool => "%d\n",
             Ty::Char => todo!(),
             Ty::Adt(_) => todo!(),
-            Ty::Tuple(_) | Ty::Array(_) | Ty::Fn(_, _) => panic!("Cannot print this type"),
+            Ty::Tuple(_) => todo!(),
+            Ty::Array(_) => todo!(),
+            Ty::Fn(_, _) => todo!(),
         };
 
         let format_ptr = self

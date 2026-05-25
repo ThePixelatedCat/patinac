@@ -1,25 +1,18 @@
+record Point(x: Float, y: Float)
+
 fn main() -> {
-    let mut point = make_point(1.0)
+    let mut point = Point(1.0, 0.0)
     point.y = 5.0
     swap(mut point)
     inc(mut point.y)
-    print get_x(point)
+    print point.x
     print point.y
 }
 
-fn fib(n: Float): Float ->
-    if n < 2.0 
-        { n } 
-    else 
-        { fib(n -. 1.0) +. fib(n -. 2.0) }
-
 fn inc(mut n: Float) -> n = n +. 1.0
 
-record Point(x: Float, y: Float)
-fn get_x(self: Point): Float -> self.x
 fn swap(mut self: Point) -> {
     let x = self.x
     self.x = self.y
     self.y = x
 }
-fn make_point(x: Float): Point -> Point(x, 0.0)
