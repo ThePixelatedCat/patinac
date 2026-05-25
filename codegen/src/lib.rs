@@ -6,7 +6,6 @@ mod witnesses;
 use std::{borrow::Cow, fmt::Display, iter, path::PathBuf};
 
 use clap::ValueEnum;
-use ident::Ident;
 use inkwell::{
     AddressSpace,
     builder::Builder,
@@ -14,7 +13,7 @@ use inkwell::{
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
-    types::{BasicType, BasicTypeEnum, StructType},
+    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
     values::{FunctionValue, PointerValue},
 };
 use slotmap::SecondaryMap;
@@ -23,7 +22,7 @@ use hir::{
     Hir, TyMap, VarId,
     exprs::ExprId,
     items::{AdtId, ExecKind},
-    types::Ty,
+    types::{Param, Ty},
 };
 
 #[derive(PartialEq, Eq)]
@@ -77,12 +76,6 @@ pub struct Codegen<'ctx, 'hir> {
     printf: FunctionValue<'ctx>,
 }
 
-// #[derive(Debug, Clone, Copy)]
-// struct AllocInfo<'ctx> {
-//     ptr: PointerValue<'ctx>,
-//     ty: AnyTypeEnum<'ctx>,
-// }
-
 pub fn create_ctx() -> Context {
     Context::create()
 }
@@ -122,19 +115,15 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     }
 
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
-        for (adt, ident) in self.hir.adts() {
-            self.build_constructor(adt, ident.ident);
+        for (adt, _) in self.hir.adts() {
+            self.build_constructor(adt);
         }
 
         for exec in self.hir.execs() {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
-                ExecKind::Fn { params, .. } => {
-                    let Ty::Fn(_, ret_ty) = self.hir.var_ty(exec.id) else {
-                        unreachable!("ICE")
-                    };
-                    let func = self.build_func(exec.id, params, ret_ty);
-                    self.funcs.insert(exec.id, func);
+                ExecKind::Fn { .. } => {
+                    self.build_func(exec.id);
                 }
             }
         }
@@ -216,39 +205,28 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         }
     }
 
-    fn build_constructor(&mut self, adt: AdtId, ident: Ident) {
+    fn build_constructor(&mut self, adt: AdtId) {
         let info = self.hir.adt_info(adt);
-        let Ty::Fn(param_tys, _) = self.hir.var_ty(info.constructor_id) else {
-            unreachable!("ICE")
-        };
 
-        todo!("Fix argument passing?");
-        let param_tys: Vec<_> = iter::once(self.ptr_ty().into())
-            .chain(param_tys.iter().map(|p| {
-                if is_indirect(&p.ty) {
-                    self.ptr_ty()
-                } else {
-                    self.lower_ty(&p.ty)
-                }
-                .into()
-            }))
-            .collect();
-        let fn_ty = self.ctx.void_type().fn_type(&param_tys, false);
-
-        let func = self.module.add_function(&ident.str(), fn_ty, None);
-        self.funcs.insert(info.constructor_id, func);
-
+        let func = self.build_func(info.constructor_id);
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
         let ty = self.lower_ty(&Ty::Adt(adt));
         let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-        for (idx, arg) in func.get_param_iter().skip(1).enumerate() {
+        for (idx, (arg, field_ty)) in
+            iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
+        {
             let field_ptr = self
                 .builder
-                .build_struct_gep(ty, out_ptr, idx as u32, &format!("field{idx}tmp"))
+                .build_struct_gep(
+                    ty,
+                    out_ptr,
+                    u32::try_from(idx).unwrap(),
+                    &format!("field{idx}"),
+                )
                 .unwrap();
-            self.builder.build_store(field_ptr, arg).unwrap();
+            self.emit_copy(field_ty, arg, field_ptr);
         }
 
         self.builder.build_return(None).unwrap();
@@ -256,30 +234,38 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         assert!(func.verify(true));
     }
 
-    fn build_func(&self, id: VarId, params: &[VarId], ret_ty: &Ty) -> FunctionValue<'ctx> {
-        todo!("Fix argument passing?");
+    fn build_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
+        let Ty::Fn(params, ret_ty) = self.hir.var_ty(id) else {
+            unreachable!("ICE")
+        };
+        let func = self.module.add_function(
+            &self.hir.var_info(id).ident.str(),
+            self.build_func_ty(params, ret_ty),
+            None,
+        );
+        self.funcs.insert(id, func);
+        func
+    }
+
+    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
         let mut param_tys: Vec<_> = params
             .iter()
             .map(|p| {
-                let ty = self.hir.var_ty(*p);
-                if self.hir.var_info(*p).mutable || is_indirect(ty) {
+                if p.mutable || is_indirect(&p.ty) {
                     self.ptr_ty()
                 } else {
-                    self.lower_ty(ty)
+                    self.lower_ty(&p.ty)
                 }
                 .into()
             })
             .collect();
 
-        let fn_ty = if is_indirect(ret_ty) {
+        if is_indirect(ret_ty) {
             param_tys.insert(0, self.ptr_ty().into());
             self.ctx.void_type().fn_type(&param_tys, false)
         } else {
             self.lower_ty(ret_ty).fn_type(&param_tys, false)
-        };
-
-        let fn_name = self.hir.var_info(id).ident.str();
-        self.module.add_function(&fn_name, fn_ty, None)
+        }
     }
 
     fn populate_func(
@@ -292,33 +278,24 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        todo!("Fix argument passing?");
-        // 1 if function returns void, aka returns via first argument
-        let offset = usize::from(func.get_type().get_return_type().is_none());
-        for (param, arg) in iter::zip(params, func.get_param_iter().skip(offset)) {
+        // Skip the first argument if it's an out-pointer
+        let offset = if is_indirect(ret_ty) { 1 } else { 0 };
+        for (arg, param) in iter::zip(func.get_param_iter().skip(offset), params) {
             let ty = self.hir.var_ty(*param);
             if self.hir.var_info(*param).mutable || is_indirect(ty) {
                 self.vars.insert(*param, arg.into_pointer_value());
             } else {
                 let ptr = self.emit_alloca(arg.get_type(), &self.hir.var_info(*param).ident.str());
-                self.vars.insert(*param, ptr);
                 self.builder.build_store(ptr, arg).unwrap();
+                self.vars.insert(*param, ptr);
             }
         }
 
         let body = self.emit_expr(body);
 
-        let void = func.get_type().get_return_type().is_none();
-        if void {
+        if is_indirect(ret_ty) {
             let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-
-            let ret_ty = self.lower_ty(ret_ty);
-            let size = ret_ty.size_of().unwrap();
-            let align = self.target.get_target_data().get_abi_alignment(&ret_ty);
-
-            self.builder
-                .build_memmove(out_ptr, align, body.into_pointer_value(), align, size)
-                .unwrap();
+            self.emit_move(ret_ty, body.into_pointer_value(), out_ptr);
             self.builder.build_return(None).unwrap();
         } else {
             self.builder.build_return(Some(&body)).unwrap();
@@ -350,22 +327,6 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .as_basic_type_enum()
     }
 
-    // fn int_ty(&self) -> BasicTypeEnum<'ctx> {
-    //     self.ctx.i64_type().as_basic_type_enum()
-    // }
-
-    // fn uint_ty(&self) -> BasicTypeEnum<'ctx> {
-    //     self.ctx.i64_type().as_basic_type_enum()
-    // }
-
-    // fn byte_ty(&self) -> BasicTypeEnum<'ctx> {
-    //     self.ctx.i8_type().as_basic_type_enum()
-    // }
-
-    // fn float_ty(&self) -> BasicTypeEnum<'ctx> {
-    //     self.ctx.f64_type().as_basic_type_enum()
-    // }
-
     fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         self.builder.build_alloca(ty, name).unwrap()
     }
@@ -382,6 +343,16 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let ptr = self.emit_alloca(ty, name);
         self.builder.position_at_end(curr_block);
         ptr
+    }
+
+    fn emit_move(&self, ty: &Ty, from: PointerValue<'ctx>, to: PointerValue<'ctx>) {
+        let ty = self.lower_ty(ty);
+        let size = ty.size_of().unwrap();
+        let align = self.target.get_target_data().get_abi_alignment(&ty);
+
+        self.builder
+            .build_memmove(to, align, from, align, size)
+            .unwrap();
     }
 
     fn curr_function(&self) -> FunctionValue<'ctx> {

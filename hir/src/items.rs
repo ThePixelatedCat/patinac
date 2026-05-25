@@ -33,8 +33,8 @@ impl Fields {
             .0 as u32
     }
 
-    pub fn idx_tys(&self) -> impl Iterator<Item = (usize, &Ty)> {
-        self.0.iter().map(|(_, ty)| ty).enumerate()
+    pub fn tys(&self) -> impl Iterator<Item = &Ty> {
+        self.0.iter().map(|(_, ty)| ty)
     }
 }
 

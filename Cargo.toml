@@ -16,6 +16,7 @@ members = [
 [workspace.lints.clippy]
 must_use_candidate = "allow"
 single_match_else = "allow"
+bool_to_int_with_if = "allow"
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 

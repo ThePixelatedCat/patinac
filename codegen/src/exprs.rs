@@ -6,7 +6,7 @@ use hir::{
 use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
-    values::{BasicValue, BasicValueEnum, PointerValue},
+    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue},
 };
 
 use crate::Codegen;
@@ -23,7 +23,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(expr, *base, *field),
             Expr::Index { arr, idx } => todo!("Arrays"),
-            Expr::Call { func, args } => self.emit_call(expr, *func, args),
+            Expr::Call { func, args } => self.emit_call(*func, args, self.ty_map.ty(expr)),
             Expr::Lambda { params, body } => todo!("Closures"),
             Expr::If { cond, th, el } => self.emit_if(*cond, th, el.as_ref()),
             Expr::For { id, iter, body } => todo!(),
@@ -331,7 +331,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn emit_call(&mut self, expr: ExprId, func: ExprId, args: &[Arg]) -> BasicValueEnum<'ctx> {
+    fn emit_call(&mut self, func: ExprId, args: &[Arg], ret_ty: &Ty) -> BasicValueEnum<'ctx> {
         let func = if let Expr::Ident(id) = self.hir.expr_info(func)
             && let Some(func) = self.funcs.get(*id)
         {
@@ -340,38 +340,43 @@ impl<'ctx> Codegen<'ctx, '_> {
             todo!("Closures")
         };
 
-        todo!("Fix argument passing?");
-
-        let mut args: Vec<_> = args
+        let (mut args, tmps): (Vec<_>, Vec<_>) = args
             .iter()
             .map(|a| {
-                if a.mutable {
+                let tmp = if a.mutable {
                     self.emit_place(a.val).as_basic_value_enum()
                 } else {
                     self.emit_expr(a.val)
-                }
-                .into()
+                };
+                (
+                    BasicMetadataValueEnum::from(tmp),
+                    (tmp, self.ty_map.ty(a.val)),
+                )
             })
             .collect();
 
-        let void = func.get_type().get_return_type().is_none();
-        if void {
-            let ret_ty = self.lower_ty(self.ty_map.ty(expr));
+        let result = if crate::is_indirect(ret_ty) {
             let ret_ptr = self
                 .builder
-                .build_alloca(ret_ty, "rettemp")
+                .build_alloca(self.lower_ty(ret_ty), "out")
                 .unwrap()
                 .as_basic_value_enum();
             args.insert(0, ret_ptr.into());
-            self.builder.build_call(func, &args, "calltmp").unwrap();
+            self.builder.build_call(func, &args, "call").unwrap();
             ret_ptr
         } else {
             self.builder
-                .build_call(func, &args, "calltmp")
+                .build_call(func, &args, "call")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
+        };
+
+        for (val, ty) in tmps {
+            self.emit_drop(ty, val);
         }
+
+        result
     }
 
     fn emit_if(
@@ -482,6 +487,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .last()
             .flatten()
             .unwrap_or_else(|| self.unit())
+        // TODO: Drop at end of scope
     }
 
     fn emit_stmt(&mut self, stmt: &Stmt) -> Option<BasicValueEnum<'ctx>> {
@@ -491,8 +497,11 @@ impl<'ctx> Codegen<'ctx, '_> {
                 let ptr =
                     self.emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(*id).ident.str());
                 self.vars.insert(*id, ptr);
-                let val = self.emit_expr(*val);
-                self.emit_copy(ty, val, ptr);
+
+                let val_tmp = self.emit_expr(*val);
+                self.emit_copy(ty, val_tmp, ptr);
+                self.emit_drop(ty, val_tmp);
+
                 None
             }
             Stmt::Expr(expr) => Some(self.emit_expr(*expr)),

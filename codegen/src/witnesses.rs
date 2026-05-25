@@ -139,12 +139,35 @@ impl<'ctx> Codegen<'ctx, '_> {
             .add_function(&func_name, self.drop_fn_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        //emit(drop: builder.buildBitCast(dropFn!.parameters[0], type: irType.ptr), type: decl.type!);
+        let struct_ptr = func.get_nth_param(0).unwrap().into_pointer_value();
+        if !self.is_trivial(&Ty::Adt(id)) {
+            // If the struct is not trivial, then we need to drop each non-trivial field individually
+            for (idx, field_ty) in self
+                .hir
+                .adt_info(id)
+                .fields
+                .tys()
+                .enumerate()
+                .filter(|(_, ty)| !self.is_trivial(ty))
+            {
+                let field_ptr = self
+                    .builder
+                    .build_struct_gep(
+                        self.lower_ty(field_ty),
+                        struct_ptr,
+                        u32::try_from(idx).unwrap(),
+                        "fieldptr",
+                    )
+                    .unwrap();
+
+                self.emit_drop(field_ty, field_ptr.as_basic_value_enum());
+            }
+        }
         self.builder.build_return(None).unwrap();
 
         self.builder.position_at_end(old_insert_block);
 
-        todo!()
+        func
     }
 
     pub(crate) fn struct_copy(&self, id: AdtId) -> FunctionValue<'ctx> {
@@ -176,7 +199,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                 .unwrap();
         } else {
             // If the struct is not trivial, then we need to copy each field individually
-            for (idx, field) in self.hir.adt_info(id).fields.idx_tys() {
+            for (idx, field) in self.hir.adt_info(id).fields.tys().enumerate() {
                 let ty = self.lower_ty(field);
                 let idx = u32::try_from(idx).unwrap();
 
@@ -229,7 +252,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
         let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
         let ne_block = self.ctx.append_basic_block(func, "ne");
-        for (idx, field) in self.hir.adt_info(id).fields.idx_tys() {
+        for (idx, field) in self.hir.adt_info(id).fields.tys().enumerate() {
             let ty = self.lower_ty(field);
             let idx = u32::try_from(idx).unwrap();
 
