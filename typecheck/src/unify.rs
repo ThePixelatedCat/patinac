@@ -2,10 +2,12 @@ use std::iter;
 
 use ena::unify::InPlaceUnificationTable;
 use errors::Error;
+use hir::Hir;
+use ident::SpanIdent;
 use span::Span;
 
 use crate::{
-    TypeChecker,
+    Constraint, TypeChecker,
     error::ErrorKind,
     types::{Param, PartialTy, TyVar},
 };
@@ -39,14 +41,57 @@ fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error<Erro
 
 impl TypeChecker<'_> {
     /// Unifies all types in the unification table
-    pub(super) fn unify(&mut self) {
+    pub(super) fn unify(&mut self, hir: &Hir) {
         for constr in &self.constraints {
-            if let Err(err) =
-                Self::unify_ty_ty(&mut self.table, constr.span, &constr.ty_a, &constr.ty_b)
-            {
-                self.handler.err(err);
+            match constr {
+                Constraint::Eq(ty_a, ty_b, span) => {
+                    if let Err(err) = Self::unify_ty_ty(&mut self.table, *span, ty_a, ty_b) {
+                        self.handler.err(err);
+                    }
+                }
+                Constraint::HasField(base_ty, base_span, field_ty, field_name) => {
+                    if let Err(err) = Self::unify_field_ty(
+                        &mut self.table,
+                        hir,
+                        base_ty,
+                        *base_span,
+                        field_ty,
+                        *field_name,
+                    ) {
+                        self.handler.err(err);
+                    }
+                }
             }
         }
+    }
+
+    fn unify_field_ty(
+        table: &mut InPlaceUnificationTable<TyVar>,
+        hir: &Hir,
+        base_ty: &PartialTy,
+        base_span: Span,
+        field_ty: &PartialTy,
+        field_name: SpanIdent,
+    ) -> Result<(), Error<ErrorKind>> {
+        let base_ty = Self::normalize_ty(table, base_ty);
+
+        let base_id = match base_ty {
+            PartialTy::Adt(id) => id,
+            PartialTy::Var(_) => {
+                return Err(ErrorKind::UninferredVarType
+                    .span(base_span)
+                    .with_static_ctx("type must be known by this point"));
+            }
+            no_fields_ty => {
+                return Err(ErrorKind::NoFieldsType(no_fields_ty).span(base_span));
+            }
+        };
+
+        let Some(decl_field_ty) = hir.adt_info(base_id).fields.get_ty(field_name.ident) else {
+            return Err(ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span));
+        };
+
+        Self::unify_ty_ty(table, field_name.span, field_ty, &decl_field_ty.into())
     }
 
     /// Recursively traverse two types until at least one is a type variable,

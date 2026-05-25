@@ -24,8 +24,8 @@ pub enum ErrorKind {
     OverlappingPlace(Span),
     #[display("type `{_0}` does not have a field named `{_1}`")]
     MissingField(PartialTy, Ident),
-    #[display("{_0} is a primitive type, therefore has no fields")]
-    PrimitiveTypeNoField(PartialTy),
+    #[display("ype {_0} does not have any fields")]
+    NoFieldsType(PartialTy),
     #[display("mismatched parameter count between type `{_0}` and type `{_1}`")]
     ParamCount(PartialTy, PartialTy),
     #[display("mismatched parameter mutability between parameters `{_0}` and `{_1}`")]

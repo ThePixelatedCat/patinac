@@ -205,27 +205,13 @@ impl TypeChecker<'_> {
 
     fn infer_field(&mut self, hir: &Hir, base: ExprId, field: SpanIdent) -> Result<PartialTy> {
         let base_ty = self.infer_expr(hir, base)?;
-        self.unify();
-        let base_ty = Self::normalize_ty(&mut self.table, &base_ty);
-
-        let PartialTy::Adt(base_id) = base_ty else {
-            return Err(self
-                .handler
-                .err(ErrorKind::PrimitiveTypeNoField(base_ty).span(hir.expr_span(base))));
-        };
-
-        let Some(field_ty) = hir.adt_info(base_id).fields.get_ty(field.ident) else {
-            return Err(self
-                .handler
-                .err(ErrorKind::MissingField(base_ty, field.ident).span(field.span)));
-        };
-
-        Ok(PartialTy::from(field_ty))
+        let field_ty = self.fresh_var();
+        self.constrain_has_field(base_ty, hir.expr_span(base), field_ty.clone(), field);
+        Ok(field_ty)
     }
 
     fn infer_if(
         &mut self,
-
         hir: &Hir,
         cond: ExprId,
         th: &BlockExpr,

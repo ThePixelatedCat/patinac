@@ -12,7 +12,7 @@ fn check_expr(input: &str) -> Result<Ty> {
     let mut checker = TypeChecker::new(TEST_HANDLER);
     checker.build_context(&hir);
     checker.infer_expr(&hir, expr)?;
-    checker.unify();
+    checker.unify(&hir);
 
     Ok(checker.sub_all(&mut hir)?.ty(expr).clone())
 }
@@ -123,8 +123,7 @@ fn recursion() {
 fn fac(n: UInt): UInt -> 
     if n == 0 { 1 } else { n * fac(n - 1) }      
 ";
-
-    assert_eq!(check_full(input), Ok(()));
+    assert!(check_full(input).is_ok());
 }
 
 #[test]
@@ -151,4 +150,13 @@ fn fields() {
     fn bar(foo: Foo): Int -> foo.y
 ";
     assert!(check_full(input).is_err());
+
+    let input = "
+    record Point(x: Float, y: Float)
+    fn main() -> {
+        let point = Point(0.0, 1.0)
+        print point.x
+    }
+";
+    assert!(check_full(input).is_ok());
 }

@@ -7,19 +7,19 @@ mod types;
 mod unify;
 
 use ena::unify::{InPlaceUnificationTable, UnificationTable};
+use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
 use hir::{Hir, TyMap, VarId, exprs::ExprId, items::ExecKind, types::Ty};
-use slotmap::SecondaryMap;
+use ident::SpanIdent;
 use span::Span;
 
 use crate::types::{PartialTy, TyVar};
 
 #[derive(Debug)]
-struct Constraint {
-    ty_a: PartialTy,
-    ty_b: PartialTy,
-    span: Span,
+enum Constraint {
+    Eq(PartialTy, PartialTy, Span),
+    HasField(PartialTy, Span, PartialTy, SpanIdent),
 }
 
 pub struct TypeChecker<'err> {
@@ -72,7 +72,7 @@ impl TypeChecker<'_> {
             }
         }
 
-        self.unify();
+        self.unify(hir);
 
         self.sub_all(hir)
     }
@@ -93,7 +93,19 @@ impl TypeChecker<'_> {
     }
 
     fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Span) {
-        self.constraints.push(Constraint { ty_a, ty_b, span });
+        self.constraints.push(Constraint::Eq(ty_a, ty_b, span));
+    }
+
+    fn constrain_has_field(
+        &mut self,
+        base_ty: PartialTy,
+        base_span: Span,
+        field_ty: PartialTy,
+        field_name: SpanIdent,
+    ) {
+        self.constraints.push(Constraint::HasField(
+            base_ty, base_span, field_ty, field_name,
+        ));
     }
 
     fn convert(&mut self, ast_ty: Option<&Ty>) -> PartialTy {
