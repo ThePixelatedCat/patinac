@@ -20,6 +20,7 @@ pub enum Expr {
     Lit(LitExpr),
     Array(SmallVec<[ExprId; 3]>),
     Tuple(SmallVec<[ExprId; 3]>),
+    Assign(Place, ExprId),
     Infix {
         op: InfixOp,
         lhs: ExprId,
@@ -74,10 +75,16 @@ pub enum LitExpr {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Arg {
-    pub val: ExprId,
-    pub mutable: bool,
-    pub span: Span,
+pub enum Place {
+    Ident(VarId),
+    Field { base: Box<Self>, field: SpanIdent },
+    Index { arr: Box<Self>, idx: ExprId },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Arg {
+    Immutable(ExprId),
+    Mutable(Place),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +95,6 @@ pub struct BlockExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
-    Assign,
     Add,
     AddF,
     Sub,

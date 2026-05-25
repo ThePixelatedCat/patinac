@@ -24,13 +24,15 @@ impl Fields {
             .map(|(_, ty)| ty)
     }
 
+    /// # Panics
+    /// Panics if there is no field with the given name
     pub fn get_idx(&self, ident: Ident) -> u32 {
         self.0
             .iter()
             .enumerate()
             .find(|(_, (id, _))| id.ident == ident)
+            .and_then(|(idx, _)| u32::try_from(idx).ok())
             .unwrap()
-            .0 as u32
     }
 
     pub fn tys(&self) -> impl Iterator<Item = &Ty> {

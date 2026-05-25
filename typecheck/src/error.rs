@@ -10,18 +10,12 @@ use crate::types::{Param, PartialTy, TyVar};
 pub enum ErrorKind {
     #[display("expected `{_1}`, found `{_0}`")]
     TypesNotEqual(PartialTy, PartialTy),
-    #[display("attempted mutation of immutable place")]
-    Mutation,
     #[display("infinite (TEMP)")]
     Infinite(TyVar, PartialTy),
     #[display("could not infer a concrete type for this expression")]
     UninferredExprType,
     #[display("could not infer a concrete type for this variable")]
     UninferredVarType,
-    #[display("the left hand side of an assignment must be a place expression")]
-    NotPlaceExpr,
-    #[display("this mutable place overlaps with {_0}")]
-    OverlappingPlace(Span),
     #[display("type `{_0}` does not have a field named `{_1}`")]
     MissingField(PartialTy, Ident),
     #[display("ype {_0} does not have any fields")]

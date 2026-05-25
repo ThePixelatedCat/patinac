@@ -6,18 +6,24 @@ use span::Span;
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
-    #[display("Unbound variable")]
+    #[display("unbound variable")]
     UnboundVariable,
-    #[display("Duplicate item with name {_0} (first occurence at {_1})")]
+    #[display("cannot mutate this immutable value")]
+    Mutation,
+    #[display("expected this to be a mutable place")]
+    NotPlaceExpr,
+    #[display("this mutable place overlaps with {_0}")]
+    OverlappingPlace(Span),
+    #[display("duplicate item with name {_0} (first occurence at {_1})")]
     DupItem(Ident, Span),
-    #[display("Duplicate field {_0}")]
+    #[display("duplicate field {_0}")]
     DupFields(Ident),
-    #[display("Unknown type")]
+    #[display("unknown type")]
     UnknownType,
-    #[display("This type expects {_0} arguments but has {_1}")]
+    #[display("this type expects {_0} arguments but has {_1}")]
     GenericCount(usize, usize),
     #[display(
-        "Invalid `main` function. The `main` function must take no parameters and return no value"
+        "invalid `main` function. The `main` function must take no parameters and return no value"
     )]
     InvalidMain,
 }

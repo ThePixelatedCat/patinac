@@ -106,13 +106,6 @@ impl TypeChecker<'_> {
             .try_collect();
         let ret_ty = self.fresh_var();
 
-        // Verify uniqueness of mutable arguments
-        args.iter()
-            .permutations(2)
-            .map(|p| (p[0], p[1]))
-            .filter(|(a, b)| a.mutable || b.mutable)
-            .try_for_each(|(a, b)| self.check_places_unique(hir, a.val, b.val))?; // TODO optimise???
-
         self.constrain_eq(
             func_ty?,
             PartialTy::Fn(arg_tys?, Box::new(ret_ty.clone())),
@@ -283,49 +276,6 @@ impl TypeChecker<'_> {
                 Ok(PartialTy::unit())
             }
             Stmt::Expr(expr) => self.infer_expr(hir, *expr),
-        }
-    }
-
-    fn check_place_mut(&mut self, hir: &Hir, place: ExprId) -> Result<()> {
-        match hir.expr_info(place) {
-            Expr::Ident(id) => {
-                if hir.var_info(*id).mutable {
-                    Ok(())
-                } else {
-                    Err(self
-                        .handler
-                        .err(ErrorKind::Mutation.span(hir.expr_span(place))))
-                }
-            }
-            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
-                self.check_place_mut(hir, *base)
-            }
-            Expr::Call { .. } => todo!("Projections"),
-            _ => Err(self
-                .handler
-                .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)))),
-        }
-    }
-
-    fn check_places_unique(&mut self, hir: &Hir, place_a: ExprId, place_b: ExprId) -> Result<()> {
-        match hir.expr_info(place_b) {
-            info @ Expr::Ident(_) => {
-                if hir.expr_info(place_a) == info {
-                    Err(self.handler.err(
-                        ErrorKind::OverlappingPlace(hir.expr_span(place_a))
-                            .span(hir.expr_span(place_b)),
-                    ))
-                } else {
-                    Ok(())
-                }
-            }
-            Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
-                self.check_places_unique(hir, place_a, *base)
-            }
-            Expr::Call { .. } => todo!("Projections"),
-            _ => Err(self
-                .handler
-                .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b)))),
         }
     }
 }
