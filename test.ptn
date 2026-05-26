@@ -2,7 +2,10 @@ record Point(x: Float, y: Float)
 record Line(a: Point, b: Point)
 
 fn main() -> {
-    let f = make_f(3)
+    let inc = fn(mut n) -> n = n + 1
+    let mut m = 3
+    inc(mut m)
+    let f = make_f(m)
     f(3)
     apply(f, 2)
 }
