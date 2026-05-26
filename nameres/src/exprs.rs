@@ -1,4 +1,6 @@
 use foldhash::HashSet;
+use itertools::Itertools;
+use smallvec::SmallVec;
 
 use ast::exprs::{
     BlockExpr as AstBlockExpr, Expr as AstExpr, ExprKind, InfixOp as AstInfixOp,
@@ -8,16 +10,19 @@ use errors::{ErrorHandler, Result, TryCollectEager};
 use hir::{
     Hir, VarId,
     exprs::{
-        Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp, Place,
+        Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
         PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
     items::AdtId,
 };
 use ident::Ident;
-use smallvec::SmallVec;
 
 use crate::{ErrorKind, Scope};
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "Any given arm is readable on it's own"
+)]
 pub fn resolve_expr(
     adt_scope: &Scope<AdtId>,
     var_scope: &Scope<VarId>,
@@ -39,22 +44,15 @@ pub fn resolve_expr(
         ExprKind::Tuple(exprs) => {
             HirExpr::Tuple(resolve_exprs(adt_scope, var_scope, hir, handler, exprs)?)
         }
-        ExprKind::Infix { op, lhs, rhs } => match op {
-            AstInfixOp::Assign => {
-                let lhs = resolve_place(adt_scope, var_scope, hir, handler, *lhs);
-                let rhs = resolve_expr(adt_scope, var_scope, hir, handler, *rhs);
-                HirExpr::Assign(lhs?, rhs?)
+        ExprKind::Infix { op, lhs, rhs } => {
+            let rhs = resolve_expr(adt_scope, var_scope, hir, handler, *rhs);
+            let lhs = resolve_expr(adt_scope, var_scope, hir, handler, *lhs)?;
+            let op = convert_infix_op(op);
+            if op == HirInfixOp::Assign {
+                check_is_place(hir, handler, lhs)?;
             }
-            _ => {
-                let lhs = resolve_expr(adt_scope, var_scope, hir, handler, *lhs);
-                let rhs = resolve_expr(adt_scope, var_scope, hir, handler, *rhs);
-                HirExpr::Infix {
-                    op: convert_infix_op(op),
-                    lhs: lhs?,
-                    rhs: rhs?,
-                }
-            }
-        },
+            HirExpr::Infix { op, lhs, rhs: rhs? }
+        }
         ExprKind::Prefix { op, expr } => HirExpr::Prefix {
             op: convert_prefix_op(op),
             expr: resolve_expr(adt_scope, var_scope, hir, handler, *expr)?,
@@ -72,32 +70,31 @@ pub fn resolve_expr(
             }
         }
         ExprKind::Call { func, args } => {
-            todo!("Verify uniqueness of mutable arguments");
+            let func = resolve_expr(adt_scope, var_scope, hir, handler, *func);
+            let args: Vec<Arg> = args
+                .into_iter()
+                .map(|arg| {
+                    let val = resolve_expr(adt_scope, var_scope, hir, handler, arg.val)?;
+                    if arg.mutable {
+                        check_is_place(hir, handler, val)?;
+                    }
+                    Ok(Arg {
+                        val,
+                        mutable: arg.mutable,
+                        span: arg.span,
+                    })
+                })
+                .try_collect_eager()?;
+
             // Verify uniqueness of mutable arguments
+            // TODO optimise???
             args.iter()
                 .permutations(2)
                 .map(|p| (p[0], p[1]))
                 .filter(|(a, b)| a.mutable || b.mutable)
-                .try_for_each(|(a, b)| self.check_places_unique(hir, a.val, b.val))?; // TODO optimise???
-            let func = resolve_expr(adt_scope, var_scope, hir, handler, *func);
-            let args = args
-                .into_iter()
-                .map(|arg| {
-                    if arg.mutable {
-                        Ok(Arg::Mutable(resolve_place(
-                            adt_scope, var_scope, hir, handler, arg.val,
-                        )?))
-                    } else {
-                        Ok(Arg::Immutable(resolve_expr(
-                            adt_scope, var_scope, hir, handler, arg.val,
-                        )?))
-                    }
-                })
-                .try_collect_eager();
-            HirExpr::Call {
-                func: func?,
-                args: args?,
-            }
+                .try_for_each(|(a, b)| check_places_unique(hir, handler, a.val, b.val))?;
+
+            HirExpr::Call { func: func?, args }
         }
         ExprKind::Lambda { params, body } => {
             let mut var_scope = Scope::clone(var_scope);
@@ -183,36 +180,6 @@ fn resolve_exprs(
         .try_collect_eager()
 }
 
-fn resolve_place(
-    adt_scope: &Scope<AdtId>,
-    var_scope: &Scope<VarId>,
-    hir: &mut Hir,
-    handler: &mut ErrorHandler,
-    place: AstExpr,
-) -> Result<Place> {
-    match place.kind {
-        ExprKind::Ident(id) => {
-            let var_id = var_scope[&id];
-            if hir.var_info(var_id).mutable {
-                Ok(Place::Ident(var_id))
-            } else {
-                Err(handler.err(ErrorKind::Mutation.span(place.span)))
-            }
-        }
-        ExprKind::Field { base, field } => {
-            let base = Box::new(resolve_place(adt_scope, var_scope, hir, handler, *base)?);
-            Ok(Place::Field { base, field })
-        }
-        ExprKind::Index { arr, idx } => {
-            let arr = Box::new(resolve_place(adt_scope, var_scope, hir, handler, *arr)?);
-            let idx = resolve_expr(adt_scope, var_scope, hir, handler, *idx)?;
-            Ok(Place::Index { arr, idx })
-        }
-        ExprKind::Call { .. } => todo!("Projections"),
-        _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(place.span))),
-    }
-}
-
 fn resolve_block_expr(
     adt_scope: &Scope<AdtId>,
     var_scope: &Scope<VarId>,
@@ -224,7 +191,21 @@ fn resolve_block_expr(
     let stmts = block_expr
         .stmts
         .into_iter()
-        .map(|s| resolve_stmt(adt_scope, &mut var_scope, hir, handler, s))
+        .map(|stmt| match stmt {
+            AstStmt::Decl { binding, val, span } => {
+                // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
+                let val = resolve_expr(adt_scope, &var_scope, hir, handler, val);
+                let id = crate::resolve_binding(adt_scope, &mut var_scope, hir, handler, binding);
+                Ok(HirStmt::Decl {
+                    id: id?,
+                    val: val?,
+                    span,
+                })
+            }
+            AstStmt::Expr(expr) => {
+                resolve_expr(adt_scope, &var_scope, hir, handler, expr).map(HirStmt::Expr)
+            }
+        })
         .try_collect_eager()?;
     Ok(HirBlockExpr {
         stmts,
@@ -232,36 +213,33 @@ fn resolve_block_expr(
     })
 }
 
-fn resolve_stmt(
-    adt_scope: &Scope<AdtId>,
-    var_scope: &mut Scope<VarId>,
-    hir: &mut Hir,
-    handler: &mut ErrorHandler,
-    stmt: AstStmt,
-) -> Result<HirStmt> {
-    match stmt {
-        AstStmt::Decl { binding, val, span } => {
-            // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
-            let val = resolve_expr(adt_scope, var_scope, hir, handler, val);
-            let id = crate::resolve_binding(adt_scope, var_scope, hir, handler, binding);
-
-            Ok(HirStmt::Decl {
-                id: id?,
-                val: val?,
-                span,
-            })
+fn check_is_place(hir: &Hir, handler: &mut ErrorHandler, place: ExprId) -> Result<()> {
+    match hir.expr_info(place) {
+        HirExpr::Ident(id) => {
+            if hir.var_info(*id).mutable {
+                Ok(())
+            } else {
+                Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place))))
+            }
         }
-        AstStmt::Expr(expr) => {
-            resolve_expr(adt_scope, var_scope, hir, handler, expr).map(HirStmt::Expr)
+        HirExpr::Field { base, .. } | HirExpr::Index { arr: base, .. } => {
+            check_is_place(hir, handler, *base)
         }
+        HirExpr::Call { .. } => todo!("Projections"),
+        _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)))),
     }
 }
 
-fn check_places_unique(&mut self, hir: &Hir, place_a: ExprId, place_b: ExprId) -> Result<()> {
-    match hir.expr_info(place_b) {
-        info @ Expr::Ident(_) => {
-            if hir.expr_info(place_a) == info {
-                Err(self.handler.err(
+fn check_places_unique(
+    hir: &Hir,
+    handler: &mut ErrorHandler,
+    place_a: ExprId,
+    place_b: ExprId,
+) -> Result<()> {
+    match hir.expr_info(place_a) {
+        b @ HirExpr::Ident(_) => {
+            if hir.expr_info(place_a) == b {
+                Err(handler.err(
                     ErrorKind::OverlappingPlace(hir.expr_span(place_a))
                         .span(hir.expr_span(place_b)),
                 ))
@@ -269,13 +247,10 @@ fn check_places_unique(&mut self, hir: &Hir, place_a: ExprId, place_b: ExprId) -
                 Ok(())
             }
         }
-        Expr::Field { base, .. } | Expr::Index { arr: base, .. } => {
-            self.check_places_unique(hir, place_a, *base)
+        HirExpr::Field { base, .. } | HirExpr::Index { arr: base, .. } => {
+            check_places_unique(hir, handler, place_a, *base)
         }
-        Expr::Call { .. } => todo!("Projections"),
-        _ => Err(self
-            .handler
-            .err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place_b)))),
+        _ => panic!("ICE: attempted to check uniqueness of non-place"),
     }
 }
 
@@ -337,35 +312,21 @@ fn collect_block_captures(captures: &mut HashSet<Ident>, block: &AstBlockExpr) {
     }
 }
 
-const fn convert_prefix_op(op: AstPrefixOp) -> HirPrefixOp {
-    match op {
-        AstPrefixOp::Not => HirPrefixOp::Not,
-        AstPrefixOp::Neg => HirPrefixOp::Neg,
-    }
+macro_rules! convert_op {
+    ($op:ident, $enum_name:ident, $($variant:ident),*) => {
+        match $op {
+            $(ast::exprs::$enum_name::$variant => hir::exprs::$enum_name::$variant),*
+        }
+    };
 }
 
-/// # Panics
-/// Panics if the op is [`Assign`][`AstInfixOp::Assign`]
+const fn convert_prefix_op(op: AstPrefixOp) -> HirPrefixOp {
+    convert_op!(op, PrefixOp, Not, Neg)
+}
+
 const fn convert_infix_op(op: AstInfixOp) -> HirInfixOp {
-    match op {
-        AstInfixOp::Assign => panic!("Assignment should be handled seperately"),
-        AstInfixOp::Add => HirInfixOp::Add,
-        AstInfixOp::AddF => HirInfixOp::AddF,
-        AstInfixOp::Sub => HirInfixOp::Sub,
-        AstInfixOp::SubF => HirInfixOp::SubF,
-        AstInfixOp::Mul => HirInfixOp::Mul,
-        AstInfixOp::MulF => HirInfixOp::MulF,
-        AstInfixOp::Div => HirInfixOp::Div,
-        AstInfixOp::DivF => HirInfixOp::DivF,
-        AstInfixOp::Exp => HirInfixOp::Exp,
-        AstInfixOp::And => HirInfixOp::And,
-        AstInfixOp::Or => HirInfixOp::Or,
-        AstInfixOp::Xor => HirInfixOp::Xor,
-        AstInfixOp::Eqq => HirInfixOp::Eqq,
-        AstInfixOp::Neq => HirInfixOp::Neq,
-        AstInfixOp::Gt => HirInfixOp::Gt,
-        AstInfixOp::Lt => HirInfixOp::Lt,
-        AstInfixOp::Geq => HirInfixOp::Geq,
-        AstInfixOp::Leq => HirInfixOp::Leq,
-    }
+    convert_op!(
+        op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Xor, Eqq,
+        Neq, Gt, Lt, Geq, Leq
+    )
 }

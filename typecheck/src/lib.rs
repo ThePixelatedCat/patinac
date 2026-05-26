@@ -49,17 +49,15 @@ impl TypeChecker<'_> {
         for exec in hir.execs() {
             match &exec.kind {
                 ExecKind::Const { val, .. } => {
-                    if let Ok(val_ty) = self.infer_expr(hir, *val) {
-                        self.constrain_eq(val_ty, self.ctx[exec.id].clone(), hir.expr_span(*val));
-                    }
+                    let val_ty = self.infer_expr(hir, *val);
+                    self.constrain_eq(val_ty, self.ctx[exec.id].clone(), hir.expr_span(*val));
                 }
                 ExecKind::Fn { body, .. } => {
-                    if let Ok(body_ty) = self.infer_expr(hir, *body) {
-                        let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.id] else {
-                            unreachable!("ICE: Function was given non-function type during nameres")
-                        };
-                        self.constrain_eq(body_ty, *ret_ty.clone(), hir.expr_span(*body));
-                    }
+                    let body_ty = self.infer_expr(hir, *body);
+                    let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.id] else {
+                        unreachable!("ICE: Function was given non-function type during nameres")
+                    };
+                    self.constrain_eq(body_ty, *ret_ty.clone(), hir.expr_span(*body));
                 }
             }
         }
@@ -67,9 +65,8 @@ impl TypeChecker<'_> {
             let ExecKind::Fn { body, .. } = &main.kind else {
                 unreachable!("ICE")
             };
-            if let Ok(body_ty) = self.infer_expr(hir, *body) {
-                self.constrain_eq(body_ty, PartialTy::unit(), hir.expr_span(*body));
-            }
+            let body_ty = self.infer_expr(hir, *body);
+            self.constrain_eq(body_ty, PartialTy::unit(), hir.expr_span(*body));
         }
 
         self.unify(hir);

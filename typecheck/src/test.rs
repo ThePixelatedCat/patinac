@@ -11,7 +11,7 @@ fn check_expr(input: &str) -> Result<Ty> {
 
     let mut checker = TypeChecker::new(TEST_HANDLER);
     checker.build_context(&hir);
-    checker.infer_expr(&hir, expr)?;
+    checker.infer_expr(&hir, expr);
     checker.unify(&hir);
 
     Ok(checker.sub_all(&mut hir)?.ty(expr).clone())

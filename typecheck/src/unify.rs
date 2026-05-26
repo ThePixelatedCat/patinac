@@ -135,12 +135,13 @@ impl TypeChecker<'_> {
                     )
                     .span(span));
                 }
-                iter::zip(lhs_params, rhs_params).try_for_each(|(l, r)| {
-                    if l.mutable != r.mutable {
-                        let span = r.span;
-                        return Err(ErrorKind::ParamMutability(l, r).span(span));
+                // Intentionally do the parameters "backwards" for proper errors (variance or something)
+                iter::zip(rhs_params, lhs_params).try_for_each(|(r, l)| {
+                    if r.mutable != l.mutable {
+                        let span = l.span;
+                        return Err(ErrorKind::ParamMutability(r, l).span(span));
                     }
-                    Self::unify_ty_ty(table, r.span, &l.ty, &r.ty)
+                    Self::unify_ty_ty(table, r.span, &r.ty, &l.ty)
                 })?;
                 Self::unify_ty_ty(table, span, &lhs_ret, &rhs_ret)
             }

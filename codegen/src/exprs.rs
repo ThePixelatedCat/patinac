@@ -12,7 +12,6 @@ use inkwell::{
 use crate::Codegen;
 
 impl<'ctx> Codegen<'ctx, '_> {
-    #[allow(unused)]
     pub fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
@@ -171,6 +170,10 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Any given arm is readable on it's own"
+    )]
     fn emit_math_infix(
         &self,
         ty: &Ty,

@@ -103,7 +103,7 @@ pub trait TryCollectEager<T, E> {
     /// Only for unit error types.
     ///
     /// # Errors
-    /// Returns the error value if any of the elements of the iterator were an error
+    /// Returns the error value if any of the elements of the iterator were an error, but only after evaluating every element
     fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, E>;
 }
 
