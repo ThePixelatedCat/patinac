@@ -17,7 +17,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
             Expr::Array(expr_ids) => todo!("Arrays"),
-            Expr::Tuple(exprs) => todo!(),
+            Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(expr, *base, *field),
@@ -42,11 +42,11 @@ impl<'ctx> Codegen<'ctx, '_> {
             Ty::UInt => "%llu\n",
             Ty::Byte => "%hhu\n",
             Ty::Float => "%f\n",
-            Ty::Bool => "%d\n",
-            Ty::Char => todo!(),
+            Ty::Bool => "%hhd\n",
+            Ty::Char => todo!("Strings"),
             Ty::Adt(_) => todo!(),
             Ty::Tuple(_) => todo!(),
-            Ty::Array(_) => todo!(),
+            Ty::Array(_) => todo!("Arrays"),
             Ty::Fn(_, _) => todo!(),
         };
 
@@ -134,8 +134,8 @@ impl<'ctx> Codegen<'ctx, '_> {
             }
             .as_basic_value_enum(),
             LitExpr::Float(val) => self.ctx.f64_type().const_float(*val).as_basic_value_enum(),
-            LitExpr::Char(_) => todo!(),
-            LitExpr::String(_) => todo!(),
+            LitExpr::Char(_) => todo!("Strings"),
+            LitExpr::String(_) => todo!("Strings"),
             LitExpr::Bool(val) => {
                 let bool_ty = self.ctx.bool_type();
                 if *val {
@@ -148,18 +148,35 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
+    fn emit_tuple(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
+        // Fast-path explicit units
+        if exprs.is_empty() {
+            return self.unit();
+        }
+
+        let ty = self.lower_ty(ty);
+        let out = self.emit_alloca_entry(ty, "tuple");
+        for (idx, expr) in exprs.iter().enumerate() {
+            let tmp = self.emit_expr(*expr);
+            let ptr = self
+                .builder
+                .build_struct_gep(ty, out, u32::try_from(idx).unwrap(), &format!("field{idx}"))
+                .unwrap();
+            self.emit_move(self.ty_map.ty(*expr), tmp, ptr);
+        }
+        out.as_basic_value_enum()
+    }
+
     fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
         let ty = self.ty_map.ty(lhs);
         match op {
             InfixOp::Assign => {
                 let dst = self.emit_place(lhs);
                 let tmp = self.emit_expr(rhs);
-
+                // Drop the current value in the assigned-to variable
                 self.emit_drop(ty, dst.as_basic_value_enum());
-
-                self.emit_copy(ty, tmp, dst);
-                self.emit_drop(ty, tmp);
-
+                // Move the temporary value into the variable
+                self.emit_move(ty, tmp, dst);
                 self.unit()
             }
             _ => {
@@ -355,7 +372,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                 };
                 (
                     BasicMetadataValueEnum::from(tmp),
-                    (tmp, self.ty_map.ty(a.val)),
+                    (self.ty_map.ty(a.val), tmp),
                 )
             })
             .collect();
@@ -377,7 +394,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                 .unwrap_basic()
         };
 
-        for (val, ty) in tmps {
+        for (ty, val) in tmps {
             self.emit_drop(ty, val);
         }
 
@@ -485,31 +502,28 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn emit_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
-        block
+        let mut tmps: Vec<_> = block
             .stmts
             .iter()
-            .map(|s| self.emit_stmt(s))
-            .last()
-            .flatten()
-            .unwrap_or_else(|| self.unit())
-        // TODO: Drop at end of scope
-    }
+            .map(|stmt| match stmt {
+                Stmt::Decl { id, val, .. } => {
+                    let ty = self.hir.var_ty(*id);
+                    let ptr = self
+                        .emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(*id).ident.str());
+                    self.vars.insert(*id, ptr);
 
-    fn emit_stmt(&mut self, stmt: &Stmt) -> Option<BasicValueEnum<'ctx>> {
-        match stmt {
-            Stmt::Decl { id, val, .. } => {
-                let ty = self.hir.var_ty(*id);
-                let ptr =
-                    self.emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(*id).ident.str());
-                self.vars.insert(*id, ptr);
+                    let val_tmp = self.emit_expr(*val);
+                    self.emit_move(ty, val_tmp, ptr);
 
-                let val_tmp = self.emit_expr(*val);
-                self.emit_copy(ty, val_tmp, ptr);
-                self.emit_drop(ty, val_tmp);
-
-                None
-            }
-            Stmt::Expr(expr) => Some(self.emit_expr(*expr)),
+                    (ty, ptr.as_basic_value_enum())
+                }
+                Stmt::Expr(expr) => (self.ty_map.ty(*expr), self.emit_expr(*expr)),
+            })
+            .collect();
+        let result = tmps.pop().map_or_else(|| self.unit(), |v| v.1);
+        for (ty, val) in tmps {
+            self.emit_drop(ty, val);
         }
+        result
     }
 }

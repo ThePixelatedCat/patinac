@@ -37,10 +37,14 @@ impl TypeChecker<'_> {
                 Ok(Ty::Fn(params, ret))
             }
             PartialTy::Adt(id) => Ok(Ty::Adt(*id)),
-            PartialTy::Var(var) | PartialTy::IntVar(var) => self
+            PartialTy::Var(var) => self
                 .table
                 .probe_value(*var)
                 .map_or(Err(()), |ty| self.sub_ty(&ty)),
+            PartialTy::IntVar(var) => self
+                .table
+                .probe_value(*var)
+                .map_or(Ok(Ty::Int), |ty| self.sub_ty(&ty)),
         }
     }
 

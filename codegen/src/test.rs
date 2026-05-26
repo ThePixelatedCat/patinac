@@ -83,8 +83,8 @@ fn fib() {
 #[test]
 fn facs() {
     let input = "
-    fn fac_rec(n: Float): Float -> 
-        if n <= 0.0 { 1.0 } else { n *. fac_rec(n -. 1.0) }
+    fn fac_rec(n: UInt): UInt -> 
+        if n == 0 { 1 } else { n * fac_rec(n - 1) }
 ";
     check(input, OptLevel::O0);
 }
@@ -122,6 +122,32 @@ fn record_field() {
         let point = make_point(1.0)
         print get_x(point)
     }
+";
+    check(input, OptLevel::O0);
+}
+
+#[test]
+fn record_equals() {
+    let input = "
+    record Point(x: Float, y: Float)
+    fn main() -> {
+        print Point(1.0, 1.0) == Point(1.0, 1.0)
+        print Point(2.0, 3.0) == Point(3.0, 2.0)
+    }
+";
+    check(input, OptLevel::O0);
+}
+
+#[test]
+fn tuples() {
+    let input = "
+    fn main() -> {
+        let foo = #(1)
+        let bar = if false {}
+        let baz = tupleception(foo)
+    }   
+
+    fn tupleception(v: #(UInt)): #(#(UInt), #(UInt)) -> #(v, v)
 ";
     check(input, OptLevel::O0);
 }

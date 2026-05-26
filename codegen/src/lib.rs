@@ -14,7 +14,7 @@ use inkwell::{
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
-    values::{FunctionValue, PointerValue},
+    values::{BasicValueEnum, FunctionValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
@@ -294,7 +294,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
         if is_indirect(ret_ty) {
             let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-            self.emit_move(ret_ty, body.into_pointer_value(), out_ptr);
+            self.emit_move(ret_ty, body, out_ptr);
             self.builder.build_return(None).unwrap();
         } else {
             self.builder.build_return(Some(&body)).unwrap();
@@ -308,13 +308,13 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             Ty::Int | Ty::UInt => self.ctx.i64_type().as_basic_type_enum(),
             Ty::Byte => self.ctx.i8_type().as_basic_type_enum(),
             Ty::Float => self.ctx.f64_type().as_basic_type_enum(),
-            Ty::Char => todo!(),
+            Ty::Char => todo!("Strings"),
             Ty::Bool => self.ctx.bool_type().as_basic_type_enum(),
             Ty::Tuple(inner_tys) => {
                 let inner_tys: Vec<_> = inner_tys.iter().map(|ty| self.lower_ty(ty)).collect();
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
-            Ty::Array(_) => todo!(),
+            Ty::Array(_) => todo!("Arrays"),
             Ty::Fn(_, _) => todo!(),
             Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
@@ -338,20 +338,22 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .get_first_basic_block()
             .unwrap();
 
-        self.builder.position_at_end(head_block);
+        if let Some(first_instr) = head_block.get_first_instruction() {
+            self.builder.position_before(&first_instr);
+        } else {
+            self.builder.position_at_end(head_block);
+        }
+
         let ptr = self.emit_alloca(ty, name);
+
         self.builder.position_at_end(curr_block);
+
         ptr
     }
 
-    fn emit_move(&self, ty: &Ty, from: PointerValue<'ctx>, to: PointerValue<'ctx>) {
-        let ty = self.lower_ty(ty);
-        let size = ty.size_of().unwrap();
-        let align = self.target.get_target_data().get_abi_alignment(&ty);
-
-        self.builder
-            .build_memmove(to, align, from, align, size)
-            .unwrap();
+    fn emit_move(&self, ty: &Ty, val: BasicValueEnum<'ctx>, to: PointerValue<'ctx>) {
+        self.emit_copy(ty, val, to);
+        self.emit_drop(ty, val);
     }
 
     fn curr_function(&self) -> FunctionValue<'ctx> {
@@ -367,7 +369,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
             Ty::Array(_) => false,
             Ty::Fn(_, _) => todo!(),
-            Ty::Tuple(inner) => inner.iter().all(|ty| self.is_trivial(ty)),
+            Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
             Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
                 .into_iter()
                 .all(|(_, ty)| self.is_trivial(ty)),
@@ -379,6 +381,6 @@ const fn is_indirect(ty: &Ty) -> bool {
     match ty {
         Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
         Ty::Array(_) | Ty::Fn(_, _) | Ty::Adt(_) => true,
-        Ty::Tuple(inner) => inner.len() > 1,
+        Ty::Tuple(inner) => !inner.is_empty(),
     }
 }
