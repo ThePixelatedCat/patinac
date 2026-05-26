@@ -156,7 +156,8 @@ fn tuples() {
 fn closures() {
     let input = "
     fn main() -> {
-        apply(fn(n) -> print n + 3, 2)
+        let m = 3
+        apply(fn(n) -> print n + m, 2)
     }
 
     fn apply(f: Fn(UInt) -> #(), v: UInt) -> f(v)

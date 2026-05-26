@@ -240,6 +240,8 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             None,
         );
         self.funcs.insert(id, func);
+        self.vars
+            .insert(id, func.as_global_value().as_pointer_value());
         func
     }
 

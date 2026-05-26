@@ -2,7 +2,7 @@ use hir::{VarId, items::AdtId, types::Ty};
 use inkwell::{
     FloatPredicate, IntPredicate,
     module::Linkage,
-    types::{BasicType, BasicTypeEnum, FunctionType},
+    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
     values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue},
 };
 use itertools::Itertools;
@@ -418,7 +418,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         &self,
         name: &str,
         captures: &[VarId],
-        env_ty: Option<BasicTypeEnum<'ctx>>,
+        env_ty: Option<StructType<'ctx>>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{name}.drop");
 
@@ -480,7 +480,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         &self,
         name: &str,
         captures: &[VarId],
-        env_ty: Option<BasicTypeEnum<'ctx>>,
+        env_ty: Option<StructType<'ctx>>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{name}.copy");
 
@@ -583,7 +583,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         &self,
         name: &str,
         captures: &[VarId],
-        env_ty: Option<BasicTypeEnum<'ctx>>,
+        env_ty: Option<StructType<'ctx>>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{name}.equals");
 

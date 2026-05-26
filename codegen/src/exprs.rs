@@ -9,7 +9,7 @@ use ident::SpanIdent;
 use inkwell::{
     AddressSpace, FloatPredicate,
     module::Linkage,
-    types::BasicTypeEnum,
+    types::{BasicTypeEnum, StructType},
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
@@ -468,7 +468,43 @@ impl<'ctx> Codegen<'ctx, '_> {
                 None,
             )
         } else {
-            todo!("Build env")
+            // Allocate the environment.
+            let env_ty = self.ctx.opaque_struct_type(&format!("{func_name}.Env"));
+            let capture_tys: Vec<_> = captures
+                .iter()
+                .map(|id| self.lower_ty(self.hir.var_ty(*id)))
+                .collect();
+            env_ty.set_body(&capture_tys, false);
+            let env = self
+                .builder
+                .build_call(
+                    self.malloc(),
+                    &[env_ty.size_of().unwrap().as_basic_value_enum().into()],
+                    "malloc",
+                )
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_pointer_value();
+
+            // Initialize the environment
+            for (idx, capture) in captures.iter().enumerate() {
+                let dst = self
+                    .builder
+                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "captureptr")
+                    .unwrap();
+                let ty = self.hir.var_ty(*capture);
+                let val = if Self::is_indirect(ty) {
+                    self.vars[*capture].as_basic_value_enum()
+                } else {
+                    self.builder
+                        .build_load(self.lower_ty(ty), self.vars[*capture], "captureval")
+                        .unwrap()
+                };
+                self.emit_copy(ty, val, dst);
+            }
+
+            (env, Some(env_ty))
         };
 
         self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
@@ -483,7 +519,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         func: FunctionValue<'ctx>,
         captures: &[VarId],
         env: PointerValue<'ctx>,
-        env_ty: Option<BasicTypeEnum<'ctx>>,
+        env_ty: Option<StructType<'ctx>>,
     ) -> PointerValue<'ctx> {
         let closure_ty = self.closure_ty();
         let closure = self.emit_alloca_entry(closure_ty, "closure");
@@ -526,7 +562,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         params: &[VarId],
         ret_ty: &Ty,
         captures: &[VarId],
-        env_ty: Option<BasicTypeEnum<'ctx>>,
+        env_ty: Option<StructType<'ctx>>,
     ) {
         // Save the builder's current insertion block to restore at the end
         let old_insert_block = self.builder.get_insert_block().unwrap();
