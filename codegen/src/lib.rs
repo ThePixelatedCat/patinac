@@ -357,8 +357,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
     fn is_trivial(&self, ty: &Ty) -> bool {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
-            Ty::Array(_) => false,
-            Ty::Fn(_, _) => todo!(),
+            Ty::Array(_) | Ty::Fn(_, _) => false,
             Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
             Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
                 .into_iter()

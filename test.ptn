@@ -2,8 +2,14 @@ record Point(x: Float, y: Float)
 record Line(a: Point, b: Point)
 
 fn main() -> {
-    let m = 3
-    a(fn(n) -> print n + m, 2)
+    let f = make_f(3)
+    f(3)
+    apply(f, 2)
+}
+
+fn make_f(m: UInt): Fn(UInt) -> #() -> {
+    let prt = fn(n) -> print n
+    fn(n) -> prt(n + m)
 }
 
 fn apply(f: Fn(UInt) -> #(), v: UInt) -> f(v)
