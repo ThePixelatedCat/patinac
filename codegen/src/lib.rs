@@ -198,7 +198,15 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         for (id, ty) in &self.structs {
             let field_tys: Vec<_> = (&self.hir.adt_info(id).fields)
                 .into_iter()
-                .map(|(_, ty)| self.lower_ty(ty))
+                .map(|(_, ty)| {
+                    if let Ty::Adt(field_id) = ty
+                        && *field_id == id
+                    {
+                        todo!("Recursive records")
+                    } else {
+                        self.lower_ty(ty)
+                    }
+                })
                 .collect();
             ty.set_body(&field_tys, false);
         }
@@ -211,19 +219,14 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        let ty = self.lower_ty(&Ty::Adt(adt));
+        let ty = dbg!(self.lower_ty(&Ty::Adt(adt)));
         let out_ptr = func.get_first_param().unwrap().into_pointer_value();
         for (idx, (arg, field_ty)) in
             iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
         {
             let field_ptr = self
                 .builder
-                .build_struct_gep(
-                    ty,
-                    out_ptr,
-                    u32::try_from(idx).unwrap(),
-                    &format!("field{idx}"),
-                )
+                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "fieldptr")
                 .unwrap();
             self.emit_copy(field_ty, arg, field_ptr);
         }
