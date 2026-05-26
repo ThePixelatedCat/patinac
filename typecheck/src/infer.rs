@@ -122,7 +122,7 @@ impl TypeChecker<'_> {
                 self.constrain_has_field(base_ty, hir.expr_span(base), field_ty.clone(), field);
                 field_ty
             }
-            Expr::Lambda { params, body } => {
+            Expr::Lambda { params, body, .. } => {
                 let param_tys = params
                     .iter()
                     .map(|id| {

@@ -44,6 +44,7 @@ pub enum Expr {
     Lambda {
         params: SmallVec<[VarId; 3]>,
         body: ExprId,
+        captures: SmallVec<[VarId; 3]>,
     },
     If {
         cond: ExprId,

@@ -183,6 +183,9 @@ pub enum TokKind {
     /// `Char`
     #[token("Char")]
     Char,
+    /// `Fn`
+    #[token("Fn")]
+    FnTy,
     /// `let`
     #[token("let")]
     Let,

@@ -151,3 +151,15 @@ fn tuples() {
 ";
     check(input, OptLevel::O0);
 }
+
+#[test]
+fn closures() {
+    let input = "
+    fn main() -> {
+        apply(fn(n) -> print n + 3, 2)
+    }
+
+    fn apply(f: Fn(UInt) -> #(), v: UInt) -> f(v)
+";
+    check(input, OptLevel::O0);
+}

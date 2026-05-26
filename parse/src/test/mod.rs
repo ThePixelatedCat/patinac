@@ -25,7 +25,7 @@ fn file() {
     #[rustfmt::skip]
     let input =
 "
-fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut fn(mut Int) -> #()-> {
+fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) -> #()-> {
     let mut x: #(Bool, T) = true + sin(y)
     x = if bar < 3 {
         let baz = bar.value + 2 * 4

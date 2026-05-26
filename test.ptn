@@ -2,8 +2,10 @@ record Point(x: Float, y: Float)
 record Line(a: Point, b: Point)
 
 fn main() -> {
-    eq_test()
+    apply(fn(n) -> print n + 3, 2)
 }
+
+fn apply(f: Fn(UInt) -> #(), v: UInt) -> f(v)
 
 fn eq_test() -> {
     let mut point = Point(2.0, 3.0)

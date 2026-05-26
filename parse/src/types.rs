@@ -26,8 +26,8 @@ impl Parser<'_> {
                     self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)?;
                 Ok(TyKind::Tuple(types).span(start..span.end))
             }
-            TokKind::Fn => {
-                let start = self.consume(TokKind::Fn)?.span.start;
+            TokKind::FnTy => {
+                let start = self.consume(TokKind::FnTy)?.span.start;
 
                 let (params, _) = self.delimited_list(
                     |this| {

@@ -1,4 +1,5 @@
 mod exprs;
+mod runtime;
 #[cfg(test)]
 mod test;
 mod witnesses;
@@ -73,7 +74,7 @@ pub struct Codegen<'ctx, 'hir> {
     structs: SecondaryMap<AdtId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
     vars: SecondaryMap<VarId, PointerValue<'ctx>>,
-    printf: FunctionValue<'ctx>,
+    lambda_counter: u32,
 }
 
 pub fn create_ctx() -> Context {
@@ -92,7 +93,6 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .unwrap();
 
         let this = Self {
-            printf: Self::printf(ctx, &module),
             hir,
             ty_map,
             ctx,
@@ -102,16 +102,10 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             structs: Self::build_structs(hir, ctx),
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
+            lambda_counter: 0,
         };
         this.populate_structs();
         this
-    }
-
-    fn printf(ctx: &'ctx Context, module: &Module<'ctx>) -> FunctionValue<'ctx> {
-        let ty = ctx
-            .i32_type()
-            .fn_type(&[ctx.ptr_type(AddressSpace::default()).into()], true);
-        module.add_function("printf", ty, None)
     }
 
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
@@ -219,7 +213,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        let ty = dbg!(self.lower_ty(&Ty::Adt(adt)));
+        let ty = self.lower_ty(&Ty::Adt(adt));
         let out_ptr = func.get_first_param().unwrap().into_pointer_value();
         for (idx, (arg, field_ty)) in
             iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
@@ -242,18 +236,18 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         };
         let func = self.module.add_function(
             &self.hir.var_info(id).ident.str(),
-            self.build_func_ty(params, ret_ty),
+            self.build_func_ty(params, ret_ty, false),
             None,
         );
         self.funcs.insert(id, func);
         func
     }
 
-    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
+    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty, closure: bool) -> FunctionType<'ctx> {
         let mut param_tys: Vec<_> = params
             .iter()
             .map(|p| {
-                if p.mutable || is_indirect(&p.ty) {
+                if p.mutable || Self::is_indirect(&p.ty) {
                     self.ptr_ty()
                 } else {
                     self.lower_ty(&p.ty)
@@ -262,7 +256,12 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             })
             .collect();
 
-        if is_indirect(ret_ty) {
+        // Add parameter for the environment
+        if closure {
+            param_tys.push(self.ptr_ty().into());
+        }
+
+        if Self::is_indirect(ret_ty) {
             param_tys.insert(0, self.ptr_ty().into());
             self.ctx.void_type().fn_type(&param_tys, false)
         } else {
@@ -281,10 +280,10 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         self.builder.position_at_end(entry_block);
 
         // Skip the first argument if it's an out-pointer
-        let offset = if is_indirect(ret_ty) { 1 } else { 0 };
+        let offset = if Self::is_indirect(ret_ty) { 1 } else { 0 };
         for (arg, param) in iter::zip(func.get_param_iter().skip(offset), params) {
             let ty = self.hir.var_ty(*param);
-            if self.hir.var_info(*param).mutable || is_indirect(ty) {
+            if self.hir.var_info(*param).mutable || Self::is_indirect(ty) {
                 self.vars.insert(*param, arg.into_pointer_value());
             } else {
                 let ptr = self.emit_alloca(arg.get_type(), &self.hir.var_info(*param).ident.str());
@@ -295,7 +294,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
 
         let body = self.emit_expr(body);
 
-        if is_indirect(ret_ty) {
+        if Self::is_indirect(ret_ty) {
             let out_ptr = func.get_first_param().unwrap().into_pointer_value();
             self.emit_move(ret_ty, body, out_ptr);
             self.builder.build_return(None).unwrap();
@@ -318,15 +317,59 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
             Ty::Array(_) => todo!("Arrays"),
-            Ty::Fn(_, _) => todo!(),
+            Ty::Fn(..) => self.closure_ty(),
             Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
+    }
+
+    fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
+        if let Some(ty) = self.module.get_struct_type("_Closure") {
+            return ty.as_basic_type_enum();
+        }
+
+        let ty = self.ctx.opaque_struct_type("_Closure");
+        ty.set_body(
+            &[
+                // Function
+                self.ptr_ty(),
+                // Environment
+                self.ptr_ty(),
+                // Drop
+                self.ptr_ty(),
+                // Copy
+                self.ptr_ty(),
+                // Eq
+                self.ptr_ty(),
+            ],
+            false,
+        );
+        ty.as_basic_type_enum()
     }
 
     fn ptr_ty(&self) -> BasicTypeEnum<'ctx> {
         self.ctx
             .ptr_type(AddressSpace::default())
             .as_basic_type_enum()
+    }
+
+    fn is_trivial(&self, ty: &Ty) -> bool {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
+            Ty::Array(_) => false,
+            Ty::Fn(_, _) => todo!(),
+            Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
+            Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
+                .into_iter()
+                .all(|(_, ty)| self.is_trivial(ty)),
+        }
+    }
+
+    const fn is_indirect(ty: &Ty) -> bool {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
+            Ty::Array(_) | Ty::Fn(_, _) | Ty::Adt(_) => true,
+            Ty::Tuple(inner) => !inner.is_empty(),
+        }
     }
 
     fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
@@ -365,25 +408,5 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .unwrap()
             .get_parent()
             .unwrap()
-    }
-
-    fn is_trivial(&self, ty: &Ty) -> bool {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
-            Ty::Array(_) => false,
-            Ty::Fn(_, _) => todo!(),
-            Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
-            Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
-                .into_iter()
-                .all(|(_, ty)| self.is_trivial(ty)),
-        }
-    }
-}
-
-const fn is_indirect(ty: &Ty) -> bool {
-    match ty {
-        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
-        Ty::Array(_) | Ty::Fn(_, _) | Ty::Adt(_) => true,
-        Ty::Tuple(inner) => !inner.is_empty(),
     }
 }

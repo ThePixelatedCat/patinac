@@ -1,3 +1,5 @@
+use std::iter;
+
 use hir::{
     VarId,
     exprs::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
@@ -5,8 +7,13 @@ use hir::{
 };
 use ident::SpanIdent;
 use inkwell::{
-    FloatPredicate,
-    values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum, PointerValue},
+    AddressSpace, FloatPredicate,
+    module::Linkage,
+    types::BasicTypeEnum,
+    values::{
+        BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
+        PointerValue,
+    },
 };
 
 use crate::Codegen;
@@ -23,7 +30,11 @@ impl<'ctx> Codegen<'ctx, '_> {
             Expr::Field { base, field } => self.emit_field(expr, *base, *field),
             Expr::Index { arr, idx } => todo!("Arrays"),
             Expr::Call { func, args } => self.emit_call(*func, args, self.ty_map.ty(expr)),
-            Expr::Lambda { params, body } => todo!("Closures"),
+            Expr::Lambda {
+                params,
+                body,
+                captures,
+            } => self.emit_lambda(self.ty_map.ty(expr), params, *body, captures),
             Expr::If { cond, th, el } => self.emit_if(*cond, th, el.as_ref()),
             Expr::For { id, iter, body } => todo!(),
             Expr::Loop(body) => self.emit_loop(body),
@@ -58,7 +69,7 @@ impl<'ctx> Codegen<'ctx, '_> {
 
         let expr = self.emit_expr(expr);
         self.builder
-            .build_call(self.printf, &[format_ptr.into(), expr.into()], "print")
+            .build_call(self.printf(), &[format_ptr.into(), expr.into()], "print")
             .unwrap();
 
         self.unit()
@@ -90,7 +101,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         let alloc = self.vars[id];
         let ty = self.hir.var_ty(id);
 
-        if crate::is_indirect(ty) {
+        if Self::is_indirect(ty) {
             let new_alloc =
                 self.emit_alloca_entry(self.lower_ty(ty), &self.hir.var_info(id).ident.str());
             self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
@@ -342,7 +353,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap();
 
         let ty = self.ty_map.ty(expr);
-        if crate::is_indirect(ty) {
+        if Self::is_indirect(ty) {
             let new_alloc = self.emit_alloca_entry(self.lower_ty(ty), &field.ident.str());
             self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
             new_alloc.as_basic_value_enum()
@@ -354,14 +365,6 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn emit_call(&mut self, func: ExprId, args: &[Arg], ret_ty: &Ty) -> BasicValueEnum<'ctx> {
-        let func = if let Expr::Ident(id) = self.hir.expr_info(func)
-            && let Some(func) = self.funcs.get(*id)
-        {
-            *func
-        } else {
-            todo!("Closures")
-        };
-
         let (mut args, tmps): (Vec<_>, Vec<_>) = args
             .iter()
             .map(|a| {
@@ -377,19 +380,17 @@ impl<'ctx> Codegen<'ctx, '_> {
             })
             .collect();
 
-        let result = if crate::is_indirect(ret_ty) {
+        let result = if Self::is_indirect(ret_ty) {
             let ret_ptr = self
                 .builder
                 .build_alloca(self.lower_ty(ret_ty), "out")
                 .unwrap()
                 .as_basic_value_enum();
             args.insert(0, ret_ptr.into());
-            self.builder.build_call(func, &args, "call").unwrap();
+            self.emit_call_inner(func, args);
             ret_ptr
         } else {
-            self.builder
-                .build_call(func, &args, "call")
-                .unwrap()
+            self.emit_call_inner(func, args)
                 .try_as_basic_value()
                 .unwrap_basic()
         };
@@ -399,6 +400,183 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
 
         result
+    }
+
+    fn emit_call_inner(
+        &mut self,
+        func: ExprId,
+        mut args: Vec<BasicMetadataValueEnum<'ctx>>,
+    ) -> CallSiteValue<'ctx> {
+        if let Expr::Ident(id) = self.hir.expr_info(func)
+            && let Some(func) = self.funcs.get(*id)
+        {
+            self.builder.build_call(*func, &args, "call").unwrap()
+        } else {
+            let closure = self.emit_expr(func).into_pointer_value();
+            let ty = self.closure_ty();
+
+            let env_ptr = self
+                .builder
+                .build_struct_gep(ty, closure, 1, "envptr")
+                .unwrap();
+            let env = self
+                .builder
+                .build_load(self.ptr_ty(), env_ptr, "env")
+                .unwrap();
+            args.push(env.as_basic_value_enum().into());
+
+            let Ty::Fn(params, ret_ty) = self.ty_map.ty(func) else {
+                unreachable!()
+            };
+            let func_ty = self.build_func_ty(params, ret_ty, true);
+            let func_ptr = self
+                .builder
+                .build_struct_gep(ty, closure, 0, "funcptr")
+                .unwrap();
+            let func = self
+                .builder
+                .build_load(self.ptr_ty(), func_ptr, "func")
+                .unwrap();
+
+            self.builder
+                .build_indirect_call(func_ty, func.into_pointer_value(), &args, "call")
+                .unwrap()
+        }
+    }
+
+    fn emit_lambda(
+        &mut self,
+        ty: &Ty,
+        params: &[VarId],
+        body: ExprId,
+        captures: &[VarId],
+    ) -> BasicValueEnum<'ctx> {
+        let func_name = format!("_lambda{}", self.lambda_counter);
+        self.lambda_counter += 1;
+        let Ty::Fn(param_tys, ret_ty) = ty else {
+            unreachable!("ICE")
+        };
+        let func = self.module.add_function(
+            &func_name,
+            self.build_func_ty(param_tys, ret_ty, true),
+            Some(Linkage::Private),
+        );
+
+        let (env, env_ty) = if captures.is_empty() {
+            (
+                self.ctx.ptr_type(AddressSpace::default()).const_null(),
+                None,
+            )
+        } else {
+            todo!("Build env")
+        };
+
+        self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
+
+        self.emit_closure(&func_name, func, captures, env, env_ty)
+            .as_basic_value_enum()
+    }
+
+    fn emit_closure(
+        &self,
+        name: &str,
+        func: FunctionValue<'ctx>,
+        captures: &[VarId],
+        env: PointerValue<'ctx>,
+        env_ty: Option<BasicTypeEnum<'ctx>>,
+    ) -> PointerValue<'ctx> {
+        let closure_ty = self.closure_ty();
+        let closure = self.emit_alloca_entry(closure_ty, "closure");
+
+        let store_closure = |idx, val: PointerValue<'ctx>| {
+            let ptr = self
+                .builder
+                .build_struct_gep(closure_ty, closure, idx, "fieldptr")
+                .unwrap();
+            self.builder.build_store(ptr, val).unwrap();
+        };
+
+        store_closure(0, func.as_global_value().as_pointer_value());
+        store_closure(1, env);
+        store_closure(
+            2,
+            self.closure_drop(name, captures, env_ty)
+                .as_global_value()
+                .as_pointer_value(),
+        );
+        store_closure(
+            3,
+            self.closure_copy(name, captures, env_ty)
+                .as_global_value()
+                .as_pointer_value(),
+        );
+        store_closure(
+            4,
+            self.closure_equals(name, captures, env_ty)
+                .as_global_value()
+                .as_pointer_value(),
+        );
+        closure
+    }
+
+    fn emit_defunc_body(
+        &mut self,
+        func: FunctionValue<'ctx>,
+        body: ExprId,
+        params: &[VarId],
+        ret_ty: &Ty,
+        captures: &[VarId],
+        env_ty: Option<BasicTypeEnum<'ctx>>,
+    ) {
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        self.builder.position_at_end(entry_block);
+
+        // Skip the first argument if it's an out-pointer
+        let offset = if Self::is_indirect(ret_ty) { 1 } else { 0 };
+        for (arg, param) in iter::zip(func.get_param_iter().skip(offset), params) {
+            let ty = self.hir.var_ty(*param);
+            if self.hir.var_info(*param).mutable || Self::is_indirect(ty) {
+                self.vars.insert(*param, arg.into_pointer_value());
+            } else {
+                let ptr = self.emit_alloca(arg.get_type(), &self.hir.var_info(*param).ident.str());
+                self.builder.build_store(ptr, arg).unwrap();
+                self.vars.insert(*param, ptr);
+            }
+        }
+
+        // Set up the captures
+        let mut overwritten_vars = Vec::new();
+        if let Some(env_ty) = env_ty {
+            let env = func.get_last_param().unwrap().into_pointer_value();
+            for (idx, capture) in captures.iter().enumerate() {
+                let capture_ptr = self
+                    .builder
+                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "captureptr")
+                    .unwrap();
+                if let Some(old_ptr) = self.vars.insert(*capture, capture_ptr) {
+                    overwritten_vars.push((*capture, old_ptr));
+                }
+            }
+        }
+
+        let body = self.emit_expr(body);
+        if Self::is_indirect(ret_ty) {
+            let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+            self.emit_move(ret_ty, body, out_ptr);
+            self.builder.build_return(None).unwrap();
+        } else {
+            self.builder.build_return(Some(&body)).unwrap();
+        }
+
+        assert!(func.verify(true));
+
+        for (id, ptr) in overwritten_vars {
+            self.vars.insert(id, ptr);
+        }
+        self.builder.position_at_end(old_insert_block);
     }
 
     fn emit_if(
@@ -481,12 +659,7 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn emit_loop(&mut self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
-        let function = self
-            .builder
-            .get_insert_block()
-            .unwrap()
-            .get_parent()
-            .unwrap();
+        let function = self.curr_function();
 
         let body_block = self.ctx.append_basic_block(function, "body");
         self.builder.build_unconditional_branch(body_block).unwrap();

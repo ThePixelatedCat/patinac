@@ -99,17 +99,16 @@ pub fn resolve_expr(
         ExprKind::Lambda { params, body } => {
             let mut var_scope = Scope::clone(var_scope);
 
+            // Rebind all mutable captures as immutable within the lambda body
             let mut captures = HashSet::default();
             collect_captures(&mut captures, &body);
-            // Rebind all mutable captures as immutable within the lambda body
-            for capture in captures {
-                // Unbound variables will be caught in a few lines anyway, so doesn't matter if don't rebind them as immutable
-                if let Some(&id) = var_scope.get(&capture)
-                    && let info = hir.var_info(id)
-                    && info.mutable
-                {
+            // Remove unbound variables. This filters out the parameters (which are bound a few lines later)
+            captures.retain(|ident| var_scope.contains_key(ident));
+            for capture in &captures {
+                let info = hir.var_info(var_scope[capture]);
+                if info.mutable {
                     let id = hir.add_var(info.ident, false, info.span);
-                    var_scope.insert(capture, id);
+                    var_scope.insert(*capture, id);
                 }
             }
 
@@ -122,6 +121,10 @@ pub fn resolve_expr(
             HirExpr::Lambda {
                 params: params?,
                 body: body?,
+                captures: captures
+                    .into_iter()
+                    .map(|ident| var_scope[&ident])
+                    .collect(),
             }
         }
         ExprKind::If { cond, th, el } => {
