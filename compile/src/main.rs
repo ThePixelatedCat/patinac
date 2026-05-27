@@ -1,10 +1,10 @@
-use std::{fmt::Display, fs, path::PathBuf, time::Instant};
+use std::{fs, path::PathBuf, time::Instant};
 
 use clap::Parser as CliParser;
-use codegen::{Codegen, CodegenMode, OptLevel};
-use errors::ErrorHandler;
 use yansi::Paint;
 
+use codegen::{Codegen, CodegenMode, OptLevel};
+use errors::{DiagnosticKind, ErrorHandler};
 use parse::Parser;
 use span::Span;
 
@@ -27,8 +27,8 @@ fn main() {
 
     let start = Instant::now();
 
-    let handler_inner: &dyn Fn(&str, Span) =
-        &|msg, span| print_diagnostic(DiagnosticKind::Error, msg, span, &src);
+    let handler_inner: &dyn Fn(&str, Span, DiagnosticKind) =
+        &|msg, span, kind| print_diagnostic(kind, msg, span, &src);
     let handler = ErrorHandler::new(handler_inner);
 
     eprintln!("Parsing...");
@@ -68,21 +68,6 @@ fn main() {
     );
 }
 
-#[derive(Clone, Copy)]
-enum DiagnosticKind {
-    Error,
-    Warning,
-}
-
-impl Display for DiagnosticKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Error => "error".bright_red().fmt(f),
-            Self::Warning => "warning".yellow().fmt(f),
-        }
-    }
-}
-
 fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
     let line_start = src[..=span.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let line_end = src[span.end..]
@@ -96,7 +81,12 @@ fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
 
     let line_num = src[..=span.start].matches("\r\n").count();
 
-    let header = format!("{kind}: {msg} ({}:{})", line_num + 1, span_start + 1);
+    let kind_msg = match kind {
+        DiagnosticKind::Error => "error".bright_red(),
+        DiagnosticKind::Warning => "warning".yellow(),
+    };
+
+    let header = format!("{kind_msg}: {msg} ({}:{})", line_num + 1, span_start + 1);
     eprintln!(
         "{}\n{}   {line}\n    {:>span_end$}",
         header.white().wrap().bold(),

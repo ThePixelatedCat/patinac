@@ -12,6 +12,7 @@ use span::Span;
 use crate::Parser;
 
 #[test]
+#[expect(clippy::needless_raw_string_hashes, reason = "false positive")]
 fn lit_expressions() {
     assert_eq!(
         Parser::new("42", TEST_HANDLER).expr(),

@@ -91,7 +91,7 @@ pub fn resolve_expr(
             args.iter()
                 .permutations(2)
                 .map(|p| (p[0], p[1]))
-                .filter(|(a, b)| a.mutable || b.mutable)
+                .filter(|(a, b)| a.mutable && b.mutable)
                 .try_for_each(|(a, b)| check_places_unique(hir, handler, a.val, b.val))?;
 
             HirExpr::Call { func: func?, args }
@@ -239,7 +239,7 @@ fn check_places_unique(
     place_a: ExprId,
     place_b: ExprId,
 ) -> Result<()> {
-    match hir.expr_info(place_a) {
+    match hir.expr_info(place_b) {
         b @ HirExpr::Ident(_) => {
             if hir.expr_info(place_a) == b {
                 Err(handler.err(
@@ -253,6 +253,7 @@ fn check_places_unique(
         HirExpr::Field { base, .. } | HirExpr::Index { arr: base, .. } => {
             check_places_unique(hir, handler, place_a, *base)
         }
+        HirExpr::Call { .. } => todo!("Projections"),
         _ => panic!("ICE: attempted to check uniqueness of non-place"),
     }
 }

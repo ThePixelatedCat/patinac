@@ -1,12 +1,14 @@
 use derive_more::{Display, Error};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
+
 use span::Span;
 
 pub type Result<T, E = HandledError> = std::result::Result<T, E>;
 
-pub const TEST_HANDLER: ErrorHandler = ErrorHandler::new(&|str, span| eprintln!("{span}: {str}"));
-pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _| {});
+pub const TEST_HANDLER: ErrorHandler =
+    ErrorHandler::new(&|str, span, kind| eprintln!("{kind:?}: {str} ({span})"));
+pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _, _| {});
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Error<E>(Box<ErrorInner<E>>);
@@ -58,13 +60,19 @@ impl<E: ToString> Error<E> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum DiagnosticKind {
+    Error,
+    Warning,
+}
+
 #[derive(Clone)]
 pub struct ErrorHandler<'a> {
-    f: &'a dyn Fn(&str, Span),
+    f: &'a dyn Fn(&str, Span, DiagnosticKind),
     has_err: bool,
 }
 impl<'a> ErrorHandler<'a> {
-    pub const fn new(f: &'a dyn Fn(&str, Span)) -> Self {
+    pub const fn new(f: &'a dyn Fn(&str, Span, DiagnosticKind)) -> Self {
         Self { f, has_err: false }
     }
 
@@ -74,8 +82,12 @@ impl<'a> ErrorHandler<'a> {
     )]
     pub fn err<E: ToString>(&mut self, error: Error<E>) -> HandledError {
         self.has_err = true;
-        (self.f)(&error.msg(), error.span());
+        (self.f)(&error.msg(), error.span(), DiagnosticKind::Error);
         HandledError
+    }
+
+    pub fn warn(&mut self, msg: &str, span: Span) {
+        (self.f)(msg, span, DiagnosticKind::Warning);
     }
 
     /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors

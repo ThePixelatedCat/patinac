@@ -1,3 +1,10 @@
+record Point(x: Float, y: Float)
+fn get_x(self: Point): Float = self.x
+
 fn main(): () = {
-    print 0x10
+    let point = Point(0.0, 1.0)
+    print get_x(point)
 }
+
+// fn apply(f: Fn(mut Int) -> (), mut a: Int): () = f(mut a)
+// fn inc(mut a: Int): () = { a = a + 1 }

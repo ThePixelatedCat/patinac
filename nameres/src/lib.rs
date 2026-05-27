@@ -15,7 +15,7 @@ use ast::{
 use errors::{ErrorHandler, HandledError, Result, TryCollectEager};
 use hir::{
     Hir, VarId,
-    exprs::{ExprId, LitExpr as HirLitExpr},
+    exprs::LitExpr as HirLitExpr,
     items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind},
     types::{Param as ParamTy, Ty as HirTy},
 };
@@ -332,7 +332,7 @@ fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
 }
 
 #[cfg(any(test, feature = "test"))]
-pub fn test_resolve_expr(expr: ast::exprs::Expr) -> Result<(ExprId, Hir)> {
+pub fn test_resolve_expr(expr: ast::exprs::Expr) -> Result<(hir::exprs::ExprId, Hir)> {
     let mut hir = Hir::default();
     let mut handler = errors::TEST_HANDLER;
     let expr = exprs::resolve_expr(

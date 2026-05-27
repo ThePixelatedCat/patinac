@@ -56,7 +56,6 @@ impl Display for OptLevel {
 impl OptLevel {
     pub fn opt_string(self) -> String {
         match self {
-            //Self::O3 => "mem2reg,instcombine,reassociate,gvn,sccp,dce,simplifycfg",
             Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
                 format!("default<O{}>", self as u8)
             }
@@ -236,7 +235,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         };
         let func = self.module.add_function(
             &self.hir.var_info(id).ident.str(),
-            self.build_func_ty(params, ret_ty, false),
+            self.build_func_ty(params, ret_ty),
             None,
         );
         self.funcs.insert(id, func);
@@ -245,7 +244,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         func
     }
 
-    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty, closure: bool) -> FunctionType<'ctx> {
+    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
         let mut param_tys: Vec<_> = params
             .iter()
             .map(|p| {
@@ -259,9 +258,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
             .collect();
 
         // Add parameter for the environment
-        if closure {
-            param_tys.push(self.ptr_ty().into());
-        }
+        param_tys.push(self.ptr_ty().into());
 
         if Self::is_indirect(ret_ty) {
             param_tys.insert(0, self.ptr_ty().into());

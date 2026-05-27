@@ -31,6 +31,7 @@ fn lambda() {
     let mut a = 5
     let b = 6
     fn(c) -> a + b + c
+    a = 6
 }";
     assert!(test_resolve_expr(input).is_ok());
 }
@@ -63,6 +64,27 @@ fn fib() {
 #[test]
 fn unbound_var() {
     assert!(test_resolve_expr("a + 5").is_err(),);
+}
+
+#[test]
+fn unique_places() {
+    let input = "
+    fn main(): () = {
+        let f = fn(mut a, b) -> a = a + b
+        let b = 5
+        let g = fn(mut a) -> f(mut a, b)
+    }
+";
+    assert!(test_resolve_full(input).is_ok());
+
+    let input = "
+    record Box(v: Int)
+    fn main(): () = {
+        let f = fn(mut a, b) -> a = a + b.v
+        let g = fn(mut a) -> f(mut a.v, a)
+    }
+";
+    assert!(test_resolve_full(input).is_err());
 }
 
 #[test]

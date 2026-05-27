@@ -9,7 +9,7 @@ use ident::SpanIdent;
 use inkwell::{
     AddressSpace, FloatPredicate,
     module::Linkage,
-    types::{BasicTypeEnum, StructType},
+    types::StructType,
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
@@ -23,12 +23,12 @@ impl<'ctx> Codegen<'ctx, '_> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
-            Expr::Array(expr_ids) => todo!("Arrays"),
+            Expr::Array(_) => todo!("Arrays"),
             Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(expr, *base, *field),
-            Expr::Index { arr, idx } => todo!("Arrays"),
+            Expr::Index { .. } => todo!("Arrays"),
             Expr::Call { func, args } => self.emit_call(*func, args, self.ty_map.ty(expr)),
             Expr::Lambda {
                 params,
@@ -36,11 +36,11 @@ impl<'ctx> Codegen<'ctx, '_> {
                 captures,
             } => self.emit_lambda(self.ty_map.ty(expr), params, *body, captures),
             Expr::If { cond, th, el } => self.emit_if(*cond, th, el.as_ref()),
-            Expr::For { id, iter, body } => todo!(),
+            Expr::For { .. } => todo!(),
             Expr::Loop(body) => self.emit_loop(body),
             Expr::Break => todo!("Unconditional Control Flow"),
             Expr::Continue => todo!("Unconditional Control Flow"),
-            Expr::Return(expr) => todo!("Unconditional Control Flow"),
+            Expr::Return(_) => todo!("Unconditional Control Flow"),
             Expr::Block(stmts) => self.emit_block_expr(stmts),
 
             Expr::Print(expr) => self.emit_print(*expr),
@@ -87,8 +87,8 @@ impl<'ctx> Codegen<'ctx, '_> {
                     .build_struct_gep(self.structs[*id], self.emit_place(*base), idx, "fieldptr")
                     .unwrap()
             }
-            Expr::Index { arr, idx } => todo!("Arrays"),
-            Expr::Call { func, args } => todo!("Projections"),
+            Expr::Index { .. } => todo!("Arrays"),
+            Expr::Call { .. } => todo!("Projections"),
             _ => unreachable!("ICE: Tried to use non-place expr as place"),
         }
     }
@@ -98,6 +98,19 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     fn emit_ident(&self, id: VarId) -> BasicValueEnum<'ctx> {
+        // If it's the name of a top-level function, convert it into a closure
+        if let Some(func) = self.funcs.get(id) {
+            return self
+                .emit_closure(
+                    &self.hir.var_info(id).ident.str(),
+                    *func,
+                    &[],
+                    self.ctx.ptr_type(AddressSpace::default()).const_null(),
+                    None,
+                )
+                .as_basic_value_enum();
+        }
+
         let alloc = self.vars[id];
         let ty = self.hir.var_ty(id);
 
@@ -353,7 +366,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap();
 
         let ty = self.ty_map.ty(expr);
-        if Self::is_indirect(ty) {
+        let result = if Self::is_indirect(ty) {
             let new_alloc = self.emit_alloca_entry(self.lower_ty(ty), &field.ident.str());
             self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
             new_alloc.as_basic_value_enum()
@@ -361,22 +374,32 @@ impl<'ctx> Codegen<'ctx, '_> {
             self.builder
                 .build_load(self.lower_ty(ty), alloc, &field.ident.str())
                 .unwrap()
-        }
+        };
+        self.emit_drop(&Ty::Adt(*id), base);
+        result
     }
 
     fn emit_call(&mut self, func: ExprId, args: &[Arg], ret_ty: &Ty) -> BasicValueEnum<'ctx> {
-        let (mut args, tmps): (Vec<_>, Vec<_>) = args
+        let mut tmps = Vec::new();
+        let mut args: Vec<_> = args
             .iter()
             .map(|a| {
-                let tmp = if a.mutable {
-                    self.emit_place(a.val).as_basic_value_enum()
+                let arg_ty = self.ty_map.ty(a.val);
+                if let Expr::Ident(id) = self.hir.expr_info(a.val)
+                    && !a.mutable
+                    && Self::is_indirect(arg_ty)
+                    && self.funcs.get(*id).is_none()
+                {
+                    self.vars[*id].as_basic_value_enum().into()
                 } else {
-                    self.emit_expr(a.val)
-                };
-                (
-                    BasicMetadataValueEnum::from(tmp),
-                    (self.ty_map.ty(a.val), tmp),
-                )
+                    let tmp = if a.mutable {
+                        self.emit_place(a.val).as_basic_value_enum()
+                    } else {
+                        self.emit_expr(a.val)
+                    };
+                    tmps.push((arg_ty, tmp));
+                    tmp.into()
+                }
             })
             .collect();
 
@@ -410,34 +433,38 @@ impl<'ctx> Codegen<'ctx, '_> {
         if let Expr::Ident(id) = self.hir.expr_info(func)
             && let Some(func) = self.funcs.get(*id)
         {
+            // Can use null environment if we're calling a top-level function
+            args.push(
+                self.ctx
+                    .ptr_type(AddressSpace::default())
+                    .const_null()
+                    .as_basic_value_enum()
+                    .into(),
+            );
             self.builder.build_call(*func, &args, "call").unwrap()
         } else {
             let closure = self.emit_expr(func).into_pointer_value();
             let ty = self.closure_ty();
 
-            let env_ptr = self
-                .builder
-                .build_struct_gep(ty, closure, 1, "envptr")
-                .unwrap();
             let env = self
                 .builder
-                .build_load(self.ptr_ty(), env_ptr, "env")
+                .build_struct_gep(ty, closure, 1, "env")
                 .unwrap();
+            let env = self.builder.build_load(self.ptr_ty(), env, "env").unwrap();
             args.push(env.as_basic_value_enum().into());
 
             let Ty::Fn(params, ret_ty) = self.ty_map.ty(func) else {
                 unreachable!()
             };
-            let func_ty = self.build_func_ty(params, ret_ty, true);
-            let func_ptr = self
+            let func_ty = self.build_func_ty(params, ret_ty);
+            let func = self
                 .builder
-                .build_struct_gep(ty, closure, 0, "funcptr")
+                .build_struct_gep(ty, closure, 0, "func")
                 .unwrap();
             let func = self
                 .builder
-                .build_load(self.ptr_ty(), func_ptr, "func")
+                .build_load(self.ptr_ty(), func, "func")
                 .unwrap();
-
             self.builder
                 .build_indirect_call(func_ty, func.into_pointer_value(), &args, "call")
                 .unwrap()
@@ -451,17 +478,11 @@ impl<'ctx> Codegen<'ctx, '_> {
         body: ExprId,
         captures: &[VarId],
     ) -> BasicValueEnum<'ctx> {
+        // Create a unique name for this lambda, used for it's witnesses and it's defunctionalised body
         let func_name = format!("_lambda{}", self.lambda_counter);
         self.lambda_counter += 1;
-        let Ty::Fn(param_tys, ret_ty) = ty else {
-            unreachable!("ICE")
-        };
-        let func = self.module.add_function(
-            &func_name,
-            self.build_func_ty(param_tys, ret_ty, true),
-            Some(Linkage::Private),
-        );
 
+        // Create the environment, if one is needed
         let (env, env_ty) = if captures.is_empty() {
             (
                 self.ctx.ptr_type(AddressSpace::default()).const_null(),
@@ -507,8 +528,21 @@ impl<'ctx> Codegen<'ctx, '_> {
             (env, Some(env_ty))
         };
 
-        self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
+        // Create the defunctionalised function
+        let func = {
+            let Ty::Fn(param_tys, ret_ty) = ty else {
+                unreachable!("ICE")
+            };
+            let func = self.module.add_function(
+                &func_name,
+                self.build_func_ty(param_tys, ret_ty),
+                Some(Linkage::Private),
+            );
+            self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
+            func
+        };
 
+        // Create the final closure
         self.emit_closure(&func_name, func, captures, env, env_ty)
             .as_basic_value_enum()
     }
@@ -583,7 +617,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             }
         }
 
-        // Set up the captures
+        // Bind the captures, saving the original values to restore later
         let mut overwritten_vars = Vec::new();
         if let Some(env_ty) = env_ty {
             let env = func.get_last_param().unwrap().into_pointer_value();
@@ -598,6 +632,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             }
         }
 
+        // Emit the body and return
         let body = self.emit_expr(body);
         if Self::is_indirect(ret_ty) {
             let out_ptr = func.get_first_param().unwrap().into_pointer_value();
@@ -609,6 +644,7 @@ impl<'ctx> Codegen<'ctx, '_> {
 
         assert!(func.verify(true));
 
+        // Restore the insert block and the vars overwritten by captures
         for (id, ptr) in overwritten_vars {
             self.vars.insert(id, ptr);
         }

@@ -2,7 +2,7 @@ use hir::{VarId, items::AdtId, types::Ty};
 use inkwell::{
     FloatPredicate, IntPredicate,
     module::Linkage,
-    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
+    types::{BasicType, FunctionType, StructType},
     values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue},
 };
 use itertools::Itertools;
