@@ -7,7 +7,7 @@ use hir::{
 };
 use ident::SpanIdent;
 use inkwell::{
-    AddressSpace, FloatPredicate,
+    FloatPredicate,
     module::Linkage,
     types::StructType,
     values::{
@@ -23,7 +23,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
-            Expr::Array(_) => todo!("Arrays"),
+            Expr::Array(exprs) => self.emit_array(exprs),
             Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
@@ -105,7 +105,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                     &self.hir.var_info(id).ident.str(),
                     *func,
                     &[],
-                    self.ctx.ptr_type(AddressSpace::default()).const_null(),
+                    self.null_ptr(),
                     None,
                 )
                 .as_basic_value_enum();
@@ -170,6 +170,10 @@ impl<'ctx> Codegen<'ctx, '_> {
                 .as_basic_value_enum()
             }
         }
+    }
+
+    fn emit_array(&self, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
+        todo!("Arrays")
     }
 
     fn emit_tuple(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
@@ -434,13 +438,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             && let Some(func) = self.funcs.get(*id)
         {
             // Can use null environment if we're calling a top-level function
-            args.push(
-                self.ctx
-                    .ptr_type(AddressSpace::default())
-                    .const_null()
-                    .as_basic_value_enum()
-                    .into(),
-            );
+            args.push(self.null_ptr().as_basic_value_enum().into());
             self.builder.build_call(*func, &args, "call").unwrap()
         } else {
             let closure = self.emit_expr(func).into_pointer_value();
@@ -484,10 +482,7 @@ impl<'ctx> Codegen<'ctx, '_> {
 
         // Create the environment, if one is needed
         let (env, env_ty) = if captures.is_empty() {
-            (
-                self.ctx.ptr_type(AddressSpace::default()).const_null(),
-                None,
-            )
+            (self.null_ptr(), None)
         } else {
             // Allocate the environment.
             let env_ty = self.ctx.opaque_struct_type(&format!("{func_name}.Env"));

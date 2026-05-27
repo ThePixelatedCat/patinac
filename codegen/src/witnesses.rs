@@ -5,7 +5,6 @@ use inkwell::{
     types::{BasicType, FunctionType, StructType},
     values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue},
 };
-use itertools::Itertools;
 
 use crate::Codegen;
 
@@ -57,7 +56,11 @@ impl<'ctx> Codegen<'ctx, '_> {
                         .unwrap();
                 }
             }
-            Ty::Array(_) => todo!("Arrays"),
+            Ty::Array(inner_ty) => {
+                self.builder
+                    .build_call(self.array_drop(inner_ty), &[val.into()], "drop")
+                    .unwrap();
+            }
             Ty::Fn(_, _) => {
                 let drop_func_ptr = self
                     .builder
@@ -104,7 +107,15 @@ impl<'ctx> Codegen<'ctx, '_> {
                         .unwrap();
                 }
             }
-            Ty::Array(_) => todo!(),
+            Ty::Array(inner_ty) => {
+                self.builder
+                    .build_call(
+                        self.array_copy(inner_ty),
+                        &[dst.as_basic_value_enum().into(), val.into()],
+                        "copy",
+                    )
+                    .unwrap();
+            }
             Ty::Fn(..) => {
                 let copy_func_ptr = self
                     .builder
@@ -237,7 +248,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'a Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("_{}.drop", self.name_of(ty));
+        let func_name = format!("{}.drop", self.mangle(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -279,7 +290,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'a Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("_{}.copy", self.name_of(ty));
+        let func_name = format!("{}.copy", self.mangle(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -342,7 +353,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'a Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("_{}.equals", self.name_of(ty));
+        let func_name = format!("{}.equals", self.mangle(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -408,6 +419,232 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.builder
             .build_return(Some(&self.ctx.bool_type().const_zero()))
             .unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_drop(&self, inner_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("a[{}].drop", self.mangle(inner_ty));
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(&func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the drop function
+        let func = self
+            .module
+            .add_function(&func_name, self.drop_fn_ty(), Some(Linkage::Private));
+        self.builder
+            .position_at_end(self.ctx.append_basic_block(func, "entry"));
+        let exit_block = self.ctx.append_basic_block(func, "exit");
+
+        // Bail out if the array storage is not allocated
+        let array = func.get_first_param().unwrap().into_pointer_value();
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(self.array_ty(), array, 0, "payloadptr")
+            .unwrap();
+        let payload = self
+            .builder
+            .build_load(self.ptr_ty(), payload_ptr, "payload")
+            .unwrap()
+            .into_pointer_value();
+        let payload_null = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "payloadnull")
+            .unwrap();
+        let decr_block = self.ctx.append_basic_block(func, "decr");
+        self.builder
+            .build_conditional_branch(payload_null, exit_block, decr_block)
+            .unwrap();
+
+        // Decrement the reference counter
+        self.builder.position_at_end(decr_block);
+        let header_ty = self.array_header_ty();
+        let header_offset = self
+            .builder
+            .build_bit_cast(header_ty.size_of().unwrap(), self.ptr_ty(), "headeroffset")
+            .unwrap()
+            .into_pointer_value();
+        let header = self
+            .builder
+            .build_int_sub(payload, header_offset, "header")
+            .unwrap();
+        let refc = self
+            .builder
+            .build_struct_gep(header_ty, header, 0, "refc")
+            .unwrap();
+        let ref_val = self
+            .builder
+            .build_call(
+                self.atomic_fetch_sub_8(),
+                &[
+                    refc.into(),
+                    self.ctx.i64_type().const_int(1, false).into(),
+                    self.ctx.i32_type().const_int(4, false).into(),
+                ],
+                "decrrefc",
+            )
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic()
+            .into_int_value();
+        let refc_one = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                ref_val,
+                self.ctx.i64_type().const_int(1, false),
+                "refcone",
+            )
+            .unwrap();
+        let free_block = self.ctx.append_basic_block(func, "free");
+        // If the reference counter didn't reach zero, we're done
+        self.builder
+            .build_conditional_branch(refc_one, exit_block, free_block)
+            .unwrap();
+
+        // If the reference counter reached zero, we must deallocate the storage
+        self.builder.position_at_end(free_block);
+        if !self.is_trivial(inner_ty) {
+            // Loop over every element
+            let count = self
+                .builder
+                .build_struct_gep(header_ty, header, 1, "count")
+                .unwrap();
+            let count = self
+                .builder
+                .build_load(self.ctx.i64_type(), count, "count")
+                .unwrap()
+                .into_int_value();
+            let idx = self.emit_alloca_entry(self.ctx.i64_type().as_basic_type_enum(), "idx");
+            self.builder
+                .build_store(idx, self.ctx.i64_type().const_zero())
+                .unwrap();
+
+            let head_block = self.ctx.append_basic_block(func, "head");
+            let loop_block = self.ctx.append_basic_block(func, "loop");
+            let cont_block = self.ctx.append_basic_block(func, "cont");
+
+            self.builder.build_unconditional_branch(head_block).unwrap();
+            self.builder.position_at_end(head_block);
+
+            let curr_idx = self
+                .builder
+                .build_load(self.ctx.i64_type(), idx, "idx")
+                .unwrap()
+                .into_int_value();
+            let test = self
+                .builder
+                .build_int_compare(IntPredicate::ULT, curr_idx, count, "test")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(test, loop_block, cont_block)
+                .unwrap();
+
+            self.builder.position_at_end(loop_block);
+            let elem = unsafe {
+                self.builder
+                    .build_gep(self.lower_ty(inner_ty), payload, &[curr_idx], "elem")
+                    .unwrap()
+            };
+            self.emit_drop(inner_ty, elem.as_basic_value_enum());
+            self.builder.build_unconditional_branch(head_block).unwrap();
+
+            self.builder.position_at_end(cont_block);
+        }
+        self.builder
+            .build_call(self.free(), &[header.into()], "free")
+            .unwrap();
+        self.builder
+            .build_store(payload_ptr, self.null_ptr())
+            .unwrap();
+        self.builder.build_unconditional_branch(exit_block).unwrap();
+
+        self.builder.position_at_end(exit_block);
+        self.builder.build_return(None).unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_copy(&self, inner_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("a[{}].copy", self.mangle(inner_ty));
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(&func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the drop function
+        let func = self
+            .module
+            .add_function(&func_name, self.copy_fn_ty(), Some(Linkage::Private));
+        self.builder
+            .position_at_end(self.ctx.append_basic_block(func, "entry"));
+        let exit_block = self.ctx.append_basic_block(func, "exit");
+
+        // Bail out if the array storage is not allocated
+        let array = func.get_first_param().unwrap().into_pointer_value();
+        let payload_ptr = self
+            .builder
+            .build_struct_gep(self.array_ty(), array, 0, "payloadptr")
+            .unwrap();
+        let payload = self
+            .builder
+            .build_load(self.ptr_ty(), payload_ptr, "payload")
+            .unwrap()
+            .into_pointer_value();
+        let payload_null = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "payloadnull")
+            .unwrap();
+        let incr_block = self.ctx.append_basic_block(func, "incr");
+        self.builder
+            .build_conditional_branch(payload_null, exit_block, incr_block)
+            .unwrap();
+
+        // Increment the reference counter
+        self.builder.position_at_end(incr_block);
+        let header_ty = self.array_header_ty();
+        let header_offset = self
+            .builder
+            .build_bit_cast(header_ty.size_of().unwrap(), self.ptr_ty(), "headeroffset")
+            .unwrap()
+            .into_pointer_value();
+        let header = self
+            .builder
+            .build_int_sub(payload, header_offset, "header")
+            .unwrap();
+        let refc = self
+            .builder
+            .build_struct_gep(header_ty, header, 0, "refc")
+            .unwrap();
+        self.builder
+            .build_call(
+                self.atomic_fetch_add_8(),
+                &[
+                    refc.into(),
+                    self.ctx.i64_type().const_int(1, false).into(),
+                    self.ctx.i32_type().const_int(4, false).into(),
+                ],
+                "incrrefc",
+            )
+            .unwrap();
+        self.builder.build_unconditional_branch(exit_block).unwrap();
+
+        self.builder.position_at_end(exit_block);
+        self.builder.build_return(None).unwrap();
 
         self.builder.position_at_end(old_insert_block);
 
@@ -698,18 +935,34 @@ impl<'ctx> Codegen<'ctx, '_> {
         func
     }
 
-    fn name_of(&self, ty: &Ty) -> String {
+    fn mangle(&self, ty: &Ty) -> String {
         match ty {
-            Ty::Int => "Int".to_string(),
-            Ty::UInt => "UInt".to_string(),
-            Ty::Byte => "Byte".to_string(),
-            Ty::Float => "Float".to_string(),
-            Ty::Char => "Char".to_string(),
-            Ty::Bool => "Bool".to_string(),
-            Ty::Tuple(tys) => format!("#({})", tys.iter().map(|ty| self.name_of(ty)).join(",")),
-            Ty::Array(ty) => todo!(),
-            Ty::Fn(params, ty) => todo!(),
-            Ty::Adt(id) => self.hir.adt_ident(*id).ident.to_string(),
+            Ty::Int => "i".to_string(),
+            Ty::UInt => "u".to_string(),
+            Ty::Byte => "h".to_string(),
+            Ty::Float => "f".to_string(),
+            Ty::Char => "c".to_string(),
+            Ty::Bool => "b".to_string(),
+            Ty::Tuple(tys) => format!(
+                "t[{}]",
+                tys.iter().map(|ty| self.mangle(ty)).collect::<String>()
+            ),
+            Ty::Array(ty) => format!("a[{}]", self.mangle(ty)),
+            Ty::Fn(params, ret_ty) => {
+                let param_names = params
+                    .iter()
+                    .map(|p| {
+                        let mut_str = if p.mutable { "m" } else { "" };
+                        format!("{mut_str}{}", self.mangle(&p.ty))
+                    })
+                    .collect::<String>();
+                format!("f[{param_names};{}]", self.mangle(ret_ty))
+            }
+            Ty::Adt(id) => {
+                let mut name = self.hir.adt_ident(*id).ident.to_string();
+                name.insert(0, '_');
+                name
+            }
         }
     }
 }

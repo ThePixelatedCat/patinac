@@ -315,10 +315,32 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 let inner_tys: Vec<_> = inner_tys.iter().map(|ty| self.lower_ty(ty)).collect();
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
-            Ty::Array(_) => todo!("Arrays"),
+            Ty::Array(_) => self.array_ty(),
             Ty::Fn(..) => self.closure_ty(),
             Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
         }
+    }
+
+    fn array_ty(&self) -> BasicTypeEnum<'ctx> {
+        if let Some(ty) = self.module.get_struct_type("_Array") {
+            return ty.as_basic_type_enum();
+        }
+
+        let ty = self.ctx.opaque_struct_type("_Array");
+        ty.set_body(&[self.ptr_ty()], false);
+        ty.as_basic_type_enum()
+    }
+
+    fn array_header_ty(&self) -> BasicTypeEnum<'ctx> {
+        if let Some(ty) = self.module.get_struct_type("_ArrayHeader") {
+            return ty.as_basic_type_enum();
+        }
+
+        let ty = self.ctx.opaque_struct_type("_ArrayHeader");
+        let i64_ty = self.ctx.i64_type().as_basic_type_enum();
+        // Refcount, element count, capacity
+        ty.set_body(&[i64_ty, i64_ty, i64_ty], false);
+        ty.as_basic_type_enum()
     }
 
     fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
@@ -349,6 +371,10 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         self.ctx
             .ptr_type(AddressSpace::default())
             .as_basic_type_enum()
+    }
+
+    fn null_ptr(&self) -> PointerValue<'ctx> {
+        self.ctx.ptr_type(AddressSpace::default()).const_null()
     }
 
     fn is_trivial(&self, ty: &Ty) -> bool {

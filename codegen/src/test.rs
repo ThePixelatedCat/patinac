@@ -11,7 +11,7 @@ fn check(input: &str, opt_level: OptLevel) {
         .type_program(&mut hir)
         .unwrap();
     let ctx = crate::create_ctx();
-    Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
+    Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opt_level, CodegenMode::IRDump);
 }
 
 #[test]
@@ -152,6 +152,17 @@ fn closures() {
     }
 
     fn apply(f: Fn(UInt) -> (), v: UInt): () = f(v)
+";
+    check(input, OptLevel::O0);
+}
+
+#[test]
+fn arrays() {
+    let input = "
+    fn fst(a: [Int]): Int = {
+        let foo = a
+        1
+    }
 ";
     check(input, OptLevel::O0);
 }
