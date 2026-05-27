@@ -157,28 +157,34 @@ impl Parser<'_> {
         }
 
         let tok = self.peek()?;
-        let f = match tok {
+        let f: fn(&str) -> LitExpr = match tok {
             TokKind::IntLit => |src| {
-                LitExpr::Int(
-                    u64::from_str(src).expect("lexer should not have produced invalid int token"),
-                )
+                let num = match src.get(0..2) {
+                    Some("0b") => u64::from_str_radix(&src[2..], 2),
+                    Some("0o") => u64::from_str_radix(&src[2..], 8),
+                    Some("0x") => u64::from_str_radix(&src[2..], 16),
+                    _ => u64::from_str(src),
+                };
+                LitExpr::Int(num.expect("ICE: lexer produced invalid int token"))
             },
             TokKind::FloatLit => |src| {
-                LitExpr::Float(
-                    f64::from_str(src).expect("lexer should not have produced invalid float token"),
+                LitExpr::Float(f64::from_str(src).expect("ICE: lexer produced invalid float token"))
+            },
+            TokKind::CharLit => |src: &str| {
+                LitExpr::Char(
+                    process_escapes(&src[1..src.len() - 1])
+                        .chars()
+                        .exactly_one()
+                        .expect("ICE: lexer produced char token with multiple characters"),
                 )
             },
-            TokKind::CharLit => {
-                |src: &str| {
-                    LitExpr::Char(process_escapes(&src[1..src.len() - 1])
-                    .chars()
-                    .exactly_one()
-                    .expect("lexer should not have produced char token with multiple characters"))
+            TokKind::StringLit => |src: &str| {
+                if src.starts_with('#') {
+                    LitExpr::String(src[2..src.len() - 2].to_string())
+                } else {
+                    LitExpr::String(process_escapes(&src[1..src.len() - 1]))
                 }
-            }
-            TokKind::StringLit => {
-                |src: &str| LitExpr::String(process_escapes(&src[1..src.len() - 1]))
-            }
+            },
             TokKind::True => |_| LitExpr::Bool(true),
             TokKind::False => |_| LitExpr::Bool(false),
             _ => {

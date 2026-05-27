@@ -19,13 +19,23 @@ fn lit_expressions() {
     );
 
     assert_eq!(
+        Parser::new("0x10", TEST_HANDLER).expr(),
+        Ok(ExprKind::int(16).span(0..4))
+    );
+
+    assert_eq!(
         Parser::new("  2.7768", TEST_HANDLER).expr(),
         Ok(ExprKind::float(2.7768).span(2..8))
     );
 
     assert_eq!(
-        Parser::new(r#""I am a String!""#, TEST_HANDLER).expr(),
-        Ok(ExprKind::string("I am a String!").span(0..16))
+        Parser::new(r#""I am a String!\n""#, TEST_HANDLER).expr(),
+        Ok(ExprKind::string("I am a String!\n").span(0..18))
+    );
+
+    assert_eq!(
+        Parser::new(r##"#""I am a String!\n""#"##, TEST_HANDLER).expr(),
+        Ok(ExprKind::string(r#""I am a String!\n""#).span(0..22))
     );
 
     assert_eq!(
