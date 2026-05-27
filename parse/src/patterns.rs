@@ -43,11 +43,9 @@ impl Parser<'_> {
                     Ok(PatKind::Ident(ident).span(ident_span))
                 }
             }
-            TokKind::Hash => {
-                let start = self.consume(TokKind::Hash)?.span.start;
-                self.delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
-                    .map(|(pats, span)| PatKind::Tuple(pats).span(start..span.end))
-            }
+            TokKind::LParen => self
+                .delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
+                .map(|(pats, span)| PatKind::Tuple(pats).span(span)),
             _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
     }

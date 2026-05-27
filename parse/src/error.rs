@@ -11,10 +11,8 @@ pub enum ErrorKind {
     BadToken,
     #[display("expected {expected}, found {found}")]
     Mismatched { expected: TokKind, found: TokKind },
-    #[display("Unexpected token {_0}")]
+    #[display("unexpected token {_0}")]
     Unexpected(TokKind),
-    #[display("unexpected end of file")]
-    Eof,
 }
 
 impl ErrorKind {

@@ -8,6 +8,8 @@ mod patterns;
 mod test;
 mod types;
 
+use std::ops::Range;
+
 use ast::Ast;
 use errors::{ErrorHandler, Result};
 use lex::{Lexer, Tok, TokKind};
@@ -15,6 +17,7 @@ use lex::{Lexer, Tok, TokKind};
 use crate::{error::ErrorKind, items::Item};
 
 pub struct Parser<'src> {
+    src: &'src str,
     toks: Lexer<'src>,
     handler: ErrorHandler<'src>,
 }
@@ -22,32 +25,24 @@ pub struct Parser<'src> {
 impl<'src> Parser<'src> {
     pub fn new(src: &'src str, handler: ErrorHandler<'src>) -> Self {
         Self {
+            src,
             toks: lex::lex(src),
             handler,
         }
     }
 
-    /// Parses the tokens this was constructed with into an AST
+    /// Parses the source this was constructed with into an AST
     ///
     /// # Errors
-    /// If parsing any expression errors, an error will be returned, with a list of every error that occured.
-    /// At most one error will be reported per item
+    /// If parsing produces any errors, an error will be returned, but only after the rest of parsing is complete
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
-        while self.try_peek().is_some() {
+        while !self.at(TokKind::Eof) {
             match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
                 Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
-                Err(_) => {
-                    // // Skip to next item
-                    // while let Ok(tok) = self.peek()
-                    //     && ![TokKind::Fn, TokKind::Const, TokKind::Record, TokKind::Enum]
-                    //         .contains(&tok)
-                    // {
-                    //     let _ = self.next();
-                    // }
-                }
+                Err(_) => {}
             }
         }
 
@@ -64,40 +59,70 @@ impl<'src> Parser<'src> {
         Self::new(src, errors::TEST_HANDLER).expr()
     }
 
-    /// Get the next token, producing an error if we're at EOF
-    fn next(&mut self) -> Result<Tok<'src>> {
+    fn src_of(&self, tok: Tok) -> &'src str {
+        &self.src[Range::from(tok.span)]
+    }
+
+    /// Get the next token
+    ///
+    /// Ignores whitespace
+    fn next(&mut self) -> Result<Tok> {
         self.toks
             .next()
-            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))?
+            .unwrap_or_else(|| Ok(TokKind::Eof.span(self.src.len()..self.src.len())))
             .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
+            .and_then(|tok| match tok.kind {
+                TokKind::Whitespace => self.next(),
+                _ => Ok(tok),
+            })
     }
 
-    /// Look-ahead one token and see what kind of token it is, producing an error if we're at EOF
+    /// Look-ahead one token
+    ///
+    /// Ignores whitespace
     fn peek(&mut self) -> Result<TokKind> {
-        self.toks
+        let tok = self
+            .toks
             .peek()
-            .ok_or_else(|| self.handler.err(ErrorKind::Eof.span(0..0)))?
-            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
-            .map(|tok| tok.kind)
+            .copied()
+            .transpose()
+            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))?
+            .map_or(TokKind::Eof, |tok| tok.kind);
+        match tok {
+            TokKind::Whitespace => {
+                // Skip the whitespace and retry
+                self.toks.next();
+                self.peek()
+            }
+            _ => Ok(tok),
+        }
     }
 
-    /// Look-ahead one token and see what kind of token it is, returning None if we're at EOF
-    fn try_peek(&mut self) -> Option<TokKind> {
-        self.toks
-            .peek()?
-            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
-            .ok()
-            .map(|tok| tok.kind)
+    /// Check if the next token is the same variant as another token
+    ///
+    /// Ignores whitespace
+    fn at(&mut self, tok: TokKind) -> bool {
+        self.peek() == Ok(tok)
     }
 
-    /// Check if the next token is the same variant as another token.
-    fn at(&mut self, token: TokKind) -> bool {
-        self.try_peek().is_some_and(|tok| tok == token)
+    /// Check if the next token is the same variant as another token
+    ///
+    /// Respects whitespace
+    fn at_ws(&mut self, token: TokKind) -> bool {
+        match self.toks.peek() {
+            None => false,
+            Some(Err(span)) => {
+                self.handler.err(ErrorKind::BadToken.span(*span));
+                false
+            }
+            Some(Ok(tok)) => tok.kind == token,
+        }
     }
 
-    /// Move forward one token in the input and check
-    /// that we pass the kind of token we expect.
-    fn consume(&mut self, expected: TokKind) -> Result<Tok<'src>> {
+    /// Move forward one token in the input and check that we pass the kind of token we expect
+    ///
+    /// Ignores whitespace
+    fn consume(&mut self, expected: TokKind) -> Result<Tok> {
         self.next().and_then(|next| {
             if next.kind == expected {
                 Ok(next)
@@ -113,7 +138,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn consume_at(&mut self, token: TokKind) -> Option<Tok<'src>> {
+    fn consume_at(&mut self, token: TokKind) -> Option<Tok> {
         self.at(token).then(|| self.next().unwrap())
     }
 }

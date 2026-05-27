@@ -20,8 +20,6 @@ pub enum ErrorKind {
     DupFields(Ident),
     #[display("unknown type")]
     UnknownType,
-    #[display("this type expects {_0} arguments but has {_1}")]
-    GenericCount(usize, usize),
     #[display(
         "invalid `main` function. The `main` function must take no parameters and return no value"
     )]

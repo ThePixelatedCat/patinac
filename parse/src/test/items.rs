@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 use smallvec::smallvec;
 
 use ast::{
-    exprs::{Binding, ExprKind, InfixOp},
+    exprs::{ExprKind, InfixOp},
     items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
     patterns::PatKind,
     types::TyKind,
@@ -24,27 +24,8 @@ fn const_items() {
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("hello_world").span(6..17),
             kind: ExecKind::Const {
-                ty: Some(TyKind::string().span(19..25)),
+                ty: TyKind::string().span(19..25),
                 val: ExprKind::string("Hello, World!").span(28..43)
-            },
-        }))
-    );
-
-    assert_eq!(
-        Parser::new("const id = fn(x) -> x", TEST_HANDLER).item(),
-        Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("id").span(6..8),
-            kind: ExecKind::Const {
-                ty: None,
-                val: ExprKind::Lambda {
-                    params: vec![Binding {
-                        mutable: false,
-                        pat: PatKind::ident("x").span(14..15),
-                        ty: None
-                    }],
-                    body: ExprKind::ident("x").span(20..21).into()
-                }
-                .span(11..21)
             },
         }))
     );
@@ -149,7 +130,7 @@ enum Foo {
 #[test]
 fn function_items() {
     assert_eq!(
-        Parser::new("fn sum(mut a: Byte, b: Byte) -> a = a + b", TEST_HANDLER).item(),
+        Parser::new("fn sum(mut a: Byte, b: Byte): () = a = a + b", TEST_HANDLER).item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
@@ -169,19 +150,19 @@ fn function_items() {
                     }
                 ],
                 ret_mut: false,
-                ret_ty: TyKind::unit().span(28..29),
+                ret_ty: TyKind::unit().span(30..32),
                 body: ExprKind::Infix {
                     op: InfixOp::Assign,
-                    lhs: ExprKind::ident("a").span(32..33).into(),
+                    lhs: ExprKind::ident("a").span(35..36).into(),
                     rhs: ExprKind::Infix {
                         op: InfixOp::Add,
-                        lhs: ExprKind::ident("a").span(36..37).into(),
-                        rhs: ExprKind::ident("b").span(40..41).into()
+                        lhs: ExprKind::ident("a").span(39..40).into(),
+                        rhs: ExprKind::ident("b").span(43..44).into()
                     }
-                    .span(36..41)
+                    .span(39..44)
                     .into()
                 }
-                .span(32..41)
+                .span(35..44)
             }
         }))
     );

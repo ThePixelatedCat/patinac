@@ -26,7 +26,7 @@ fn check_full(input: &str) -> Result<()> {
 
 #[test]
 fn type_of_if_single_branch() {
-    let input = "if true {false #()}";
+    let input = "if true {false ()}";
     assert_eq!(check_expr(input), Ok(Ty::unit()));
 }
 
@@ -82,7 +82,7 @@ fn inc() {
 fn maths() {
     assert!(check_expr("1 + 1.0").is_err());
     assert_eq!(check_expr("1.0 +. 1.0"), Ok(Ty::Float));
-    assert!(check_expr("{let mut a = 5 let b = 5 a = b}").is_err());
+    assert_eq!(check_expr("{let mut a = 5 let b = 5 a = b b}"), Ok(Ty::Int));
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn shadowing() {
 #[test]
 fn recursion() {
     let input = "
-fn fac(n: UInt): UInt -> 
+fn fac(n: UInt): UInt = 
     if n == 0 { 1 } else { n * fac(n - 1) }      
 ";
     assert!(check_full(input).is_ok());
@@ -130,7 +130,7 @@ fn fac(n: UInt): UInt ->
 fn consts() {
     let input = "
     const B: UInt = A * 2
-    const A = 5
+    const A: UInt = 5
 ";
     assert!(check_full(input).is_ok());
 }
@@ -140,20 +140,20 @@ fn fields() {
     let input = "
     record Foo(x: Int)
 
-    fn bar(foo: Foo): Int -> foo.x
+    fn bar(foo: Foo): Int = foo.x
 ";
     assert!(check_full(input).is_ok());
 
     let input = "
     record Foo(x: Int)
 
-    fn bar(foo: Foo): Int -> foo.y
+    fn bar(foo: Foo): Int = foo.y
 ";
     assert!(check_full(input).is_err());
 
     let input = "
     record Point(x: Float, y: Float)
-    fn main() -> {
+    fn main(): () = {
         let point = Point(0.0, 1.0)
         print point.x
     }

@@ -20,12 +20,15 @@ impl Parser<'_> {
             TokKind::Float => primitive!(self, Float),
             TokKind::Bool => primitive!(self, Bool),
             TokKind::Char => primitive!(self, Char),
-            TokKind::Hash => {
-                let start = self.consume(TokKind::Hash)?.span.start;
-                let (types, span) =
-                    self.delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)?;
-                Ok(TyKind::Tuple(types).span(start..span.end))
+            TokKind::LBracket => {
+                let start = self.consume(TokKind::LBracket)?.span.start;
+                let inner_ty = Box::new(self.ty()?);
+                let end = self.consume(TokKind::RBracket)?.span.end;
+                Ok(TyKind::Array(inner_ty).span(start..end))
             }
+            TokKind::LParen => self
+                .delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)
+                .map(|(tys, span)| TyKind::Tuple(tys).span(span)),
             TokKind::FnTy => {
                 let start = self.consume(TokKind::FnTy)?.span.start;
 

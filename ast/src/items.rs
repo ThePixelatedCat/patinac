@@ -14,7 +14,7 @@ pub struct ExecItem {
 #[derive(Debug, PartialEq)]
 pub enum ExecKind {
     Const {
-        ty: Option<Ty>,
+        ty: Ty,
         val: Expr,
     },
     Fn {

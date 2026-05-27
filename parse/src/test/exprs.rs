@@ -34,13 +34,13 @@ fn lit_expressions() {
     );
 
     assert_eq!(
-        Parser::new(r#"#(42,#(2,),"end")"#, TEST_HANDLER).expr(),
+        Parser::new(r#"(42,(2),"end")"#, TEST_HANDLER).expr(),
         Ok(ExprKind::Tuple(vec![
-            ExprKind::int(42).span(2..4),
-            ExprKind::Tuple(vec![ExprKind::int(2).span(7..8)]).span(5..10),
-            ExprKind::string("end").span(11..16)
+            ExprKind::int(42).span(1..3),
+            ExprKind::Tuple(vec![ExprKind::int(2).span(5..6)]).span(4..7),
+            ExprKind::string("end").span(8..13)
         ])
-        .span(0..17))
+        .span(0..14))
     );
 
     let input = "
@@ -70,7 +70,7 @@ fn lit_expressions() {
 }
 
 #[test]
-fn unop_expressions() {
+fn prefix() {
     assert_eq!(
         Parser::new("!  is_visible", TEST_HANDLER).expr(),
         Ok(ExprKind::Prefix {
@@ -101,7 +101,7 @@ fn unop_expressions() {
 
 #[allow(clippy::too_many_lines, reason = "It's a test function")]
 #[test]
-fn binop_expressions() {
+fn precedence() {
     assert_eq!(
         Parser::new("4 + 2 * 3", TEST_HANDLER).expr(),
         Ok(ExprKind::Infix {
@@ -242,7 +242,7 @@ fn binop_expressions() {
 #[test]
 fn compound_expressions() {
     assert_eq!(
-        Parser::new("bar (  mut x, 2, bar)", TEST_HANDLER).expr(),
+        Parser::new("bar(   mut x, 2, bar)", TEST_HANDLER).expr(),
         Ok(ExprKind::Call {
             func: ExprKind::ident("bar").span(0..3).into(),
             args: vec![
@@ -344,6 +344,50 @@ fn compound_expressions() {
 }
 
 #[test]
+fn tuple_or_call() {
+    assert_eq!(
+        Parser::new("{foo()}", TEST_HANDLER).expr(),
+        Ok(ExprKind::Block(
+            ExprKind::Call {
+                func: ExprKind::ident("foo").span(1..4).into(),
+                args: vec![]
+            }
+            .span(1..6)
+            .as_block(0..7)
+        )
+        .span(0..7))
+    );
+    assert_eq!(
+        Parser::new("{foo ()}", TEST_HANDLER).expr(),
+        Ok(ExprKind::Block(BlockExpr {
+            stmts: vec![
+                Stmt::Expr(ExprKind::ident("foo").span(1..4)),
+                Stmt::Expr(ExprKind::Tuple(vec![]).span(5..7))
+            ],
+            span: Span::from(0..8)
+        })
+        .span(0..8))
+    );
+    assert_eq!(
+        Parser::new("{foo(mut 1)}", TEST_HANDLER).expr(),
+        Ok(ExprKind::Block(
+            ExprKind::Call {
+                func: ExprKind::ident("foo").span(1..4).into(),
+                args: vec![Arg {
+                    val: ExprKind::int(1).span(9..10),
+                    mutable: true,
+                    span: Span::from(5..10)
+                }]
+            }
+            .span(1..11)
+            .as_block(0..12)
+        )
+        .span(0..12))
+    );
+    assert!(Parser::new("{foo (mut 1)}", TEST_HANDLER).expr().is_err());
+}
+
+#[test]
 fn var_expressions() {
     assert_eq!(
         Parser::new("let x = 7 + sin(3.0)", TEST_HANDLER).stmt(),
@@ -440,7 +484,7 @@ fn control_exprs() {
         Some(v) -> v,
         None() -> panic(),
         -2 -> 2,
-        #(a, b) -> #(b, a),
+        (a, b) -> (b, a),
     }
 ";
     assert_eq!(
@@ -474,19 +518,19 @@ fn control_exprs() {
                 },
                 MatchArm {
                     pat: PatKind::Tuple(vec![
-                        PatKind::ident("a").span(95..96),
-                        PatKind::ident("b").span(98..99)
+                        PatKind::ident("a").span(94..95),
+                        PatKind::ident("b").span(97..98)
                     ])
-                    .span(93..100),
+                    .span(93..99),
                     body: ExprKind::Tuple(vec![
-                        ExprKind::ident("b").span(106..107),
-                        ExprKind::ident("a").span(109..110)
+                        ExprKind::ident("b").span(104..105),
+                        ExprKind::ident("a").span(107..108)
                     ])
-                    .span(104..111),
+                    .span(103..109),
                 }
             ]
         }
-        .span(5..118))
+        .span(5..116))
     );
 
     assert_eq!(

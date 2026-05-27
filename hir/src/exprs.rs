@@ -8,7 +8,7 @@ use crate::VarId;
 
 new_key_type! { pub struct ExprId; }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stmt {
     Decl { id: VarId, val: ExprId, span: Span },
     Expr(ExprId),

@@ -74,15 +74,12 @@
                         },
                         "2": {
                             "name": "entity.name.function.patina"
-                        },
-                        "3": {
-                            "name": "punctuation.brackets.round.patina"
                         }
                     },
-                    "end": "(->)",
+                    "end": "(=)",
                     "endCaptures": {
                         "1": {
-                            "name": "keyword.operator.arrow.skinny.patina"
+                            "name": "keyword.operator.assignment.equal.patina"
                         }
                     },
                     "patterns": [

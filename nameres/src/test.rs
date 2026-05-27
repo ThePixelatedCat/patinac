@@ -2,7 +2,7 @@ use errors::{Result, TEST_HANDLER};
 use hir::Hir;
 use parse::Parser;
 
-use crate::{Scope, exprs, resolve};
+use crate::{Scope, exprs};
 
 fn test_resolve_expr(input: &str) -> Result<Hir> {
     let expr = Parser::parse_expr(input).unwrap();
@@ -19,7 +19,7 @@ fn test_resolve_expr(input: &str) -> Result<Hir> {
 }
 
 fn test_resolve_full(input: &str) -> Result<Hir> {
-    resolve(
+    crate::resolve(
         Parser::new(input, TEST_HANDLER).parse().unwrap(),
         TEST_HANDLER,
     )
@@ -54,7 +54,7 @@ fn shadowing() {
 #[test]
 fn fib() {
     let input = "
-    fn fib(n: UInt): UInt ->
+    fn fib(n: UInt): UInt =
         if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }         
 ";
     assert!(test_resolve_full(input).is_ok());
@@ -68,8 +68,8 @@ fn unbound_var() {
 #[test]
 fn consts() {
     let input = "
-    const B = A * 2
-    const A = 5
+    const B: UInt = A * 2
+    const A: UInt = 5
 ";
     assert!(test_resolve_full(input).is_ok());
 }
@@ -81,21 +81,21 @@ fn list() {
 
     record Link(elem: Int, next: Link)
 
-    fn cons(list: List, elem: Int): List -> "todo"
+    fn cons(list: List, elem: Int): List = "todo"
 "#;
     assert!(test_resolve_full(input).is_ok());
 }
 
 #[test]
 fn unknown_type() {
-    assert!(test_resolve_expr(r#"{let x: String = "Hello, World!"}"#).is_err());
+    assert!(test_resolve_expr(r#"{let x: Foo = "Hello, World!"}"#).is_err());
 }
 
 #[test]
 fn rebinding() {
     let input = "
-    const A = 5
-    const A = 6
+    const A: UInt = 5
+    const A: UInt = 6
 ";
     assert!(test_resolve_full(input).is_err(),);
 

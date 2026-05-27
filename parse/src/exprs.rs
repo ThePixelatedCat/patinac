@@ -40,7 +40,7 @@ impl Parser<'_> {
                 .lit_expr()
                 .map(|(lit, span)| ExprKind::Lit(lit).span(span)),
             TokKind::LBracket => self.array_lit_expr(),
-            TokKind::Hash => self.tuple_lit_expr(),
+            TokKind::LParen => self.tuple_lit_expr(),
             TokKind::Minus | TokKind::Bang => self.unop_expr(),
             TokKind::Fn => self.lambda_expr(),
             TokKind::If => self.if_expr(),
@@ -72,46 +72,21 @@ impl Parser<'_> {
         }?;
 
         loop {
-            let op = match self.try_peek() {
-                // Attach suffix to current lhs and re-loop
-                Some(TokKind::Dot) => {
-                    lhs = self.dot_suffixes(lhs)?;
-                    continue;
+            let op = match self.get_op(lhs)? {
+                (new_lhs, Some(op)) => {
+                    lhs = new_lhs;
+                    op
                 }
-                Some(TokKind::LParen) => {
-                    lhs = self.call_suffix(lhs)?;
-                    continue;
-                }
-                // Continue current iteration with given binop
-                Some(TokKind::Eq) => InfixOp::Assign,
-                Some(TokKind::Plus) => InfixOp::Add,
-                Some(TokKind::PlusF) => InfixOp::AddF,
-                Some(TokKind::Minus) => InfixOp::Sub,
-                Some(TokKind::MinusF) => InfixOp::SubF,
-                Some(TokKind::Times) => InfixOp::Mul,
-                Some(TokKind::TimesF) => InfixOp::MulF,
-                Some(TokKind::Divide) => InfixOp::Div,
-                Some(TokKind::DivideF) => InfixOp::DivF,
-                Some(TokKind::Exponent) => InfixOp::Exp,
-                Some(TokKind::Eqq) => InfixOp::Eqq,
-                Some(TokKind::Neq) => InfixOp::Neq,
-                Some(TokKind::And) => InfixOp::And,
-                Some(TokKind::Or) => InfixOp::Or,
-                Some(TokKind::Xor) => InfixOp::Xor,
-                Some(TokKind::Lt) => InfixOp::Lt,
-                Some(TokKind::Leq) => InfixOp::Leq,
-                Some(TokKind::Gt) => InfixOp::Gt,
-                Some(TokKind::Geq) => InfixOp::Geq,
-                _ => break,
+                (new_lhs, None) => return Ok(new_lhs),
             };
 
             let (left_binding_power, right_binding_power) = op.binding_power();
 
             if left_binding_power < ref_binding_power {
-                break;
+                return Ok(lhs);
             }
 
-            self.next()?; // Skip over the already-parsed bop token
+            self.next().unwrap(); // Skip over the already-parsed bop token
 
             let rhs = self.expr_inner(right_binding_power)?;
 
@@ -124,7 +99,45 @@ impl Parser<'_> {
             }
             .span(span);
         }
-        Ok(lhs)
+    }
+
+    fn get_op(&mut self, lhs: Expr) -> Result<(Expr, Option<InfixOp>)> {
+        // Handle whitespace-sensitive part
+        if self.at_ws(TokKind::LParen) {
+            let lhs = self.call_suffix(lhs)?;
+            return self.get_op(lhs);
+        }
+
+        let op = match self.peek()? {
+            // Attach suffix to current lhs and re-loop
+            TokKind::Dot => {
+                let lhs = self.dot_suffixes(lhs)?;
+                return self.get_op(lhs);
+            }
+            // Continue current iteration with given binop
+            TokKind::Eq => Some(InfixOp::Assign),
+            TokKind::Plus => Some(InfixOp::Add),
+            TokKind::PlusF => Some(InfixOp::AddF),
+            TokKind::Minus => Some(InfixOp::Sub),
+            TokKind::MinusF => Some(InfixOp::SubF),
+            TokKind::Times => Some(InfixOp::Mul),
+            TokKind::TimesF => Some(InfixOp::MulF),
+            TokKind::Divide => Some(InfixOp::Div),
+            TokKind::DivideF => Some(InfixOp::DivF),
+            TokKind::Exponent => Some(InfixOp::Exp),
+            TokKind::Eqq => Some(InfixOp::Eqq),
+            TokKind::Neq => Some(InfixOp::Neq),
+            TokKind::And => Some(InfixOp::And),
+            TokKind::Or => Some(InfixOp::Or),
+            TokKind::Xor => Some(InfixOp::Xor),
+            TokKind::Lt => Some(InfixOp::Lt),
+            TokKind::Leq => Some(InfixOp::Leq),
+            TokKind::Gt => Some(InfixOp::Gt),
+            TokKind::Geq => Some(InfixOp::Geq),
+            _ => None,
+        };
+
+        Ok((lhs, op))
     }
 
     fn ident_expr(&mut self) -> Result<Expr> {
@@ -173,7 +186,7 @@ impl Parser<'_> {
             }
         };
 
-        self.consume(tok).map(|tok| (f(tok.src), tok.span))
+        self.consume(tok).map(|tok| (f(self.src_of(tok)), tok.span))
     }
 
     fn array_lit_expr(&mut self) -> Result<Expr> {
@@ -182,9 +195,8 @@ impl Parser<'_> {
     }
 
     fn tuple_lit_expr(&mut self) -> Result<Expr> {
-        let start = self.consume(TokKind::Hash)?.span.start;
         self.delimited_list(Self::expr, TokKind::LParen, TokKind::RParen)
-            .map(|(exprs, span)| ExprKind::Tuple(exprs).span(start..span.end))
+            .map(|(exprs, span)| ExprKind::Tuple(exprs).span(span))
     }
 
     fn if_expr(&mut self) -> Result<Expr> {

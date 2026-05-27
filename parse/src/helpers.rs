@@ -1,7 +1,8 @@
+use itertools::Itertools;
+
 use ast::{exprs::Binding, types::Ty};
 use errors::HandledError;
 use ident::{Ident, SpanIdent};
-use itertools::Itertools;
 use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
@@ -38,10 +39,8 @@ impl Parser<'_> {
     }
 
     pub(crate) fn ident(&mut self) -> Result<SpanIdent> {
-        self.consume(TokKind::Ident).map(|tok| SpanIdent {
-            ident: Ident::new(tok.src),
-            span: tok.span,
-        })
+        self.consume(TokKind::Ident)
+            .map(|tok| Ident::new(self.src_of(tok)).span(tok.span))
     }
 
     pub(crate) fn delimited_list<T, F>(

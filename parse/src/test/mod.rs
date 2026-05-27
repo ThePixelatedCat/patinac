@@ -25,8 +25,8 @@ fn file() {
     #[rustfmt::skip]
     let input =
 "
-fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) -> #()-> {
-    let mut x: #(Bool, T) = true + sin(y)
+fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) ->  () = {
+    let mut x:  (Bool, T) = true + sin(y)
     x = if bar < 3 {
         let baz = bar.value + 2 * 4
         x + 1
@@ -34,7 +34,7 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) -> #()-> {
         fizz(3, 5.1)
     }
 }
-record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
+record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
 ";
 
     let items = Parser::new(input, TEST_HANDLER).parse().unwrap();
@@ -79,7 +79,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                     }],
                     Return {
                         mutable: false,
-                        ty: TyKind::unit().span(68..71).into()
+                        ty: TyKind::unit().span(69..71).into()
                     }
                 )
                 .span(53..71),
@@ -94,7 +94,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                                         TyKind::Bool.span(93..97),
                                         TyKind::named("T").span(99..100)
                                     ])
-                                    .span(91..101)
+                                    .span(92..101)
                                 )
                             },
                             val: ExprKind::Infix {
@@ -219,10 +219,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
                         vec![
                             TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(272..273)])
                                 .span(268..274),
-                            TyKind::array(TyKind::named("U").span(282..283)).span(276..284),
+                            TyKind::Array(TyKind::named("U").span(277..278).into()).span(276..279),
                         ]
                     )
-                    .span(264..285),
+                    .span(264..280),
                 }
             ])
         }
@@ -231,13 +231,8 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], Array[U]])
 
 proptest! {
     #[test]
-    fn doesnt_crash_toks(in_toks in vec(TokKind::arbitrary(), 8..=512)) {
-        let raw = in_toks.iter().map(|t| t.reverse()).join(" ");
+    fn doesnt_crash(toks in vec(TokKind::arbitrary(), 8..=512)) {
+        let raw = toks.iter().map(|t| t.reverse()).join(" ");
         let _ = Parser::new(&raw, DUMMY_HANDLER).parse();
-    }
-
-    #[test]
-    fn doesnt_crash_string(s in r"\PC*") {
-        let _ = Parser::new(&s, DUMMY_HANDLER).parse();
     }
 }

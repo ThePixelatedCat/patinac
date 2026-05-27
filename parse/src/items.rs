@@ -1,11 +1,8 @@
 use derive_more::From;
 use smallvec::{SmallVec, smallvec};
 
-use ast::{
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
-    types::TyKind,
-};
-use ident::{Ident, SpanIdent};
+use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
+use ident::SpanIdent;
 use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
@@ -31,7 +28,8 @@ impl Parser<'_> {
         self.consume(TokKind::Const)?;
 
         let ident = self.ident();
-        let ty = self.ty_annot();
+        self.consume(TokKind::Colon)?;
+        let ty = self.ty();
         self.consume(TokKind::Eq)?;
         let val = self.expr();
 
@@ -46,7 +44,7 @@ impl Parser<'_> {
 
         let ident = self.ident()?;
         let (generics, _) = self.generic_params()?;
-        let (params, params_span) = self.delimited_list(
+        let (params, _) = self.delimited_list(
             |this| {
                 let mut_tok = this.consume_at(TokKind::Mut);
                 let pat = this.pattern()?;
@@ -66,17 +64,10 @@ impl Parser<'_> {
             TokKind::LParen,
             TokKind::RParen,
         )?;
-        let (ret_mut, ret_ty) = self
-            .consume_at(TokKind::Colon)
-            .map(|_| Ok((self.consume_at(TokKind::Mut).is_some(), self.ty()?)))
-            .transpose()?
-            .unwrap_or_else(|| {
-                (
-                    false,
-                    TyKind::unit().span(params_span.end..params_span.end + 1),
-                )
-            });
-        self.consume(TokKind::Arrow)?;
+        self.consume(TokKind::Colon)?;
+        let ret_mut = self.consume_at(TokKind::Mut).is_some();
+        let ret_ty = self.ty()?;
+        self.consume(TokKind::Eq)?;
         let body = self.expr()?;
 
         Ok(ExecItem {
@@ -147,15 +138,8 @@ impl Parser<'_> {
 
     fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Span>)> {
         if self.at(TokKind::LBracket) {
-            let (idents, span) = self.delimited_list(
-                |this| {
-                    this.consume(TokKind::Ident)
-                        .map(|tok| Ident::new(tok.src).span(tok.span))
-                },
-                TokKind::LBracket,
-                TokKind::RBracket,
-            )?;
-
+            let (idents, span) =
+                self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;
             Ok((idents.into(), Some(span)))
         } else {
             Ok((smallvec![], None))

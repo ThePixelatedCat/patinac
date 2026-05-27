@@ -22,6 +22,7 @@ smallvec = { version = "1.15.1", features = [
     "const_new",
 ] }
 itertools = "0.14.0"
+parse = { path = "../parse", features = ["test"], optional = true }
 
 [dev-dependencies]
 # Internal
@@ -32,4 +33,4 @@ parse = { path = "../parse", features = ["test"] }
 workspace = true
 
 [features]
-test = []
+test = ["dep:parse"]

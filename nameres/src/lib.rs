@@ -174,9 +174,7 @@ fn resolve_exec_item(
     match item.kind {
         AstExecKind::Const { ty, val } => {
             let val = exprs::resolve_expr(adt_scope, var_scope, hir, handler, val);
-            if let Some(ty) = ty {
-                hir.add_var_ty(id, resolve_ty(adt_scope, handler, ty)?);
-            }
+            hir.add_var_ty(id, resolve_ty(adt_scope, handler, ty)?);
 
             Ok(HirExecItem {
                 id,
@@ -260,6 +258,7 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
         AstTyKind::Float => Ok(HirTy::Float),
         AstTyKind::Char => Ok(HirTy::Char),
         AstTyKind::Bool => Ok(HirTy::Bool),
+        AstTyKind::Array(ty) => Ok(HirTy::Array(Box::new(resolve_ty(adt_scope, handler, *ty)?))),
         AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(adt_scope, handler, tys)?)),
         AstTyKind::Fn(params, ret) => {
             if ret.mutable {
@@ -279,23 +278,14 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
             let ret = Box::new(resolve_ty(adt_scope, handler, *ret.ty)?);
             Ok(HirTy::Fn(params?, ret))
         }
-        AstTyKind::Adt(ident, mut args) => {
-            if ident == "Array" {
-                match args.len() {
-                    1 => resolve_ty(adt_scope, handler, args.swap_remove(0))
-                        .map(Box::new)
-                        .map(HirTy::Array),
-                    len => Err(handler.err(ErrorKind::GenericCount(1, len).span(ty.span))),
-                }
-            } else {
-                if !args.is_empty() {
-                    todo!("Generics")
-                }
+        AstTyKind::Adt(ident, args) => {
+            if !args.is_empty() {
+                todo!("Generics")
+            }
 
-                match adt_scope.get(&ident).copied() {
-                    Some(id) => Ok(HirTy::Adt(id)),
-                    None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
-                }
+            match adt_scope.get(&ident).copied() {
+                Some(id) => Ok(HirTy::Adt(id)),
+                None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
             }
         }
     }

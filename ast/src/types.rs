@@ -22,6 +22,8 @@ pub enum TyKind {
     Float,
     Char,
     Bool,
+    #[display("[{_0}]")]
+    Array(Box<Ty>),
     #[display("{{{}}}", _0.iter().join(", "))]
     Tuple(Vec<Ty>),
     #[display("fn({}) -> {_1}", _0.iter().join(", "))]
@@ -50,11 +52,6 @@ impl TyKind {
     /// Helper to create a new [`TyKind::Adt`] for a `String`
     pub fn string() -> Self {
         Self::named("String")
-    }
-
-    /// Helper to create a new [`TyKind::Adt`] for an `Array` storing the given type
-    pub fn array(inner: Ty) -> Self {
-        Self::Adt(Ident::new("Array"), vec![inner])
     }
 }
 

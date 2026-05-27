@@ -1,7 +1,7 @@
 record Point(x: Float, y: Float)
 record Line(a: Point, b: Point)
 
-fn main() -> {
+fn main(): () = {
     let inc = fn(mut n) -> n = n + 1
     let mut m = 3
     inc(mut m)
@@ -10,22 +10,22 @@ fn main() -> {
     apply(f, 2)
 }
 
-fn make_f(m: UInt): Fn(UInt) -> #() -> {
+fn make_f(m: UInt): Fn(UInt) -> () = {
     let prt = fn(n) -> print n
     fn(n) -> prt(n + m)
 }
 
-fn apply(f: Fn(UInt) -> #(), v: UInt) -> f(v)
+fn apply(f: Fn(UInt) -> (), v: UInt): () = f(v)
 
-fn eq_test() -> {
+fn eq_test(): () = {
     let mut point = Point(2.0, 3.0)
     print point == point
     print point != swap(point)
 }
 
-fn swap(self: Point): Point -> Point(self.y, self.x)
+fn swap(self: Point): Point = Point(self.y, self.x)
 
-fn swapping_test() -> {
+fn swapping_test(): () = {
     let point = Point(1.0, 0.0)
     let mut line = straight_line(point, 5.0)
     line.a.y = 5.0
@@ -35,13 +35,12 @@ fn swapping_test() -> {
     print line.a.x
 }
 
-fn straight_line(start: Point, length: Float): Line -> {
+fn straight_line(start: Point, length: Float): Line = 
     Line(start, Point(start.x +. length, start.y))
-}
 
-fn inc(mut n: Float) -> n = n +. 1.0
+fn inc(mut n: Float): () = { n = n +. 1.0 }
 
-fn swap_in_place(mut self: Point) -> {
+fn swap_in_place(mut self: Point): () = {
     let x = self.x
     self.x = self.y
     self.y = x

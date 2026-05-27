@@ -11,7 +11,6 @@ errors.path = "../errors"
 ast.path = "../ast"
 # External
 itertools = "0.14.0"
-pretty_assertions = { version = "1.4.1", optional = true }
 derive_more = { version = "2.1.1", features = ["from", "display"] }
 smallvec = { version = "1.15.1", features = [
     "union",
@@ -21,8 +20,6 @@ smallvec = { version = "1.15.1", features = [
 smol_str = "0.3.6"
 displaydoc = "0.2.5"
 logos = "0.16.1"
-proptest-derive = { version = "0.8.0", optional = true }
-proptest = { version = "1.11.0", optional = true }
 
 [dev-dependencies]
 # Internal
@@ -35,4 +32,4 @@ proptest-derive = "0.8.0"
 workspace = true
 
 [features]
-test = ["dep:proptest-derive", "dep:proptest"]
+test = []

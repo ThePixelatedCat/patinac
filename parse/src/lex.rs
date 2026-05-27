@@ -5,7 +5,7 @@ use logos::Logos;
 
 use span::Span;
 
-pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok<'src>, Span>> + 'src>>;
+pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Span>> + 'src>>;
 
 /// Tokenises raw, UTF-8 source code
 ///
@@ -13,7 +13,7 @@ pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok<'src>, Span>>
 /// If any invalid tokens are encountered, the function will continue, but will return an error with the span of every invalid token
 pub fn lex(src: &str) -> Lexer<'_> {
     let iter = TokKind::lexer(src).spanned().map(|(tok, span)| match tok {
-        Ok(tok) => Ok(tok.span(src, span)),
+        Ok(tok) => Ok(tok.span(span)),
         Err(()) => Err(Span::from(span)),
     });
     let boxed_iter = Box::new(iter) as Box<dyn Iterator<Item = _>>;
@@ -21,15 +21,14 @@ pub fn lex(src: &str) -> Lexer<'_> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub struct Tok<'src> {
+pub struct Tok {
     pub kind: TokKind,
     pub span: Span,
-    pub src: &'src str,
 }
 
-#[cfg_attr(any(test, feature = "test"), derive(proptest_derive::Arbitrary))]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Logos, PartialEq, Eq, Debug, Display, Clone, Copy)]
-#[logos(skip(r"(\p{Pattern_White_Space}+)|(//.*)", allow_greedy = true))]
+#[logos(skip(r"//.*", allow_greedy = true))]
 #[logos(subpattern dec_int = "([0-9][0-9_]*)")]
 #[logos(subpattern escape = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
 pub enum TokKind {
@@ -246,21 +245,26 @@ pub enum TokKind {
     /// identifier
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
+    /// whitespace
+    #[regex(r"\p{Pattern_White_Space}+")]
+    Whitespace,
+    /// end-of-file
+    #[cfg_attr(test, proptest(skip))]
+    Eof,
 }
 
 impl TokKind {
-    pub fn span(self, src: &str, span: impl Into<Span>) -> Tok<'_> {
-        let span = span.into();
+    pub fn span(self, span: impl Into<Span>) -> Tok {
         Tok {
             kind: self,
-            span,
-            src: &src[span.start..span.end],
+            span: span.into(),
         }
     }
 
     /// Converts the token into a string that parses back into itself
-    /// Mainly for testing
-    #[expect(
+    ///
+    /// Used for testing
+    #[allow(
         unused,
         reason = "It's used in tests, but the linter doesn't consider that apparently"
     )]
@@ -271,6 +275,7 @@ impl TokKind {
             Self::StringLit => String::from(r#""Hello, World!""#),
             Self::CharLit => String::from("'a'"),
             Self::Ident => String::from("foo"),
+            Self::Whitespace => String::from(" \t"),
             _ => self.to_string().trim_matches('`').to_string(),
         }
     }
