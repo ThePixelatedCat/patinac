@@ -27,33 +27,80 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("free", ty, None)
     }
 
-    pub(crate) fn atomic_fetch_sub_8(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("__atomic_fetch_sub_8") {
+    /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`
+    pub(crate) fn runtime_array_drop(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_drop") {
             return func;
         }
-        let ty = self.ctx.i64_type().fn_type(
+        let ty = self.ctx.void_type().fn_type(
             &[
                 self.ptr_ty().into(),
+                self.ptr_ty().into(),
                 self.ctx.i64_type().into(),
-                self.ctx.i32_type().into(),
             ],
             false,
         );
-        self.module.add_function("__atomic_fetch_sub_8", ty, None)
+        self.module.add_function("_array_drop", ty, None)
     }
 
-    pub(crate) fn atomic_fetch_add_8(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("__atomic_fetch_add_8") {
+    /// `void _array_copy(Array* dst, Array* src)`
+    pub(crate) fn runtime_array_copy(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_copy") {
             return func;
         }
-        let ty = self.ctx.i64_type().fn_type(
+        let ty = self
+            .ctx
+            .void_type()
+            .fn_type(&[self.ptr_ty().into(), self.ptr_ty().into()], false);
+        self.module.add_function("_array_copy", ty, None)
+    }
+
+    /// `bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size)`
+    pub(crate) fn runtime_array_equals(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_equals") {
+            return func;
+        }
+        let ty = self.ctx.bool_type().fn_type(
             &[
                 self.ptr_ty().into(),
+                self.ptr_ty().into(),
+                self.ptr_ty().into(),
                 self.ctx.i64_type().into(),
-                self.ctx.i32_type().into(),
             ],
             false,
         );
-        self.module.add_function("__atomic_fetch_add_8", ty, None)
+        self.module.add_function("_array_equals", ty, None)
+    }
+
+    /// `void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size)`
+    pub(crate) fn runtime_array_unique(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_unique") {
+            return func;
+        }
+        let ty = self.ctx.bool_type().fn_type(
+            &[
+                self.ptr_ty().into(),
+                self.ptr_ty().into(),
+                self.ctx.i64_type().into(),
+            ],
+            false,
+        );
+        self.module.add_function("_array_unique", ty, None)
+    }
+
+    /// `void _array_new(Array* array, uint64_t count, uint64_t elem_size)`
+    pub(crate) fn runtime_array_new(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_new") {
+            return func;
+        }
+        let ty = self.ctx.bool_type().fn_type(
+            &[
+                self.ptr_ty().into(),
+                self.ctx.i64_type().into(),
+                self.ctx.i64_type().into(),
+            ],
+            false,
+        );
+        self.module.add_function("_array_new", ty, None)
     }
 }

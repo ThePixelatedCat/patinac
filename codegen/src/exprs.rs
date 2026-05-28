@@ -9,7 +9,7 @@ use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
     module::Linkage,
-    types::StructType,
+    types::{BasicType, StructType},
     values::{
         BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
@@ -23,7 +23,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
-            Expr::Array(exprs) => self.emit_array(exprs),
+            Expr::Array(exprs) => self.emit_array(self.ty_map.ty(expr), exprs),
             Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
@@ -172,8 +172,51 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn emit_array(&self, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
-        todo!("Arrays")
+    fn emit_array(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
+        let Ty::Array(inner_ty) = ty else {
+            unreachable!("ICE")
+        };
+        let lowered_inner_ty = self.lower_ty(inner_ty);
+
+        // Allocate the array.
+        let alloc = self.emit_alloca_entry(self.array_ty(), "array");
+        self.builder
+            .build_call(
+                self.runtime_array_new(),
+                &[
+                    alloc.into(),
+                    self.ctx
+                        .i64_type()
+                        .const_int(exprs.len() as u64, false)
+                        .into(),
+                    lowered_inner_ty.size_of().unwrap().into(),
+                ],
+                "",
+            )
+            .unwrap();
+
+        // Initialize each element.
+        let payload = self
+            .builder
+            .build_struct_gep(self.array_ty(), alloc, 0, "payload")
+            .unwrap();
+        let payload = self
+            .builder
+            .build_load(self.ptr_ty(), payload, "payload")
+            .unwrap()
+            .into_pointer_value();
+        for (idx, expr) in exprs.iter().enumerate() {
+            let idx = self.ctx.i64_type().const_int(idx as u64, false);
+            let ptr = unsafe {
+                self.builder
+                    .build_in_bounds_gep(lowered_inner_ty, payload, &[idx], "ptr")
+                    .unwrap()
+            };
+            let elem = self.emit_expr(*expr);
+            self.emit_move(inner_ty, elem, ptr);
+        }
+
+        alloc.as_basic_value_enum()
     }
 
     fn emit_tuple(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
@@ -565,19 +608,19 @@ impl<'ctx> Codegen<'ctx, '_> {
         store_closure(1, env);
         store_closure(
             2,
-            self.closure_drop(name, captures, env_ty)
+            self.emit_closure_drop(name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store_closure(
             3,
-            self.closure_copy(name, captures, env_ty)
+            self.emit_closure_copy(name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store_closure(
             4,
-            self.closure_equals(name, captures, env_ty)
+            self.emit_closure_equals(name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
