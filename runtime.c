@@ -1,10 +1,24 @@
 #include <assert.h>
+#include <backtrace.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+void panic(const char* msg) {
+    fprintf(stderr, msg);
+    exit(EXIT_FAILURE);
+}
+
+void* _malloc(uint64_t size) {
+    void* ptr = malloc(size);
+    if (ptr == NULL) panic("Allocation failed");
+    return ptr;
+}
+
+void _free(void* ptr) { free(ptr); }
 
 typedef const void (*DropFn)(void*);
 typedef const void (*CopyFn)(void*, void*);
@@ -130,7 +144,7 @@ void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size) {
     if (atomic_load_explicit(&old_header->refc, memory_order_acquire) == 1) return;
 
     // Allocate new storage with room for the header plus the capacity of the array being copied
-    void* new_storage = malloc(sizeof(ArrayHeader) + old_header->capacity);
+    void* new_storage = _malloc(sizeof(ArrayHeader) + old_header->capacity);
 
     // Initialize the new header
     ArrayHeader* new_header = new_storage;
@@ -158,7 +172,7 @@ void _array_new(Array* array, uint64_t count, uint64_t elem_size) {
     if (count > 0) {
         // Allocate the storage
         uint64_t capacity = get_capacity(count, elem_size);
-        void* storage = malloc(sizeof(ArrayHeader) + capacity);
+        void* storage = _malloc(sizeof(ArrayHeader) + capacity);
         array->payload = storage + sizeof(ArrayHeader);
 
         // Initialize the header

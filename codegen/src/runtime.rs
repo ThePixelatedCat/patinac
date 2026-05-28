@@ -12,19 +12,19 @@ impl<'ctx> Codegen<'ctx, '_> {
     }
 
     pub(crate) fn malloc(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("malloc") {
+        if let Some(func) = self.module.get_function("_malloc") {
             return func;
         }
         let ty = self.ptr_ty().fn_type(&[self.ctx.i64_type().into()], false);
-        self.module.add_function("malloc", ty, None)
+        self.module.add_function("_malloc", ty, None)
     }
 
     pub(crate) fn free(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("free") {
+        if let Some(func) = self.module.get_function("_free") {
             return func;
         }
         let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
-        self.module.add_function("free", ty, None)
+        self.module.add_function("_free", ty, None)
     }
 
     /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`
