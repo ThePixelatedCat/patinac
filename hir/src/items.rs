@@ -26,12 +26,12 @@ impl Fields {
 
     /// # Panics
     /// Panics if there is no field with the given name
-    pub fn get_idx(&self, ident: Ident) -> u32 {
+    pub fn get_ty_idx(&self, ident: Ident) -> (u32, &Ty) {
         self.0
             .iter()
             .enumerate()
             .find(|(_, (id, _))| id.ident == ident)
-            .and_then(|(idx, _)| u32::try_from(idx).ok())
+            .map(|(idx, (_, ty))| (u32::try_from(idx).unwrap(), ty))
             .unwrap()
     }
 

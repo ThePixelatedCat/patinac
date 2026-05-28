@@ -27,8 +27,8 @@ impl<'ctx> Codegen<'ctx, '_> {
             Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
-            Expr::Field { base, field } => self.emit_field(expr, *base, *field),
-            Expr::Index { .. } => todo!("Arrays"),
+            Expr::Field { base, field } => self.emit_field(*base, *field),
+            Expr::Index { arr, idx } => self.emit_index(*arr, *idx),
             Expr::Call { func, args } => self.emit_call(*func, args, self.ty_map.ty(expr)),
             Expr::Lambda {
                 params,
@@ -75,19 +75,106 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.unit()
     }
 
-    fn emit_place(&self, expr: ExprId) -> PointerValue<'ctx> {
+    fn get_payload(&self, arr: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        let payload = self
+            .builder
+            .build_struct_gep(self.array_ty(), arr, 0, "payload")
+            .unwrap();
+        self.builder
+            .build_load(self.ptr_ty(), payload, "payload")
+            .unwrap()
+            .into_pointer_value()
+    }
+
+    fn emit_place(&mut self, expr: ExprId) -> PointerValue<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
                 let Ty::Adt(id) = self.ty_map.ty(*base) else {
                     unreachable!("ICE")
                 };
-                let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
+                let base = self.emit_place(*base);
+                let (idx, _) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
                 self.builder
-                    .build_struct_gep(self.structs[*id], self.emit_place(*base), idx, "fieldptr")
+                    .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
                     .unwrap()
             }
-            Expr::Index { .. } => todo!("Arrays"),
+            Expr::Index { arr, idx } => {
+                let Ty::Array(elem_ty) = self.ty_map.ty(*arr) else {
+                    unreachable!("ICE")
+                };
+                let arr = self.emit_place(*arr);
+                let idx = self.emit_expr(*idx);
+                unsafe {
+                    self.builder
+                        .build_in_bounds_gep(
+                            self.lower_ty(elem_ty),
+                            self.get_payload(arr),
+                            &[idx.into_int_value()],
+                            "elemptr",
+                        )
+                        .unwrap()
+                }
+            }
+            Expr::Call { .. } => todo!("Projections"),
+            _ => unreachable!("ICE: Tried to use non-place expr as place"),
+        }
+    }
+
+    fn emit_unique_place(&mut self, expr: ExprId) -> PointerValue<'ctx> {
+        match self.hir.expr_info(expr) {
+            Expr::Ident(id) => self.vars[*id],
+            Expr::Field { base, field } => {
+                let Ty::Adt(id) = self.ty_map.ty(*base) else {
+                    unreachable!("ICE")
+                };
+                let base = self.emit_unique_place(*base);
+                let (idx, _) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
+                self.builder
+                    .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
+                    .unwrap()
+            }
+            Expr::Index { arr, idx } => {
+                let elem_ty = self.ty_map.ty(expr);
+                let elem_copy = match elem_ty {
+                    Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => {
+                        self.null_ptr()
+                    }
+                    Ty::Tuple(inner_tys) => self
+                        .tuple_copy(elem_ty, inner_tys)
+                        .as_global_value()
+                        .as_pointer_value(),
+                    Ty::Array(elem_ty) => self
+                        .array_copy(elem_ty)
+                        .as_global_value()
+                        .as_pointer_value(),
+                    Ty::Fn(..) => self.closure_copy().as_global_value().as_pointer_value(),
+                    Ty::Adt(id) => self.struct_copy(*id).as_global_value().as_pointer_value(),
+                };
+                let arr = self.emit_unique_place(*arr);
+                self.builder
+                    .build_call(
+                        self.runtime_array_unique(),
+                        &[
+                            arr.into(),
+                            elem_copy.into(),
+                            self.lower_ty(elem_ty).size_of().unwrap().into(),
+                        ],
+                        "",
+                    )
+                    .unwrap();
+                let idx = self.emit_expr(*idx);
+                unsafe {
+                    self.builder
+                        .build_in_bounds_gep(
+                            self.lower_ty(elem_ty),
+                            self.get_payload(arr),
+                            &[idx.into_int_value()],
+                            "elemptr",
+                        )
+                        .unwrap()
+                }
+            }
             Expr::Call { .. } => todo!("Projections"),
             _ => unreachable!("ICE: Tried to use non-place expr as place"),
         }
@@ -196,15 +283,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             .unwrap();
 
         // Initialize each element.
-        let payload = self
-            .builder
-            .build_struct_gep(self.array_ty(), alloc, 0, "payload")
-            .unwrap();
-        let payload = self
-            .builder
-            .build_load(self.ptr_ty(), payload, "payload")
-            .unwrap()
-            .into_pointer_value();
+        let payload = self.get_payload(alloc);
         for (idx, expr) in exprs.iter().enumerate() {
             let idx = self.ctx.i64_type().const_int(idx as u64, false);
             let ptr = unsafe {
@@ -242,7 +321,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         let ty = self.ty_map.ty(lhs);
         match op {
             InfixOp::Assign => {
-                let dst = self.emit_place(lhs);
+                let dst = self.emit_unique_place(lhs);
                 let tmp = self.emit_expr(rhs);
                 // Drop the current value in the assigned-to variable
                 self.emit_drop(ty, dst.as_basic_value_enum());
@@ -394,15 +473,14 @@ impl<'ctx> Codegen<'ctx, '_> {
         }
     }
 
-    fn emit_field(&mut self, expr: ExprId, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
+    fn emit_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
         let Ty::Adt(id) = self.ty_map.ty(base) else {
             unreachable!("ICE")
         };
 
         let base = self.emit_expr(base);
-
-        let idx = self.hir.adt_info(*id).fields.get_idx(field.ident);
-        let alloc = self
+        let (idx, field_ty) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
+        let field_ptr = self
             .builder
             .build_struct_gep(
                 self.structs[*id],
@@ -412,17 +490,48 @@ impl<'ctx> Codegen<'ctx, '_> {
             )
             .unwrap();
 
-        let ty = self.ty_map.ty(expr);
-        let result = if Self::is_indirect(ty) {
-            let new_alloc = self.emit_alloca_entry(self.lower_ty(ty), &field.ident.str());
-            self.emit_copy(ty, alloc.as_basic_value_enum(), new_alloc);
+        let result = if Self::is_indirect(field_ty) {
+            let new_alloc = self.emit_alloca_entry(self.lower_ty(field_ty), &field.ident.str());
+            self.emit_copy(field_ty, field_ptr.as_basic_value_enum(), new_alloc);
             new_alloc.as_basic_value_enum()
         } else {
             self.builder
-                .build_load(self.lower_ty(ty), alloc, &field.ident.str())
+                .build_load(self.lower_ty(field_ty), field_ptr, &field.ident.str())
                 .unwrap()
         };
         self.emit_drop(&Ty::Adt(*id), base);
+        result
+    }
+
+    fn emit_index(&mut self, arr: ExprId, idx: ExprId) -> BasicValueEnum<'ctx> {
+        let ty = self.ty_map.ty(arr);
+        let Ty::Array(elem_ty) = ty else {
+            unreachable!("ICE")
+        };
+
+        let arr = self.emit_expr(arr);
+        let idx = self.emit_expr(idx);
+        let elem_ptr = unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    self.lower_ty(elem_ty),
+                    self.get_payload(arr.into_pointer_value()),
+                    &[idx.into_int_value()],
+                    "elemptr",
+                )
+                .unwrap()
+        };
+
+        let result = if Self::is_indirect(elem_ty) {
+            let new_alloc = self.emit_alloca_entry(self.lower_ty(elem_ty), "elem");
+            self.emit_copy(elem_ty, elem_ptr.as_basic_value_enum(), new_alloc);
+            new_alloc.as_basic_value_enum()
+        } else {
+            self.builder
+                .build_load(self.lower_ty(elem_ty), elem_ptr, "elem")
+                .unwrap()
+        };
+        self.emit_drop(ty, arr);
         result
     }
 
@@ -440,7 +549,7 @@ impl<'ctx> Codegen<'ctx, '_> {
                     self.vars[*id].as_basic_value_enum().into()
                 } else {
                     let tmp = if a.mutable {
-                        self.emit_place(a.val).as_basic_value_enum()
+                        self.emit_unique_place(a.val).as_basic_value_enum()
                     } else {
                         self.emit_expr(a.val)
                     };

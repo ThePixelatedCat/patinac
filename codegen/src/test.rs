@@ -163,7 +163,7 @@ fn arrays() {
         let foo = [1, 2, 3]
         print fst(foo)
     }
-    fn fst(a: [Int]): Int = 2
+    fn fst(a: [Int]): Int = a.[0]
 ";
     check(input, OptLevel::O0);
 }
