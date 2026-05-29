@@ -70,15 +70,6 @@ pub enum TokKind {
     /// `=`
     #[token("=")]
     Eq,
-    /// `&`
-    #[token("&")]
-    Ampersand,
-    /// `|`
-    #[token("|")]
-    Pipe,
-    /// `\`
-    #[token("\\")]
-    BSlash,
     /// `.`
     #[token(".")]
     Dot,
@@ -88,21 +79,12 @@ pub enum TokKind {
     /// `:`
     #[token(":")]
     Colon,
-    /// `;`
-    #[token(";")]
-    Semicolon,
     /// `_`
     #[token("_")]
     Underscore,
     /// `->`
     #[token("->")]
     Arrow,
-    /// `::`
-    #[token("::")]
-    PathSep,
-    /// `#`
-    #[token("#")]
-    Hash,
 
     /* OPERATORS */
     /// `+`
