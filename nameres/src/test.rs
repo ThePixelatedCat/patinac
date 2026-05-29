@@ -85,6 +85,33 @@ fn unique_places() {
     }
 ";
     assert!(test_resolve_full(input).is_err());
+
+    let input = "
+    fn main(): () = {
+        let mut a = 1
+        swap(mut a, mut a)
+    }
+    fn swap(mut a: Int, mut b: Int): () = {}
+";
+    assert!(test_resolve_full(input).is_err());
+
+    let input = "
+    fn main(): () = {
+        let mut foo = [1, 1]
+        swap(mut foo.[0], mut foo.[0])
+    }
+    fn swap(mut a: Int, mut b: Int): () = {}
+";
+    assert!(test_resolve_full(input).is_err());
+
+    let input = "
+    fn main(): () = {
+        let mut foo = [1, 1]
+        swap(mut foo.[0], mut foo.[1])
+    }
+    fn swap(mut a: Int, mut b: Int): () = {}
+";
+    assert!(test_resolve_full(input).is_ok());
 }
 
 #[test]

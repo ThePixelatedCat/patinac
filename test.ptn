@@ -1,10 +1,13 @@
 fn main(): () = {
     let mut foo = [1, 2, 3]
     let mut bar = foo
-    inc(mut foo.[0])
+    swap(mut foo.[0], mut foo.[1])
     print foo.[0]
-    print bar.[0]
-    print bar.[2]
+    print foo.[1]
 }
 
-fn inc(mut n: Int): () = { n = n + 1 }
+fn swap(mut a: Int, mut b: Int): () = { 
+    let a_tmp = a
+    a = b
+    b = a_tmp
+}

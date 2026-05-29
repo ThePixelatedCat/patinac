@@ -10,7 +10,7 @@ use errors::{ErrorHandler, Result, TryCollectEager};
 use hir::{
     Hir, VarId,
     exprs::{
-        Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp,
+        Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp, LitExpr,
         PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
     items::AdtId,
@@ -91,8 +91,14 @@ pub fn resolve_expr(
             args.iter()
                 .permutations(2)
                 .map(|p| (p[0], p[1]))
-                .filter(|(a, b)| a.mutable && b.mutable)
-                .try_for_each(|(a, b)| check_places_unique(hir, handler, a.val, b.val))?;
+                .filter(|(a, b)| a.mutable || b.mutable)
+                .try_for_each(|(a, b)| {
+                    if overlaps(hir, a.val, b.val) {
+                        Err(handler.err(ErrorKind::OverlappingPlace(b.span).span(a.span)))
+                    } else {
+                        Ok(())
+                    }
+                })?;
 
             HirExpr::Call { func: func?, args }
         }
@@ -233,28 +239,43 @@ fn check_is_place(hir: &Hir, handler: &mut ErrorHandler, place: ExprId) -> Resul
     }
 }
 
-fn check_places_unique(
-    hir: &Hir,
-    handler: &mut ErrorHandler,
-    place_a: ExprId,
-    place_b: ExprId,
-) -> Result<()> {
-    match hir.expr_info(place_b) {
-        b @ HirExpr::Ident(_) => {
-            if hir.expr_info(place_a) == b {
-                Err(handler.err(
-                    ErrorKind::OverlappingPlace(hir.expr_span(place_a))
-                        .span(hir.expr_span(place_b)),
-                ))
+fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
+    match (hir.expr_info(a), hir.expr_info(b)) {
+        (HirExpr::Ident(a), HirExpr::Ident(b)) => a == b,
+        (HirExpr::Ident(_), HirExpr::Index { arr, .. }) => overlaps(hir, a, *arr),
+        (HirExpr::Ident(_), HirExpr::Field { base, .. }) => overlaps(hir, a, *base),
+        (
+            HirExpr::Index {
+                arr: arr_a,
+                idx: idx_a,
+            },
+            HirExpr::Index {
+                arr: arr_b,
+                idx: idx_b,
+            },
+        ) => {
+            if let HirExpr::Lit(LitExpr::Int(idx_a)) = hir.expr_info(*idx_a)
+                && let HirExpr::Lit(LitExpr::Int(idx_b)) = hir.expr_info(*idx_b)
+            {
+                idx_a == idx_b
             } else {
-                Ok(())
+                overlaps(hir, *arr_a, *arr_b)
             }
         }
-        HirExpr::Field { base, .. } | HirExpr::Index { arr: base, .. } => {
-            check_places_unique(hir, handler, place_a, *base)
+        (
+            HirExpr::Field {
+                base: base_a,
+                field: field_a,
+            },
+            HirExpr::Field {
+                base: base_b,
+                field: field_b,
+            },
+        ) => (field_a.ident == field_b.ident) && overlaps(hir, *base_a, *base_b),
+        (HirExpr::Index { arr, .. }, HirExpr::Field { base, .. }) => {
+            overlaps(hir, *arr, b) || overlaps(hir, a, *base)
         }
-        HirExpr::Call { .. } => todo!("Projections"),
-        _ => panic!("ICE: attempted to check uniqueness of non-place"),
+        _ => false,
     }
 }
 

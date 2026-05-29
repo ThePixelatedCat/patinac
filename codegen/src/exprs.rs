@@ -57,7 +57,7 @@ impl<'ctx> Codegen<'ctx, '_> {
             Ty::Char => todo!("Strings"),
             Ty::Adt(_) => todo!(),
             Ty::Tuple(_) => todo!(),
-            Ty::Array(_) => todo!("Arrays"),
+            Ty::Array(_) => todo!(),
             Ty::Fn(_, _) => todo!(),
         };
 
