@@ -4,6 +4,7 @@ fn main(): () = {
     inc(mut foo.[0])
     print foo.[0]
     print bar.[0]
+    print bar.[2]
 }
 
 fn inc(mut n: Int): () = { n = n + 1 }

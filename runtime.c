@@ -7,14 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-void panic(const char* msg) {
+void _panic(const char* msg) {
     fprintf(stderr, msg);
     exit(EXIT_FAILURE);
 }
 
 void* _malloc(uint64_t size) {
     void* ptr = malloc(size);
-    if (ptr == NULL) panic("Allocation failed");
+    if (ptr == NULL) _panic("allocation failed");
     return ptr;
 }
 
@@ -186,5 +186,13 @@ void _array_new(Array* array, uint64_t count, uint64_t elem_size) {
         memset(payload, 0, capacity);
     } else {
         array->payload = NULL;
+    }
+}
+
+void _array_bounds_check(Array* array, uint64_t idx) {
+    ArrayHeader* header = get_array_header(array);
+    if ((header == NULL) || (idx >= header->count)) {
+        _panic("index out of bounds");
+        return;
     }
 }

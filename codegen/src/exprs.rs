@@ -511,6 +511,9 @@ impl<'ctx> Codegen<'ctx, '_> {
 
         let arr = self.emit_expr(arr);
         let idx = self.emit_expr(idx);
+        self.builder
+            .build_call(self.runtime_bounds_check(), &[arr.into(), idx.into()], "")
+            .unwrap();
         let elem_ptr = unsafe {
             self.builder
                 .build_in_bounds_gep(

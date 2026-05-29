@@ -27,6 +27,14 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_free", ty, None)
     }
 
+    pub(crate) fn panic(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_panic") {
+            return func;
+        }
+        let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
+        self.module.add_function("_panic", ty, None)
+    }
+
     /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`
     pub(crate) fn runtime_array_drop(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_drop") {
@@ -102,5 +110,17 @@ impl<'ctx> Codegen<'ctx, '_> {
             false,
         );
         self.module.add_function("_array_new", ty, None)
+    }
+
+    /// `void _array_bounds_check(Array* array, uint64_t idx)`
+    pub(crate) fn runtime_bounds_check(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("_array_bounds_check") {
+            return func;
+        }
+        let ty = self
+            .ctx
+            .void_type()
+            .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
+        self.module.add_function("_array_bounds_check", ty, None)
     }
 }
