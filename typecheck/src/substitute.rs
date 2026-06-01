@@ -1,8 +1,8 @@
 use std::mem;
 
-use itertools::Itertools;
+use itertools::Itertools as _;
 
-use errors::{Result, TryCollectEager};
+use errors::{Result, TryCollectEager as _};
 use hir::{
     Hir, TyMap,
     types::{Param, Ty},

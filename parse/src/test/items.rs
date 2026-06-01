@@ -9,7 +9,7 @@ use ast::{
 };
 use errors::TEST_HANDLER;
 use ident::Ident;
-use span::Span;
+use std::range::Range;
 
 use crate::{Parser, items::Item};
 
@@ -140,13 +140,13 @@ fn function_items() {
                         pat: PatKind::ident("a").span(11..12),
                         ty: TyKind::Byte.span(14..18),
                         mutable: true,
-                        span: Span::from(7..18)
+                        span: Range::from(7..18)
                     },
                     Param {
                         pat: PatKind::ident("b").span(20..21),
                         ty: TyKind::Byte.span(23..27),
                         mutable: false,
-                        span: Span::from(20..27)
+                        span: Range::from(20..27)
                     }
                 ],
                 ret_mut: false,

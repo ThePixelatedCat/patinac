@@ -1,8 +1,9 @@
+use std::range::Range;
+
 use slotmap::new_key_type;
 
 use ident::SpanIdent;
 use smallvec::SmallVec;
-use span::Span;
 
 use crate::VarId;
 
@@ -10,7 +11,11 @@ new_key_type! { pub struct ExprId; }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stmt {
-    Decl { id: VarId, val: ExprId, span: Span },
+    Decl {
+        id: VarId,
+        val: ExprId,
+        span: Range<usize>,
+    },
     Expr(ExprId),
 }
 
@@ -78,13 +83,13 @@ pub enum LitExpr {
 pub struct Arg {
     pub val: ExprId,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

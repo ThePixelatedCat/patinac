@@ -1,4 +1,4 @@
-use span::Span;
+use std::range::Range;
 
 use crate::AdtId;
 
@@ -29,5 +29,5 @@ impl Ty {
 pub struct Param {
     pub ty: Ty,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }

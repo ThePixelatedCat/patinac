@@ -1,9 +1,11 @@
-use std::fmt::Display;
+use std::{
+    fmt::{self, Display, Formatter},
+    range::Range,
+};
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
 use hir::{items::AdtId, types::Ty};
-use span::Span;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
@@ -77,7 +79,7 @@ impl From<Ty> for PartialTy {
 }
 
 impl Display for PartialTy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self {
             Self::Int => "Int".fmt(f),
             Self::UInt => "UInt".fmt(f),
@@ -109,11 +111,11 @@ impl PartialTy {
 pub struct Param {
     pub ty: PartialTy,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 impl Display for Param {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;
         }

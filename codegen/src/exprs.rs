@@ -1,3 +1,8 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+)]
+
 use std::iter;
 
 use hir::{
@@ -9,16 +14,16 @@ use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
     module::Linkage,
-    types::{BasicType, StructType},
+    types::{BasicType as _, StructType},
     values::{
-        BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
+        BasicMetadataValueEnum, BasicValue as _, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
     },
 };
 
 use crate::Codegen;
 
-impl<'ctx> Codegen<'ctx, '_> {
+impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
@@ -217,11 +222,12 @@ impl<'ctx> Codegen<'ctx, '_> {
         match lit {
             LitExpr::Int(val) => match self.ty_map.ty(expr) {
                 Ty::Int => {
-                    let max = i64::MAX as u64;
+                    let max = u64::try_from(i64::MAX).expect("known in-bounds value");
                     let clamped_val = if *val > max {
-                        self.report_warning(format!(
-                            "Int literal {val} overflowed and was clamped to {max}"
-                        ));
+                        self.handler.warn(
+                            &format!("int literal {val} overflowed and was clamped to {max}"),
+                            self.hir.expr_span(expr),
+                        );
                         max
                     } else {
                         *val
@@ -232,9 +238,10 @@ impl<'ctx> Codegen<'ctx, '_> {
                 Ty::Byte => {
                     let max = u64::from(u8::MAX);
                     let clamped_val = if *val > max {
-                        self.report_warning(format!(
-                            "Byte literal {val} overflowed and was clamped to {max}"
-                        ));
+                        self.handler.warn(
+                            &format!("byte literal {val} overflowed and was clamped to {max}"),
+                            self.hir.expr_span(expr),
+                        );
                         max
                     } else {
                         *val
@@ -274,7 +281,11 @@ impl<'ctx> Codegen<'ctx, '_> {
                     alloc.into(),
                     self.ctx
                         .i64_type()
-                        .const_int(exprs.len() as u64, false)
+                        .const_int(
+                            u64::try_from(exprs.len())
+                                .expect("I doubt we'll see 128bit CPUs any time soon"),
+                            false,
+                        )
                         .into(),
                     lowered_inner_ty.size_of().unwrap().into(),
                 ],
@@ -285,7 +296,10 @@ impl<'ctx> Codegen<'ctx, '_> {
         // Initialize each element.
         let payload = self.get_payload(alloc);
         for (idx, expr) in exprs.iter().enumerate() {
-            let idx = self.ctx.i64_type().const_int(idx as u64, false);
+            let idx = self.ctx.i64_type().const_int(
+                u64::try_from(idx).expect("I doubt we'll see 128bit CPUs any time soon"),
+                false,
+            );
             let ptr = unsafe {
                 self.builder
                     .build_in_bounds_gep(lowered_inner_ty, payload, &[idx], "ptr")

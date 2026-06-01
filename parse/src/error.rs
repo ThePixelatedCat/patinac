@@ -1,7 +1,8 @@
+use std::range::Range;
+
 use derive_more::Display;
 
 use errors::Error;
-use span::Span;
 
 use crate::TokKind;
 
@@ -16,7 +17,7 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    pub fn span(self, span: impl Into<Span>) -> Error<Self> {
+    pub fn span(self, span: impl Into<Range<usize>>) -> Error<Self> {
         Error::new(self, span)
     }
 }

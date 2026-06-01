@@ -1,10 +1,13 @@
+use std::assert_matches;
+
 use errors::{Result, TEST_HANDLER};
 use hir::types::{Param, Ty};
 use parse::Parser;
-use span::Span;
+use std::range::Range;
 
 use crate::TypeChecker;
 
+#[allow(clippy::unwrap_used, reason = "Test utility")]
 fn check_expr(input: &str) -> Result<Ty> {
     let expr = Parser::parse_expr(input).unwrap();
     let (expr, mut hir) = nameres::test_resolve_expr(expr).unwrap();
@@ -17,6 +20,7 @@ fn check_expr(input: &str) -> Result<Ty> {
     Ok(checker.sub_all(&mut hir)?.ty(expr).clone())
 }
 
+#[allow(clippy::unwrap_used, reason = "Test utility")]
 fn check_full(input: &str) -> Result<()> {
     let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
     let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
@@ -32,7 +36,7 @@ fn type_of_if_single_branch() {
 
 #[test]
 fn type_of_if_single_branch_err() {
-    assert!(check_expr("if true { 5.0 }").is_err());
+    assert_matches!(check_expr("if true { 5.0 }"), Err(_));
 }
 
 #[test]
@@ -42,7 +46,7 @@ fn type_of_if() {
 
 #[test]
 fn type_of_if_err() {
-    assert!(check_expr("if true { 5.0 } else { false }").is_err());
+    assert_matches!(check_expr("if true { 5.0 } else { false }"), Err(_));
 }
 
 #[test]
@@ -71,7 +75,7 @@ fn inc() {
             vec![Param {
                 mutable: true,
                 ty: Ty::Float,
-                span: Span::from(7..8)
+                span: Range::from(7..8)
             }],
             Ty::unit().into()
         ))
@@ -80,7 +84,7 @@ fn inc() {
 
 #[test]
 fn maths() {
-    assert!(check_expr("1 + 1.0").is_err());
+    assert_matches!(check_expr("1 + 1.0"), Err(_));
     assert_eq!(check_expr("1.0 +. 1.0"), Ok(Ty::Float));
     assert_eq!(check_expr("{let mut a = 5 let b = 5 a = b b}"), Ok(Ty::Int));
 }
@@ -123,7 +127,7 @@ fn recursion() {
 fn fac(n: UInt): UInt = 
     if n == 0 { 1 } else { n * fac(n - 1) }      
 ";
-    assert!(check_full(input).is_ok());
+    assert_matches!(check_full(input), Ok(()));
 }
 
 #[test]
@@ -132,7 +136,7 @@ fn consts() {
     const B: UInt = A * 2
     const A: UInt = 5
 ";
-    assert!(check_full(input).is_ok());
+    assert_matches!(check_full(input), Ok(()));
 }
 
 #[test]
@@ -142,14 +146,14 @@ fn fields() {
 
     fn bar(foo: Foo): Int = foo.x
 ";
-    assert!(check_full(input).is_ok());
+    assert_matches!(check_full(input), Ok(()));
 
     let input = "
     record Foo(x: Int)
 
     fn bar(foo: Foo): Int = foo.y
 ";
-    assert!(check_full(input).is_err());
+    assert_matches!(check_full(input), Err(_));
 
     let input = "
     record Point(x: Float, y: Float)
@@ -158,5 +162,5 @@ fn fields() {
         print point.x
     }
 ";
-    assert!(check_full(input).is_ok());
+    assert_matches!(check_full(input), Ok(()));
 }

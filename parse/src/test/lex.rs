@@ -1,12 +1,12 @@
-use itertools::Itertools;
+use std::range::Range;
+
+use itertools::Itertools as _;
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 
-use span::Span;
-
 use crate::{Tok, TokKind as T, lex};
 
-fn test_lex(src: &str) -> Result<Vec<Tok>, Vec<Span>> {
+fn test_lex(src: &str) -> Result<Vec<Tok>, Vec<Range<usize>>> {
     let (out, errs): (Vec<_>, Vec<_>) = lex::lex(src).partition_result();
     if errs.is_empty() { Ok(out) } else { Err(errs) }
 }
@@ -32,13 +32,13 @@ fn unknown_input() {
     assert_eq!(
         test_lex("$$$$$$$+"),
         Err(vec![
-            Span::from(0..1),
-            Span::from(1..2),
-            Span::from(2..3),
-            Span::from(3..4),
-            Span::from(4..5),
-            Span::from(5..6),
-            Span::from(6..7),
+            Range::from(0..1),
+            Range::from(1..2),
+            Range::from(2..3),
+            Range::from(3..4),
+            Range::from(4..5),
+            Range::from(5..6),
+            Range::from(6..7),
         ])
     );
 }
@@ -294,7 +294,7 @@ fn test(var: Type, var2_: Bool): Int -> {
 
 #[test]
 fn unicode_gibberish() {
-    assert_eq!(test_lex("®"), Err(vec![Span::from(0..2)]));
+    assert_eq!(test_lex("®"), Err(vec![Range::from(0..2)]));
 }
 
 #[test]

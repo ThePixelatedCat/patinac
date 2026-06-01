@@ -1,9 +1,10 @@
-use itertools::Itertools;
+use std::range::Range;
+
+use itertools::Itertools as _;
 
 use ast::{exprs::Binding, types::Ty};
 use errors::HandledError;
 use ident::{Ident, SpanIdent};
-use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -48,7 +49,7 @@ impl Parser<'_> {
         mut f: F,
         start: TokKind,
         end: TokKind,
-    ) -> Result<(Vec<T>, Span)>
+    ) -> Result<(Vec<T>, Range<usize>)>
     where
         F: FnMut(&mut Self) -> Result<T>,
     {
@@ -65,6 +66,6 @@ impl Parser<'_> {
 
         let end = self.consume(end)?.span.end;
 
-        Ok((items.into_iter().try_collect()?, Span::from(start..end)))
+        Ok((items.into_iter().try_collect()?, Range::from(start..end)))
     }
 }

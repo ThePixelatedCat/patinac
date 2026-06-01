@@ -1,11 +1,11 @@
 use std::{
-    fmt::{self, Display},
+    fmt::{self, Display, Formatter},
     ops::Deref,
+    range::Range,
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
 use derive_more::Display;
-use span::Span;
 use string_interner::{DefaultStringInterner as Interner, symbol::SymbolU32};
 
 fn interner() -> MutexGuard<'static, Interner> {
@@ -23,7 +23,7 @@ fn get_str(interner: &Interner, ident: Ident) -> &str {
 pub struct Ident(SymbolU32);
 
 impl fmt::Debug for Ident {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let interner = interner();
         f.debug_tuple("Ident")
             .field(&get_str(&interner, *self))
@@ -32,7 +32,7 @@ impl fmt::Debug for Ident {
 }
 
 impl Display for Ident {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         get_str(&interner(), *self).fmt(f)
     }
 }
@@ -48,14 +48,14 @@ impl Ident {
         Self(interner().get_or_intern(string))
     }
 
-    pub fn span(self, span: impl Into<Span>) -> SpanIdent {
+    pub fn span(self, span: impl Into<Range<usize>>) -> SpanIdent {
         SpanIdent {
             ident: self,
             span: span.into(),
         }
     }
 
-    pub fn str<'a>(self) -> StrGuard<'a> {
+    pub fn str<'guard>(self) -> StrGuard<'guard> {
         StrGuard {
             ident: self,
             guard: interner(),
@@ -67,12 +67,12 @@ impl Ident {
 #[display("{ident}")]
 pub struct SpanIdent {
     pub ident: Ident,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
-pub struct StrGuard<'a> {
+pub struct StrGuard<'guard> {
     ident: Ident,
-    guard: MutexGuard<'a, Interner>,
+    guard: MutexGuard<'guard, Interner>,
 }
 
 impl Deref for StrGuard<'_> {

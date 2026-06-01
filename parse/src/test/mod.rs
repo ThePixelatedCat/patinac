@@ -2,7 +2,7 @@ mod exprs;
 mod items;
 mod lex;
 
-use itertools::Itertools;
+use itertools::Itertools as _;
 use pretty_assertions::assert_eq;
 use proptest::{collection::vec, prelude::*};
 use smallvec::smallvec;
@@ -15,12 +15,13 @@ use ast::{
 };
 use errors::{DUMMY_HANDLER, TEST_HANDLER};
 use ident::Ident;
-use span::Span;
+use std::range::Range;
 
 use crate::{Parser, TokKind};
 
-#[allow(clippy::too_many_lines, reason = "It's a test function")]
 #[test]
+#[allow(clippy::too_many_lines, reason = "It's a test function")]
+#[allow(clippy::unwrap_used, reason = "It's a test function")]
 fn file() {
     #[rustfmt::skip]
     let input =
@@ -50,7 +51,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                         pat: PatKind::ident("x").span(18..19),
                         ty: TyKind::Bool.span(21..25),
                         mutable: true,
-                        span: Span::from(14..25)
+                        span: Range::from(14..25)
                     },
                     Param {
                         pat: PatKind::ident("bar").span(27..30),
@@ -67,7 +68,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                         )
                         .span(32..46),
                         mutable: false,
-                        span: Span::from(27..46)
+                        span: Range::from(27..46)
                     }
                 ],
                 ret_mut: true,
@@ -75,7 +76,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                     vec![ParamTy {
                         ty: TyKind::Int.span(60..63),
                         mutable: true,
-                        span: Span::from(56..63)
+                        span: Range::from(56..63)
                     }],
                     Return {
                         mutable: false,
@@ -105,14 +106,14 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                                     args: vec![Arg {
                                         val: ExprKind::ident("y").span(115..116),
                                         mutable: false,
-                                        span: Span::from(115..116)
+                                        span: Range::from(115..116)
                                     }]
                                 }
                                 .span(111..117)
                                 .into()
                             }
                             .span(104..117),
-                            span: Span::from(80..117)
+                            span: Range::from(80..117)
                         },
                         Stmt::Expr(
                             ExprKind::Infix {
@@ -153,7 +154,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                                                     .into()
                                                 }
                                                 .span(157..174),
-                                                span: Span::from(147..174)
+                                                span: Range::from(147..174)
                                             },
                                             Stmt::Expr(
                                                 ExprKind::Infix {
@@ -164,7 +165,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                                                 .span(183..188)
                                             )
                                         ],
-                                        span: Span::from(137..194)
+                                        span: Range::from(137..194)
                                     },
                                     el: Some(
                                         ExprKind::Call {
@@ -173,12 +174,12 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                                                 Arg {
                                                     val: ExprKind::int(3).span(215..216),
                                                     mutable: false,
-                                                    span: Span::from(215..216)
+                                                    span: Range::from(215..216)
                                                 },
                                                 Arg {
                                                     val: ExprKind::float(5.1).span(218..221),
                                                     mutable: false,
-                                                    span: Span::from(218..221)
+                                                    span: Range::from(218..221)
                                                 }
                                             ]
                                         }
@@ -192,7 +193,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                             .span(122..228)
                         ),
                     ],
-                    span: Span::from(74..230)
+                    span: Range::from(74..230)
                 })
                 .span(74..230)
             },

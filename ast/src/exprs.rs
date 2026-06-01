@@ -1,5 +1,6 @@
+use std::range::Range;
+
 use ident::{Ident, SpanIdent};
-use span::Span;
 
 use crate::{patterns::Pat, types::Ty};
 
@@ -8,7 +9,7 @@ pub enum Stmt {
     Decl {
         binding: Binding,
         val: Expr,
-        span: Span,
+        span: Range<usize>,
     },
     Expr(Expr),
 }
@@ -16,11 +17,11 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expr {
     pub kind: ExprKind,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 impl Expr {
-    pub fn as_block(self, span: impl Into<Span>) -> BlockExpr {
+    pub fn as_block(self, span: impl Into<Range<usize>>) -> BlockExpr {
         BlockExpr {
             stmts: vec![Stmt::Expr(self)],
             span: span.into(),
@@ -83,7 +84,7 @@ pub enum ExprKind {
 }
 
 impl ExprKind {
-    pub fn span(self, span: impl Into<Span>) -> Expr {
+    pub fn span(self, span: impl Into<Range<usize>>) -> Expr {
         Expr {
             kind: self,
             span: span.into(),
@@ -135,7 +136,7 @@ pub struct Binding {
 pub struct Arg {
     pub val: Expr,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,7 +148,7 @@ pub struct MatchArm {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

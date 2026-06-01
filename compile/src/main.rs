@@ -1,33 +1,51 @@
-use std::{fs, path::PathBuf, time::Instant};
+use std::{fs, path::PathBuf, range::Range, time::Instant};
 
-use clap::Parser as CliParser;
-use yansi::Paint;
+use argh::{FromArgs, from_env};
+use yansi::Paint as _;
 
 use codegen::{Codegen, CodegenMode, OptLevel};
 use errors::{DiagnosticKind, ErrorHandler};
 use parse::Parser;
-use span::Span;
 
 use typecheck::TypeChecker;
 
-#[derive(CliParser)]
-#[command(name = "PatinaC", version)]
-#[command(about = "The compiler for Patina", long_about = None)]
-struct Cli {
+#[derive(FromArgs)]
+#[argh(description = "The compiler for Patina")]
+#[allow(
+    clippy::doc_paragraphs_missing_punctuation,
+    reason = "Command line formatting conventions"
+)]
+struct Args {
+    #[argh(positional)]
     src_path: PathBuf,
-    #[arg(short = 'O', default_value_t)]
+
+    #[argh(option, short = 'O', default = "OptLevel::default()")]
+    /// level of optimisations to apply
     opt_level: OptLevel,
-    #[arg(short, long)]
+
+    #[argh(switch)]
+    /// dump LLVM IR to stderr rather than emitting a binary
     dump: bool,
 }
 
 fn main() {
-    let cli = Cli::parse();
-    let src = fs::read_to_string(&cli.src_path).unwrap();
+    let cli: Args = from_env();
+    let src = match fs::read_to_string(&cli.src_path) {
+        Ok(src) => src,
+        Err(err) => {
+            println!(
+                "{error} {reading} {msg}",
+                error = "error".bright_red().bold(),
+                reading = "reading source file:".white().bold(),
+                msg = err.white().bold()
+            );
+            return;
+        }
+    };
 
     let start = Instant::now();
 
-    let handler_inner: &dyn Fn(&str, Span, DiagnosticKind) =
+    let handler_inner: &dyn Fn(&str, Range<usize>, DiagnosticKind) =
         &|msg, span, kind| print_diagnostic(kind, msg, span, &src);
     let handler = ErrorHandler::new(handler_inner);
 
@@ -56,6 +74,7 @@ fn main() {
     Codegen::new(
         &hir,
         &ty_map,
+        handler,
         &ctx,
         cli.src_path.file_name().unwrap().to_str().unwrap(),
     )
@@ -68,7 +87,7 @@ fn main() {
     );
 }
 
-fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Span, src: &str) {
+fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Range<usize>, src: &str) {
     let line_start = src[..=span.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let line_end = src[span.end..]
         .find(['\n', '\r'])

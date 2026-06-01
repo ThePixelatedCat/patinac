@@ -1,9 +1,10 @@
+use std::range::Range;
+
 use derive_more::From;
 use smallvec::{SmallVec, smallvec};
 
 use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
 use ident::SpanIdent;
-use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -52,7 +53,7 @@ impl Parser<'_> {
                 let ty = this.ty()?;
 
                 let start = mut_tok.map_or(pat.span.start, |tok| tok.span.start);
-                let span = Span::from(start..ty.span.end);
+                let span = Range::from(start..ty.span.end);
 
                 Ok(Param {
                     mutable: mut_tok.is_some(),
@@ -122,7 +123,7 @@ impl Parser<'_> {
         })
     }
 
-    fn fields(&mut self) -> Result<(Vec<Field>, Span)> {
+    fn fields(&mut self) -> Result<(Vec<Field>, Range<usize>)> {
         self.delimited_list(
             |this| {
                 let ident = this.ident()?;
@@ -136,7 +137,7 @@ impl Parser<'_> {
         )
     }
 
-    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Span>)> {
+    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Range<usize>>)> {
         if self.at(TokKind::LBracket) {
             let (idents, span) =
                 self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;

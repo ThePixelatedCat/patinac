@@ -1,8 +1,9 @@
+use std::range::Range;
+
 use derive_more::From;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::{Ident, SpanIdent};
-use span::Span;
 
 use crate::{
     exprs::{Expr, ExprId},
@@ -21,7 +22,7 @@ pub struct Hir {
     adts: SlotMap<AdtId, SpanIdent>,
     adt_info: SecondaryMap<AdtId, AdtInfo>,
     exprs: SlotMap<ExprId, Expr>,
-    expr_spans: SecondaryMap<ExprId, Span>,
+    expr_spans: SecondaryMap<ExprId, Range<usize>>,
     vars: SlotMap<VarId, VarInfo>,
     var_tys: SecondaryMap<VarId, Ty>,
 }
@@ -75,7 +76,7 @@ impl Hir {
 
 // Expr-related functions
 impl Hir {
-    pub fn add_expr(&mut self, expr: Expr, span: impl Into<Span>) -> ExprId {
+    pub fn add_expr(&mut self, expr: Expr, span: impl Into<Range<usize>>) -> ExprId {
         let id = self.exprs.insert(expr);
         self.expr_spans.insert(id, span.into());
         id
@@ -85,14 +86,14 @@ impl Hir {
         &self.exprs[id]
     }
 
-    pub fn expr_span(&self, id: ExprId) -> Span {
+    pub fn expr_span(&self, id: ExprId) -> Range<usize> {
         self.expr_spans[id]
     }
 }
 
 // Var-related functions
 impl Hir {
-    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Span) -> VarId {
+    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Range<usize>) -> VarId {
         self.vars.insert(VarInfo {
             ident,
             mutable,
@@ -131,5 +132,5 @@ new_key_type! { pub struct VarId; }
 pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }

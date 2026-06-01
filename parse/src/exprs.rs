@@ -1,9 +1,8 @@
-use std::str::FromStr;
+use std::range::Range;
 
-use itertools::Itertools;
+use itertools::Itertools as _;
 
 use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
-use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -17,7 +16,7 @@ impl Parser<'_> {
                 self.consume(TokKind::Eq)?;
                 let val = self.expr()?;
 
-                let span = Span::from(start..val.span.end);
+                let span = Range::from(start..val.span.end);
                 Ok(Stmt::Decl { binding, val, span })
             }
             _ => self.expr().map(Stmt::Expr),
@@ -86,7 +85,8 @@ impl Parser<'_> {
                 return Ok(lhs);
             }
 
-            self.next().unwrap(); // Skip over the already-parsed bop token
+            self.next()
+                .expect("this token was previously peeked, so we know it's valid"); // Skip over the already-parsed bop token
 
             let rhs = self.expr_inner(right_binding_power)?;
 
@@ -144,7 +144,7 @@ impl Parser<'_> {
         self.ident().map(|i| ExprKind::Ident(i.ident).span(i.span))
     }
 
-    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Span)> {
+    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Range<usize>)> {
         fn process_escapes(input: &str) -> String {
             input
                 .replace(r"\'", "\'")
@@ -163,12 +163,15 @@ impl Parser<'_> {
                     Some("0b") => u64::from_str_radix(&src[2..], 2),
                     Some("0o") => u64::from_str_radix(&src[2..], 8),
                     Some("0x") => u64::from_str_radix(&src[2..], 16),
-                    _ => u64::from_str(src),
+                    _ => src.parse(),
                 };
                 LitExpr::Int(num.expect("ICE: lexer produced invalid int token"))
             },
             TokKind::FloatLit => |src| {
-                LitExpr::Float(f64::from_str(src).expect("ICE: lexer produced invalid float token"))
+                LitExpr::Float(
+                    src.parse()
+                        .expect("ICE: lexer produced invalid float token"),
+                )
             },
             TokKind::CharLit => |src: &str| {
                 LitExpr::Char(
@@ -300,7 +303,7 @@ impl Parser<'_> {
 
         Ok(BlockExpr {
             stmts: stmts.into_iter().try_collect()?,
-            span: Span::from(start..end),
+            span: Range::from(start..end),
         })
     }
 
@@ -360,7 +363,7 @@ impl Parser<'_> {
     fn call_suffix(&mut self, lhs: Expr) -> Result<Expr> {
         let start = lhs.span.start;
 
-        let (args, Span { end, .. }) =
+        let (args, Range { end, .. }) =
             self.delimited_list(Self::arg, TokKind::LParen, TokKind::RParen)?;
 
         Ok(ExprKind::Call {
@@ -375,7 +378,7 @@ impl Parser<'_> {
         let val = self.expr()?;
 
         let start = mut_tok.map_or(val.span.start, |tok| tok.span.start);
-        let span = Span::from(start..val.span.end);
+        let span = Range::from(start..val.span.end);
 
         Ok(Arg {
             mutable: mut_tok.is_some(),

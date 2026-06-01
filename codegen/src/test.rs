@@ -11,7 +11,7 @@ fn check(input: &str, opt_level: OptLevel) {
         .type_program(&mut hir)
         .unwrap();
     let ctx = crate::create_ctx();
-    Codegen::new(&hir, &ty_map, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
+    Codegen::new(&hir, &ty_map, TEST_HANDLER, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
 }
 
 #[test]

@@ -4,9 +4,8 @@ mod runtime;
 mod test;
 mod witnesses;
 
-use std::{borrow::Cow, fmt::Display, iter, path::PathBuf};
+use std::{iter, path::PathBuf, range::Range, str::FromStr};
 
-use clap::ValueEnum;
 use inkwell::{
     AddressSpace,
     builder::Builder,
@@ -14,11 +13,12 @@ use inkwell::{
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
-    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
+    types::{BasicType as _, BasicTypeEnum, FunctionType, StructType},
     values::{BasicValueEnum, FunctionValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
+use errors::ErrorHandler;
 use hir::{
     Hir, TyMap, VarId,
     exprs::ExprId,
@@ -33,27 +33,32 @@ pub enum CodegenMode {
     Silent,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OptLevel {
     #[default]
-    #[value(name = "0")]
     O0 = 0,
-    #[value(name = "1")]
     O1 = 1,
-    #[value(name = "2")]
     O2 = 2,
-    #[value(name = "3")]
     O3 = 3,
 }
 
-impl Display for OptLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value().unwrap().get_name().fmt(f)
+impl FromStr for OptLevel {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "0" => Ok(Self::O0),
+            "1" => Ok(Self::O1),
+            "2" => Ok(Self::O2),
+            "3" => Ok(Self::O3),
+            _ => Err(r#"expected "0", "1", "2", or "3""#),
+        }
     }
 }
 
 impl OptLevel {
+    #[expect(clippy::as_conversions, reason = "Casting to access enum discriminant")]
     pub fn opt_string(self) -> String {
         match self {
             Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
@@ -63,9 +68,10 @@ impl OptLevel {
     }
 }
 
-pub struct Codegen<'ctx, 'hir> {
+pub struct Codegen<'hir, 'handler, 'ctx> {
     hir: &'hir Hir,
     ty_map: &'hir TyMap,
+    handler: ErrorHandler<'handler>,
     ctx: &'ctx Context,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
@@ -80,8 +86,14 @@ pub fn create_ctx() -> Context {
     Context::create()
 }
 
-impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
-    pub fn new(hir: &'hir Hir, ty_map: &'hir TyMap, ctx: &'ctx Context, module_name: &str) -> Self {
+impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
+    pub fn new(
+        hir: &'hir Hir,
+        ty_map: &'hir TyMap,
+        handler: ErrorHandler<'handler>,
+        ctx: &'ctx Context,
+        module_name: &str,
+    ) -> Self {
         let module = ctx.create_module(module_name);
 
         Target::initialize_native(&InitializationConfig::default()).unwrap();
@@ -94,6 +106,7 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         let this = Self {
             hir,
             ty_map,
+            handler,
             ctx,
             builder: ctx.create_builder(),
             module,
@@ -107,6 +120,10 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         this
     }
 
+    #[allow(
+        clippy::unwrap_used,
+        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+    )]
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
         for (adt, _) in self.hir.adts() {
             self.build_constructor(adt);
@@ -177,8 +194,8 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         }
     }
 
-    fn report_warning(&self, msg: impl Into<Cow<'static, str>>) {
-        todo!("warnings");
+    fn report_warning(&mut self, msg: &str, span: Range<usize>) {
+        self.handler.warn(msg, span);
     }
 
     fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<AdtId, StructType<'ctx>> {
@@ -203,30 +220,6 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
                 .collect();
             ty.set_body(&field_tys, false);
         }
-    }
-
-    fn build_constructor(&mut self, adt: AdtId) {
-        let info = self.hir.adt_info(adt);
-
-        let func = self.build_func(info.constructor_id);
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        self.builder.position_at_end(entry_block);
-
-        let ty = self.lower_ty(&Ty::Adt(adt));
-        let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-        for (idx, (arg, field_ty)) in
-            iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
-        {
-            let field_ptr = self
-                .builder
-                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "fieldptr")
-                .unwrap();
-            self.emit_copy(field_ty, arg, field_ptr);
-        }
-
-        self.builder.build_return(None).unwrap();
-
-        assert!(func.verify(true));
     }
 
     fn build_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
@@ -268,6 +261,38 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         }
     }
 
+    #[allow(
+        clippy::unwrap_used,
+        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+    )]
+    fn build_constructor(&mut self, adt: AdtId) {
+        let info = self.hir.adt_info(adt);
+
+        let func = self.build_func(info.constructor_id);
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        self.builder.position_at_end(entry_block);
+
+        let ty = self.lower_ty(&Ty::Adt(adt));
+        let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+        for (idx, (arg, field_ty)) in
+            iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
+        {
+            let field_ptr = self
+                .builder
+                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "fieldptr")
+                .unwrap();
+            self.emit_copy(field_ty, arg, field_ptr);
+        }
+
+        self.builder.build_return(None).unwrap();
+
+        assert!(func.verify(true));
+    }
+
+    #[allow(
+        clippy::unwrap_used,
+        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+    )]
     fn populate_func(
         &mut self,
         func: FunctionValue<'ctx>,
@@ -396,17 +421,26 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         }
     }
 
+    #[allow(
+        clippy::unwrap_used,
+        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+    )]
     fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         self.builder.build_alloca(ty, name).unwrap()
     }
 
+    /// # Panics
+    /// Panics if the builder is not positioned, or is positioned but not within a function.
     fn emit_alloca_entry(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
-        let curr_block = self.builder.get_insert_block().unwrap();
+        let curr_block = self
+            .builder
+            .get_insert_block()
+            .expect("builder has been positioned");
         let head_block = curr_block
             .get_parent()
-            .unwrap()
+            .expect("builder is within function")
             .get_first_basic_block()
-            .unwrap();
+            .expect("function has at least one block; we got this function via a block");
 
         if let Some(first_instr) = head_block.get_first_instruction() {
             self.builder.position_before(&first_instr);
@@ -426,11 +460,13 @@ impl<'ctx, 'hir> Codegen<'ctx, 'hir> {
         self.emit_drop(ty, val);
     }
 
+    /// # Panics
+    /// Panics if the builder is not positioned, or is positioned but not within a function.
     fn curr_function(&self) -> FunctionValue<'ctx> {
         self.builder
             .get_insert_block()
-            .unwrap()
+            .expect("builder has been positioned")
             .get_parent()
-            .unwrap()
+            .expect("builder is within function")
     }
 }

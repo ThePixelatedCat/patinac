@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Internal
-span.path = "../span"
+
 # External
 string-interner = "0.20.0"
 derive_more = { version = "2.1.1", features = ["display"] }

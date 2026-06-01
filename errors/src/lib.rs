@@ -1,13 +1,17 @@
+use std::{range::Range, result};
+
 use derive_more::{Display, Error};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
-use span::Span;
+pub type Result<T, E = HandledError> = result::Result<T, E>;
 
-pub type Result<T, E = HandledError> = std::result::Result<T, E>;
-
+#[allow(
+    clippy::use_debug,
+    reason = "This handler is for use in tests, where debug output is desirable"
+)]
 pub const TEST_HANDLER: ErrorHandler =
-    ErrorHandler::new(&|str, span, kind| eprintln!("{kind:?}: {str} ({span})"));
+    ErrorHandler::new(&|str, span, kind| eprintln!("{kind:?}: {str} ({span:?})"));
 pub const DUMMY_HANDLER: ErrorHandler = ErrorHandler::new(&|_, _, _| {});
 
 #[derive(Debug, PartialEq, Eq)]
@@ -16,12 +20,12 @@ pub struct Error<E>(Box<ErrorInner<E>>);
 #[derive(Debug, PartialEq, Eq)]
 struct ErrorInner<E> {
     kind: E,
-    span: Span,
+    span: Range<usize>,
     ctx: SmallVec<[SmolStr; 1]>,
 }
 
 impl<E> Error<E> {
-    pub fn new(err: E, span: impl Into<Span>) -> Self {
+    pub fn new(err: E, span: impl Into<Range<usize>>) -> Self {
         Self(Box::new(ErrorInner {
             kind: err,
             span: span.into(),
@@ -45,7 +49,7 @@ impl<E> Error<E> {
         &self.0.kind
     }
 
-    pub fn span(&self) -> Span {
+    pub fn span(&self) -> Range<usize> {
         self.0.span
     }
 
@@ -67,12 +71,13 @@ pub enum DiagnosticKind {
 }
 
 #[derive(Clone)]
-pub struct ErrorHandler<'a> {
-    f: &'a dyn Fn(&str, Span, DiagnosticKind),
+pub struct ErrorHandler<'callback> {
+    f: &'callback dyn Fn(&str, Range<usize>, DiagnosticKind),
     has_err: bool,
 }
-impl<'a> ErrorHandler<'a> {
-    pub const fn new(f: &'a dyn Fn(&str, Span, DiagnosticKind)) -> Self {
+
+impl<'callback> ErrorHandler<'callback> {
+    pub const fn new(f: &'callback dyn Fn(&str, Range<usize>, DiagnosticKind)) -> Self {
         Self { f, has_err: false }
     }
 
@@ -86,14 +91,14 @@ impl<'a> ErrorHandler<'a> {
         HandledError
     }
 
-    pub fn warn(&mut self, msg: &str, span: Span) {
+    pub fn warn(&self, msg: &str, span: Range<usize>) {
         (self.f)(msg, span, DiagnosticKind::Warning);
     }
 
-    /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors
+    /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors.
     ///
     /// # Errors
-    /// [`HandledError`] if this handler has reported any errors
+    /// [`HandledError`] if this handler has reported any errors.
     pub fn checked<T>(&self, val: T) -> Result<T> {
         if self.has_err {
             Err(HandledError)
@@ -103,7 +108,7 @@ impl<'a> ErrorHandler<'a> {
     }
 }
 
-/// Indicates that an error occurred, and detailed information was provided to an [`ErrorHandler`]
+/// Indicates that an error occurred, and detailed information was provided to an [`ErrorHandler`].
 #[derive(Error, Debug, Display, Clone, Copy, PartialEq, Eq)]
 #[display("Detailed error was printed to stderr")]
 #[non_exhaustive]
@@ -115,7 +120,7 @@ pub trait TryCollectEager<T, E> {
     /// Only for unit error types.
     ///
     /// # Errors
-    /// Returns the error value if any of the elements of the iterator were an error, but only after evaluating every element
+    /// Returns the error value if any of the elements of the iterator were an error, but only after evaluating every element.
     fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, E>;
 }
 

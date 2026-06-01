@@ -1,5 +1,6 @@
+use std::range::Range;
+
 use ast::types::{Param, Return, Ty, TyKind};
-use span::Span;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -38,7 +39,7 @@ impl Parser<'_> {
                         let ty = this.ty()?;
 
                         let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
-                        let span = Span::from(start..ty.span.end);
+                        let span = Range::from(start..ty.span.end);
 
                         Ok(Param {
                             ty,

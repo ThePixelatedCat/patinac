@@ -1,7 +1,8 @@
+use std::range::Range;
+
 use smallvec::SmallVec;
 
 use ident::SpanIdent;
-use span::Span;
 
 use crate::{exprs::Expr, patterns::Pat, types::Ty};
 
@@ -31,7 +32,7 @@ pub struct Param {
     pub pat: Pat,
     pub ty: Ty,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

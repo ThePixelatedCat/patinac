@@ -10,7 +10,7 @@ mod types;
 
 use std::ops::Range;
 
-use ast::Ast;
+use ast::{Ast, exprs::Expr};
 use errors::{ErrorHandler, Result};
 use lex::{Lexer, Tok, TokKind};
 
@@ -31,10 +31,10 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Parses the source this was constructed with into an AST
+    /// Parses the source this was constructed with into an AST.
     ///
     /// # Errors
-    /// If parsing produces any errors, an error will be returned, but only after the rest of parsing is complete
+    /// If parsing produces any errors, an error will be returned, but only after the rest of parsing is complete.
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
@@ -49,13 +49,13 @@ impl<'src> Parser<'src> {
         self.handler.checked(ast)
     }
 
-    /// Lexes the source and parses an expression in one function call, to simplify tests
+    /// Lexes the source and parses an expression in one function call, to simplify tests.
     /// # Errors
-    /// If the source cannot be parsed as an expression
+    /// If the source cannot be parsed as an expression.
     /// # Panics
-    /// If the lexer produces an error
+    /// If the lexer produces an error.
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<ast::exprs::Expr> {
+    pub fn parse_expr(src: &'src str) -> Result<Expr> {
         Self::new(src, errors::TEST_HANDLER).expr()
     }
 
@@ -63,9 +63,7 @@ impl<'src> Parser<'src> {
         &self.src[Range::from(tok.span)]
     }
 
-    /// Get the next token
-    ///
-    /// Ignores whitespace
+    /// Consumes the next token. Ignores whitespace.
     fn next(&mut self) -> Result<Tok> {
         self.toks
             .next()
@@ -77,9 +75,7 @@ impl<'src> Parser<'src> {
             })
     }
 
-    /// Look-ahead one token
-    ///
-    /// Ignores whitespace
+    /// Peeks one token. Ignores whitespace.
     fn peek(&mut self) -> Result<TokKind> {
         let tok = self
             .toks
@@ -98,30 +94,28 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Check if the next token is the same variant as another token
-    ///
-    /// Ignores whitespace
+    /// Checks if the next token is of the given kind. Ignores whitespace.
     fn at(&mut self, tok: TokKind) -> bool {
-        self.peek() == Ok(tok)
+        self.peek().is_ok_and(|t| t == tok)
     }
 
-    /// Check if the next token is the same variant as another token
-    ///
-    /// Respects whitespace
-    fn at_ws(&mut self, token: TokKind) -> bool {
-        match self.toks.peek() {
-            None => false,
-            Some(Err(span)) => {
-                self.handler.err(ErrorKind::BadToken.span(*span));
-                false
-            }
-            Some(Ok(tok)) => tok.kind == token,
-        }
+    /// Checks if the next token is of the given kind. Respects whitespace.
+    fn at_ws(&mut self, tok: TokKind) -> bool {
+        self.toks
+            .peek()
+            .copied()
+            .transpose()
+            .map(|opt_tok| opt_tok.map_or(TokKind::Eof, |tok| tok.kind))
+            .map_or_else(
+                |span| {
+                    self.handler.err(ErrorKind::BadToken.span(span));
+                    false
+                },
+                |t| t == tok,
+            )
     }
 
-    /// Move forward one token in the input and check that we pass the kind of token we expect
-    ///
-    /// Ignores whitespace
+    /// Consumes the next token and checks that it was the expected kind. Ignores whitespace.
     fn consume(&mut self, expected: TokKind) -> Result<Tok> {
         self.next().and_then(|next| {
             if next.kind == expected {
@@ -139,6 +133,7 @@ impl<'src> Parser<'src> {
     }
 
     fn consume_at(&mut self, token: TokKind) -> Option<Tok> {
-        self.at(token).then(|| self.next().unwrap())
+        self.at(token)
+            .then(|| self.next().expect("known to be at a valid token"))
     }
 }

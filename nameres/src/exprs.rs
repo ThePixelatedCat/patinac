@@ -1,12 +1,12 @@
 use foldhash::HashSet;
-use itertools::Itertools;
+use itertools::Itertools as _;
 use smallvec::SmallVec;
 
 use ast::exprs::{
     BlockExpr as AstBlockExpr, Expr as AstExpr, ExprKind, InfixOp as AstInfixOp,
     PrefixOp as AstPrefixOp, Stmt as AstStmt,
 };
-use errors::{ErrorHandler, Result, TryCollectEager};
+use errors::{ErrorHandler, Result, TryCollectEager as _};
 use hir::{
     Hir, VarId,
     exprs::{

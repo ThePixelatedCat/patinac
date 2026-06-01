@@ -1,17 +1,22 @@
-use std::fmt::Write;
+#![allow(
+    clippy::unwrap_used,
+    reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+)]
+
+use std::fmt::Write as _;
 
 use inkwell::{
     FloatPredicate, IntPredicate,
     module::Linkage,
-    types::{BasicType, FunctionType, StructType},
-    values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue},
+    types::{BasicType as _, FunctionType, StructType},
+    values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
 };
 
 use hir::{VarId, items::AdtId, types::Ty};
 
 use crate::Codegen;
 
-impl<'ctx> Codegen<'ctx, '_> {
+impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub(crate) fn drop_fn_ty(&self) -> FunctionType<'ctx> {
         self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false)
     }
@@ -245,10 +250,10 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.fields_equals(&Ty::Adt(id), self.hir.adt_info(id).fields.tys())
     }
 
-    fn fields_drop<'a>(
+    fn fields_drop<'fields>(
         &self,
         ty: &Ty,
-        fields: impl IntoIterator<Item = &'a Ty>,
+        fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{}.drop", self.mangle(ty));
 
@@ -287,10 +292,10 @@ impl<'ctx> Codegen<'ctx, '_> {
         func
     }
 
-    fn fields_copy<'a>(
+    fn fields_copy<'fields>(
         &self,
         ty: &Ty,
-        fields: impl IntoIterator<Item = &'a Ty>,
+        fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{}.copy", self.mangle(ty));
 
@@ -350,10 +355,10 @@ impl<'ctx> Codegen<'ctx, '_> {
         func
     }
 
-    fn fields_equals<'a>(
+    fn fields_equals<'fields>(
         &self,
         ty: &Ty,
-        fields: impl IntoIterator<Item = &'a Ty>,
+        fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
         let func_name = format!("{}.equals", self.mangle(ty));
 

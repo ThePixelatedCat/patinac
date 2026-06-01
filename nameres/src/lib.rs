@@ -3,19 +3,20 @@ mod exprs;
 #[cfg(test)]
 mod test;
 
-use itertools::Itertools;
+use foldhash::fast::RandomState;
+use itertools::Itertools as _;
 
 use ast::{
     Ast,
-    exprs::{Binding, LitExpr as AstLitExpr},
+    exprs::{Binding, Expr as AstExpr, LitExpr as AstLitExpr},
     items::{AdtItem, AdtKind, ExecItem as AstExecItem, ExecKind as AstExecKind},
     patterns::{Pat, PatKind},
     types::{Ty as AstTy, TyKind as AstTyKind},
 };
-use errors::{ErrorHandler, HandledError, Result, TryCollectEager};
+use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
 use hir::{
     Hir, VarId,
-    exprs::LitExpr as HirLitExpr,
+    exprs::{ExprId, LitExpr as HirLitExpr},
     items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind},
     types::{Param as ParamTy, Ty as HirTy},
 };
@@ -23,10 +24,10 @@ use ident::Ident;
 
 use crate::error::ErrorKind;
 
-type Scope<Id> = im_rc::HashMap<Ident, Id, foldhash::fast::RandomState>;
+type Scope<Id> = im_rc::HashMap<Ident, Id, RandomState>;
 
 /// # Errors
-/// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name
+/// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name.
 pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
     let mut hir = Hir::default();
 
@@ -332,7 +333,7 @@ fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
 }
 
 #[cfg(any(test, feature = "test"))]
-pub fn test_resolve_expr(expr: ast::exprs::Expr) -> Result<(hir::exprs::ExprId, Hir)> {
+pub fn test_resolve_expr(expr: AstExpr) -> Result<(ExprId, Hir)> {
     let mut hir = Hir::default();
     let mut handler = errors::TEST_HANDLER;
     let expr = exprs::resolve_expr(

@@ -1,8 +1,8 @@
-use inkwell::{types::BasicType, values::FunctionValue};
+use inkwell::{types::BasicType as _, values::FunctionValue};
 
 use crate::Codegen;
 
-impl<'ctx> Codegen<'ctx, '_> {
+impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub(crate) fn printf(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("printf") {
             return func;
@@ -35,7 +35,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_panic", ty, None)
     }
 
-    /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`
+    /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`.
     pub(crate) fn runtime_array_drop(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_drop") {
             return func;
@@ -51,7 +51,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_array_drop", ty, None)
     }
 
-    /// `void _array_copy(Array* dst, Array* src)`
+    /// `void _array_copy(Array* dst, Array* src)`.
     pub(crate) fn runtime_array_copy(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_copy") {
             return func;
@@ -63,7 +63,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_array_copy", ty, None)
     }
 
-    /// `bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size)`
+    /// `bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size)`.
     pub(crate) fn runtime_array_equals(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_equals") {
             return func;
@@ -80,7 +80,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_array_equals", ty, None)
     }
 
-    /// `void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size)`
+    /// `void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size)`.
     pub(crate) fn runtime_array_unique(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_unique") {
             return func;
@@ -96,7 +96,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_array_unique", ty, None)
     }
 
-    /// `void _array_new(Array* array, uint64_t count, uint64_t elem_size)`
+    /// `void _array_new(Array* array, uint64_t count, uint64_t elem_size)`.
     pub(crate) fn runtime_array_new(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_new") {
             return func;
@@ -112,7 +112,7 @@ impl<'ctx> Codegen<'ctx, '_> {
         self.module.add_function("_array_new", ty, None)
     }
 
-    /// `void _array_bounds_check(Array* array, uint64_t idx)`
+    /// `void _array_bounds_check(Array* array, uint64_t idx)`.
     pub(crate) fn runtime_bounds_check(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("_array_bounds_check") {
             return func;

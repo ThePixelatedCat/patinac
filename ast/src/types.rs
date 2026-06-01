@@ -1,19 +1,21 @@
-use std::fmt::Display;
+use std::{
+    fmt::{self, Display, Formatter},
+    range::Range,
+};
 
 use derive_more::Display;
-use itertools::Itertools;
+use itertools::Itertools as _;
 
 use ident::Ident;
-use span::Span;
 
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 #[display("{kind}")]
 pub struct Ty {
     pub kind: TyKind,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
-/// The kinds of types
+/// The kinds of types.
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 pub enum TyKind {
     Int,
@@ -33,14 +35,14 @@ pub enum TyKind {
 }
 
 impl TyKind {
-    pub fn span(self, span: impl Into<Span>) -> Ty {
+    pub fn span(self, span: impl Into<Range<usize>>) -> Ty {
         Ty {
             kind: self,
             span: span.into(),
         }
     }
 
-    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
+    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type.
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
@@ -49,22 +51,22 @@ impl TyKind {
         Self::Adt(Ident::new(name), vec![])
     }
 
-    /// Helper to create a new [`TyKind::Adt`] for a `String`
+    /// Helper to create a new [`TyKind::Adt`] for a `String`.
     pub fn string() -> Self {
         Self::named("String")
     }
 }
 
-/// A parameter of a function type
+/// A parameter of a function type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub ty: Ty,
     pub mutable: bool,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 impl Display for Param {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;
         }
@@ -79,7 +81,7 @@ pub struct Return {
 }
 
 impl Display for Return {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.mutable {
             "mut ".fmt(f)?;
         }

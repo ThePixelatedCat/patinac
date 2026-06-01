@@ -5,16 +5,13 @@ edition = "2024"
 
 [dependencies]
 # Internal
-span.path = "../span"
+
 ident.path = "../ident"
 hir.path = "../hir"
+errors.path = "../errors"
 # External
 inkwell = { version = "0.9.0", features = ["llvm22-1"] }
 slotmap = "1.1.1"
-clap = { version = "4.6.1", features = [
-    "derive",
-    "std",
-], default-features = false }
 itertools = "0.14.0"
 
 [dev-dependencies]
@@ -22,7 +19,6 @@ itertools = "0.14.0"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"
-errors.path = "../errors"
 
 [lints]
 workspace = true

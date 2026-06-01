@@ -6,20 +6,21 @@ mod test;
 mod types;
 mod unify;
 
+use std::range::Range;
+
 use ena::unify::{InPlaceUnificationTable, UnificationTable};
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
 use hir::{Hir, TyMap, VarId, exprs::ExprId, items::ExecKind, types::Ty};
 use ident::SpanIdent;
-use span::Span;
 
 use crate::types::{PartialTy, TyVar};
 
 #[derive(Debug)]
 enum Constraint {
-    Eq(PartialTy, PartialTy, Span),
-    HasField(PartialTy, Span, PartialTy, SpanIdent),
+    Eq(PartialTy, PartialTy, Range<usize>),
+    HasField(PartialTy, Range<usize>, PartialTy, SpanIdent),
 }
 
 pub struct TypeChecker<'err> {
@@ -89,14 +90,14 @@ impl TypeChecker<'_> {
         PartialTy::IntVar(self.table.new_key(None))
     }
 
-    fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Span) {
+    fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Range<usize>) {
         self.constraints.push(Constraint::Eq(ty_a, ty_b, span));
     }
 
     fn constrain_has_field(
         &mut self,
         base_ty: PartialTy,
-        base_span: Span,
+        base_span: Range<usize>,
         field_ty: PartialTy,
         field_name: SpanIdent,
     ) {

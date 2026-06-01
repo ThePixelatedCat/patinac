@@ -1,10 +1,10 @@
-use std::iter;
+use std::{iter, range::Range};
 
 use ena::unify::InPlaceUnificationTable;
+
 use errors::Error;
 use hir::Hir;
 use ident::SpanIdent;
-use span::Span;
 
 use crate::{
     Constraint, TypeChecker,
@@ -12,7 +12,7 @@ use crate::{
     types::{Param, PartialTy, TyVar},
 };
 
-fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error<ErrorKind>> {
+fn occurs_check(span: Range<usize>, ty: &PartialTy, var: TyVar) -> Result<(), Error<ErrorKind>> {
     match ty {
         PartialTy::Int
         | PartialTy::UInt
@@ -40,7 +40,7 @@ fn occurs_check(span: Span, ty: &PartialTy, var: TyVar) -> Result<(), Error<Erro
 }
 
 impl TypeChecker<'_> {
-    /// Unifies all types in the unification table
+    /// Unifies all types in the unification table.
     pub(super) fn unify(&mut self, hir: &Hir) {
         for constr in &self.constraints {
             match constr {
@@ -69,7 +69,7 @@ impl TypeChecker<'_> {
         table: &mut InPlaceUnificationTable<TyVar>,
         hir: &Hir,
         base_ty: &PartialTy,
-        base_span: Span,
+        base_span: Range<usize>,
         field_ty: &PartialTy,
         field_name: SpanIdent,
     ) -> Result<(), Error<ErrorKind>> {
@@ -97,10 +97,10 @@ impl TypeChecker<'_> {
     /// Recursively traverse two types until at least one is a type variable,
     /// at which point we unify them in the table,
     /// or until we can no longer traverse them or we know they're mismatched,
-    /// at which point we error
+    /// at which point we error.
     pub(super) fn unify_ty_ty(
         table: &mut InPlaceUnificationTable<TyVar>,
-        span: Span,
+        span: Range<usize>,
         unnorm_lhs: &PartialTy,
         unnorm_rhs: &PartialTy,
     ) -> Result<(), Error<ErrorKind>> {
@@ -168,7 +168,7 @@ impl TypeChecker<'_> {
 
     fn unify_tys(
         table: &mut InPlaceUnificationTable<TyVar>,
-        constr_span: Span,
+        constr_span: Range<usize>,
         left_tys: &[PartialTy],
         right_tys: &[PartialTy],
     ) -> Result<(), Error<ErrorKind>> {
@@ -178,7 +178,7 @@ impl TypeChecker<'_> {
 
     fn unify_var_var(
         table: &mut InPlaceUnificationTable<TyVar>,
-        span: Span,
+        span: Range<usize>,
         lhs: TyVar,
         rhs: TyVar,
     ) -> Result<(), Error<ErrorKind>> {
@@ -189,7 +189,7 @@ impl TypeChecker<'_> {
 
     fn unify_var_value(
         table: &mut InPlaceUnificationTable<TyVar>,
-        span: Span,
+        span: Range<usize>,
         var: TyVar,
         ty: PartialTy,
     ) -> Result<(), Error<ErrorKind>> {

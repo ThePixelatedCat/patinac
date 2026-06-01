@@ -1,12 +1,13 @@
+use std::range::Range;
+
 use ident::Ident;
-use span::Span;
 
 use crate::exprs::LitExpr;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pat {
     pub kind: PatKind,
-    pub span: Span,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,7 +20,7 @@ pub enum PatKind {
 }
 
 impl PatKind {
-    pub fn span(self, span: impl Into<Span>) -> Pat {
+    pub fn span(self, span: impl Into<Range<usize>>) -> Pat {
         Pat {
             kind: self,
             span: span.into(),
