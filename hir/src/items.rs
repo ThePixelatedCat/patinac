@@ -6,9 +6,9 @@ use smallvec::SmallVec;
 
 use crate::{VarId, exprs::ExprId, types::Ty};
 
-new_key_type! { pub struct AdtId; }
+new_key_type! { pub struct TyId; }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdtInfo {
+pub struct TyInfo {
     pub fields: Fields,
     pub constructor_id: VarId,
 }

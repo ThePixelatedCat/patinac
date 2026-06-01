@@ -8,10 +8,8 @@ use proptest::{collection::vec, prelude::*};
 use smallvec::smallvec;
 
 use ast::{
-    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, Stmt},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param},
-    patterns::PatKind,
-    types::{Param as ParamTy, Return, TyKind},
+    Arg, Binding, BlockExpr, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, ParamTy, PatKind,
+    Return, Stmt, TyItem, TyItemKind, TyKind,
 };
 use errors::{DUMMY_HANDLER, TEST_HANDLER};
 use ident::Ident;
@@ -55,10 +53,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                     },
                     Param {
                         pat: PatKind::ident("bar").span(27..30),
-                        ty: TyKind::Adt(
+                        ty: TyKind::Named(
                             Ident::new("Bar"),
                             vec![
-                                TyKind::Adt(
+                                TyKind::Named(
                                     Ident::new("Baz"),
                                     vec![TyKind::named("T").span(40..41)],
                                 )
@@ -201,25 +199,28 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
     );
 
     assert_eq!(
-        items.adts[0],
-        AdtItem {
+        items.tys[0],
+        TyItem {
             ident: Ident::new("Foo").span(238..241),
             generics: smallvec![
                 Ident::new("T").span(242..243),
                 Ident::new("U").span(245..246),
             ],
-            kind: AdtKind::Record(vec![
+            kind: TyItemKind::Record(vec![
                 Field {
                     ident: Ident::new("x").span(248..249),
                     ty: TyKind::string().span(251..257),
                 },
                 Field {
                     ident: Ident::new("bar").span(259..262),
-                    ty: TyKind::Adt(
+                    ty: TyKind::Named(
                         Ident::new("Bar"),
                         vec![
-                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(272..273)])
-                                .span(268..274),
+                            TyKind::Named(
+                                Ident::new("Baz"),
+                                vec![TyKind::named("T").span(272..273)]
+                            )
+                            .span(268..274),
                             TyKind::Array(TyKind::named("U").span(277..278).into()).span(276..279),
                         ]
                     )

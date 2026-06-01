@@ -7,7 +7,7 @@ use ident::{Ident, SpanIdent};
 
 use crate::{
     exprs::{Expr, ExprId},
-    items::{AdtId, AdtInfo, ExecItem},
+    items::{ExecItem, TyId, TyInfo},
     types::Ty,
 };
 
@@ -19,8 +19,8 @@ pub mod types;
 pub struct Hir {
     main: Option<ExecItem>,
     execs: Vec<ExecItem>,
-    adts: SlotMap<AdtId, SpanIdent>,
-    adt_info: SecondaryMap<AdtId, AdtInfo>,
+    tys: SlotMap<TyId, SpanIdent>,
+    ty_info: SecondaryMap<TyId, TyInfo>,
     exprs: SlotMap<ExprId, Expr>,
     expr_spans: SecondaryMap<ExprId, Range<usize>>,
     vars: SlotMap<VarId, VarInfo>,
@@ -45,32 +45,32 @@ impl Hir {
     }
 }
 
-// Adt-related functions
+// Type-related functions
 impl Hir {
-    pub fn adts(&self) -> impl Iterator<Item = (AdtId, SpanIdent)> {
-        self.adts.iter().map(|(id, ident)| (id, *ident))
+    pub fn tys(&self) -> impl Iterator<Item = (TyId, SpanIdent)> {
+        self.tys.iter().map(|(id, ident)| (id, *ident))
     }
 
-    pub fn add_adt(&mut self, ident: SpanIdent, info: AdtInfo) -> AdtId {
-        let id = self.reserve_adt(ident);
-        self.fulfill_adt(id, info);
+    pub fn add_ty(&mut self, ident: SpanIdent, info: TyInfo) -> TyId {
+        let id = self.reserve_ty(ident);
+        self.fulfill_ty(id, info);
         id
     }
 
-    pub fn reserve_adt(&mut self, ident: SpanIdent) -> AdtId {
-        self.adts.insert(ident)
+    pub fn reserve_ty(&mut self, ident: SpanIdent) -> TyId {
+        self.tys.insert(ident)
     }
 
-    pub fn fulfill_adt(&mut self, id: AdtId, info: AdtInfo) {
-        self.adt_info.insert(id, info);
+    pub fn fulfill_ty(&mut self, id: TyId, info: TyInfo) {
+        self.ty_info.insert(id, info);
     }
 
-    pub fn adt_ident(&self, id: AdtId) -> SpanIdent {
-        self.adts[id]
+    pub fn ty_ident(&self, id: TyId) -> SpanIdent {
+        self.tys[id]
     }
 
-    pub fn adt_info(&self, id: AdtId) -> &AdtInfo {
-        &self.adt_info[id]
+    pub fn ty_info(&self, id: TyId) -> &TyInfo {
+        &self.ty_info[id]
     }
 }
 

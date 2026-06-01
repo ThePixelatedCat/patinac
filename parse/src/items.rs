@@ -3,7 +3,7 @@ use std::range::Range;
 use derive_more::From;
 use smallvec::{SmallVec, smallvec};
 
-use ast::items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant};
+use ast::{ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant};
 use ident::SpanIdent;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
@@ -11,7 +11,7 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 #[derive(From, PartialEq, Debug)]
 pub enum Item {
     ExecItem(ExecItem),
-    AdtItem(AdtItem),
+    TyItem(TyItem),
 }
 
 impl Parser<'_> {
@@ -83,7 +83,7 @@ impl Parser<'_> {
         })
     }
 
-    fn record_item(&mut self) -> Result<AdtItem> {
+    fn record_item(&mut self) -> Result<TyItem> {
         self.consume(TokKind::Record)?;
 
         let ident = self.ident();
@@ -92,14 +92,14 @@ impl Parser<'_> {
         let (generics, _) = generics?;
         let ident = ident?;
 
-        Ok(AdtItem {
+        Ok(TyItem {
             ident,
             generics,
-            kind: AdtKind::Record(fields),
+            kind: TyItemKind::Record(fields),
         })
     }
 
-    fn enum_item(&mut self) -> Result<AdtItem> {
+    fn enum_item(&mut self) -> Result<TyItem> {
         self.consume(TokKind::Enum)?;
 
         let ident = self.ident();
@@ -116,10 +116,10 @@ impl Parser<'_> {
         let (generics, _) = generics?;
         let ident = ident?;
 
-        Ok(AdtItem {
+        Ok(TyItem {
             ident,
             generics,
-            kind: AdtKind::Enum(variants),
+            kind: TyItemKind::Enum(variants),
         })
     }
 

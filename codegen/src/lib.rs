@@ -22,7 +22,7 @@ use errors::ErrorHandler;
 use hir::{
     Hir, TyMap, VarId,
     exprs::ExprId,
-    items::{AdtId, ExecKind},
+    items::{ExecKind, TyId},
     types::{Param, Ty},
 };
 
@@ -76,7 +76,7 @@ pub struct Codegen<'hir, 'handler, 'ctx> {
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     target: TargetMachine,
-    structs: SecondaryMap<AdtId, StructType<'ctx>>,
+    structs: SecondaryMap<TyId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
     vars: SecondaryMap<VarId, PointerValue<'ctx>>,
     lambda_counter: u32,
@@ -125,8 +125,8 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
     )]
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
-        for (adt, _) in self.hir.adts() {
-            self.build_constructor(adt);
+        for (ty, _) in self.hir.tys() {
+            self.build_constructor(ty);
         }
 
         for exec in self.hir.execs() {
@@ -198,18 +198,18 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.handler.warn(msg, span);
     }
 
-    fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<AdtId, StructType<'ctx>> {
-        hir.adts()
+    fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<TyId, StructType<'ctx>> {
+        hir.tys()
             .map(|(id, ident)| (id, ctx.opaque_struct_type(&ident.ident.str())))
             .collect()
     }
 
     fn populate_structs(&self) {
         for (id, ty) in &self.structs {
-            let field_tys: Vec<_> = (&self.hir.adt_info(id).fields)
+            let field_tys: Vec<_> = (&self.hir.ty_info(id).fields)
                 .into_iter()
                 .map(|(_, ty)| {
-                    if let Ty::Adt(field_id) = ty
+                    if let Ty::Named(field_id) = ty
                         && *field_id == id
                     {
                         todo!("Recursive records")
@@ -265,14 +265,14 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         clippy::unwrap_used,
         reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
     )]
-    fn build_constructor(&mut self, adt: AdtId) {
-        let info = self.hir.adt_info(adt);
+    fn build_constructor(&mut self, ty: TyId) {
+        let info = self.hir.ty_info(ty);
 
         let func = self.build_func(info.constructor_id);
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        let ty = self.lower_ty(&Ty::Adt(adt));
+        let ty = self.lower_ty(&Ty::Named(ty));
         let out_ptr = func.get_first_param().unwrap().into_pointer_value();
         for (idx, (arg, field_ty)) in
             iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
@@ -342,7 +342,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             }
             Ty::Array(_) => self.array_ty(),
             Ty::Fn(..) => self.closure_ty(),
-            Ty::Adt(id) => self.structs[*id].as_basic_type_enum(),
+            Ty::Named(id) => self.structs[*id].as_basic_type_enum(),
         }
     }
 
@@ -407,7 +407,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
             Ty::Array(_) | Ty::Fn(_, _) => false,
             Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
-            Ty::Adt(id) => (&self.hir.adt_info(*id).fields)
+            Ty::Named(id) => (&self.hir.ty_info(*id).fields)
                 .into_iter()
                 .all(|(_, ty)| self.is_trivial(ty)),
         }
@@ -416,7 +416,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     const fn is_indirect(ty: &Ty) -> bool {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
-            Ty::Array(_) | Ty::Fn(_, _) | Ty::Adt(_) => true,
+            Ty::Array(_) | Ty::Fn(_, _) | Ty::Named(_) => true,
             Ty::Tuple(inner) => !inner.is_empty(),
         }
     }

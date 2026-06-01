@@ -1,4 +1,4 @@
-use ast::patterns::{Pat, PatKind};
+use ast::{Pat, PatKind};
 use ident::SpanIdent;
 
 use crate::{ErrorKind, Parser, Result, TokKind};

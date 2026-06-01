@@ -5,7 +5,7 @@ use std::{
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
-use hir::{items::AdtId, types::Ty};
+use hir::{items::TyId, types::Ty};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
@@ -37,7 +37,7 @@ pub enum PartialTy {
     Tuple(Vec<Self>),
     Array(Box<Self>),
     Fn(Vec<Param>, Box<Self>),
-    Adt(AdtId),
+    Named(TyId),
     Var(TyVar),
     IntVar(TyVar),
 }
@@ -67,7 +67,7 @@ impl From<&Ty> for PartialTy {
                 let ret = Box::new(Self::from(&**ret));
                 Self::Fn(params, ret)
             }
-            Ty::Adt(id) => Self::Adt(*id),
+            Ty::Named(id) => Self::Named(*id),
         }
     }
 }
@@ -92,7 +92,7 @@ impl Display for PartialTy {
             Self::Fn(params, result_ty) => {
                 write!(f, "fn({}) -> {result_ty}", itertools::join(params, ", "))
             }
-            Self::Adt(name) => {
+            Self::Named(name) => {
                 write!(f, "temp{name:?}") //TODO properly print
             }
             Self::Var(_) => "{var}".fmt(f),

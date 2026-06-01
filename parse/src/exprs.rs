@@ -2,7 +2,7 @@ use std::range::Range;
 
 use itertools::Itertools as _;
 
-use ast::exprs::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
+use ast::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 

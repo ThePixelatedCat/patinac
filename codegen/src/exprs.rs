@@ -60,7 +60,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             Ty::Float => "%f\n",
             Ty::Bool => "%hhd\n",
             Ty::Char => todo!("Strings"),
-            Ty::Adt(_) => todo!(),
+            Ty::Named(_) => todo!(),
             Ty::Tuple(_) => todo!(),
             Ty::Array(_) => todo!(),
             Ty::Fn(_, _) => todo!(),
@@ -95,11 +95,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
-                let Ty::Adt(id) = self.ty_map.ty(*base) else {
+                let Ty::Named(id) = self.ty_map.ty(*base) else {
                     unreachable!("ICE")
                 };
                 let base = self.emit_place(*base);
-                let (idx, _) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
+                let (idx, _) = self.hir.ty_info(*id).fields.get_ty_idx(field.ident);
                 self.builder
                     .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
                     .unwrap()
@@ -130,11 +130,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
-                let Ty::Adt(id) = self.ty_map.ty(*base) else {
+                let Ty::Named(id) = self.ty_map.ty(*base) else {
                     unreachable!("ICE")
                 };
                 let base = self.emit_unique_place(*base);
-                let (idx, _) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
+                let (idx, _) = self.hir.ty_info(*id).fields.get_ty_idx(field.ident);
                 self.builder
                     .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
                     .unwrap()
@@ -154,7 +154,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                         .as_global_value()
                         .as_pointer_value(),
                     Ty::Fn(..) => self.closure_copy().as_global_value().as_pointer_value(),
-                    Ty::Adt(id) => self.struct_copy(*id).as_global_value().as_pointer_value(),
+                    Ty::Named(id) => self.struct_copy(*id).as_global_value().as_pointer_value(),
                 };
                 let arr = self.emit_unique_place(*arr);
                 self.builder
@@ -488,12 +488,12 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     fn emit_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
-        let Ty::Adt(id) = self.ty_map.ty(base) else {
+        let Ty::Named(id) = self.ty_map.ty(base) else {
             unreachable!("ICE")
         };
 
         let base = self.emit_expr(base);
-        let (idx, field_ty) = self.hir.adt_info(*id).fields.get_ty_idx(field.ident);
+        let (idx, field_ty) = self.hir.ty_info(*id).fields.get_ty_idx(field.ident);
         let field_ptr = self
             .builder
             .build_struct_gep(
@@ -513,7 +513,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_load(self.lower_ty(field_ty), field_ptr, &field.ident.str())
                 .unwrap()
         };
-        self.emit_drop(&Ty::Adt(*id), base);
+        self.emit_drop(&Ty::Named(*id), base);
         result
     }
 

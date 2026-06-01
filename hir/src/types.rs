@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use crate::AdtId;
+use crate::TyId;
 
 /// The kinds of types
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -14,7 +14,7 @@ pub enum Ty {
     Tuple(Vec<Self>),
     Array(Box<Self>),
     Fn(Vec<Param>, Box<Self>),
-    Adt(AdtId),
+    Named(TyId),
 }
 
 impl Ty {

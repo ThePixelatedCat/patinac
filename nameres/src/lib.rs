@@ -7,17 +7,14 @@ use foldhash::fast::RandomState;
 use itertools::Itertools as _;
 
 use ast::{
-    Ast,
-    exprs::{Binding, Expr as AstExpr, LitExpr as AstLitExpr},
-    items::{AdtItem, AdtKind, ExecItem as AstExecItem, ExecKind as AstExecKind},
-    patterns::{Pat, PatKind},
-    types::{Ty as AstTy, TyKind as AstTyKind},
+    Ast, Binding, ExecItem as AstExecItem, ExecKind as AstExecKind, Expr as AstExpr,
+    LitExpr as AstLitExpr, Pat, PatKind, Ty as AstTy, TyItem, TyItemKind, TyKind as AstTyKind,
 };
 use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
 use hir::{
     Hir, VarId,
     exprs::{ExprId, LitExpr as HirLitExpr},
-    items::{AdtId, AdtInfo, ExecItem as HirExecItem, ExecKind as HirExecKind},
+    items::{ExecItem as HirExecItem, ExecKind as HirExecKind, TyId, TyInfo},
     types::{Param as ParamTy, Ty as HirTy},
 };
 use ident::Ident;
@@ -31,25 +28,24 @@ type Scope<Id> = im_rc::HashMap<Ident, Id, RandomState>;
 pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
     let mut hir = Hir::default();
 
-    let mut adt_scope = Scope::default();
+    let mut ty_scope = Scope::default();
     let mut var_scope = Scope::default();
 
-    for adt in &ast.adts {
-        match adt_scope.get(&adt.ident.ident) {
+    for ty in &ast.tys {
+        match ty_scope.get(&ty.ident.ident) {
             Some(&id) => {
                 handler.err(
-                    ErrorKind::DupItem(adt.ident.ident, hir.adt_ident(id).span)
-                        .span(adt.ident.span),
+                    ErrorKind::DupItem(ty.ident.ident, hir.ty_ident(id).span).span(ty.ident.span),
                 );
             }
             None => {
-                let id = hir.reserve_adt(adt.ident);
-                adt_scope.insert(adt.ident.ident, id);
+                let id = hir.reserve_ty(ty.ident);
+                ty_scope.insert(ty.ident.ident, id);
             }
         }
     }
-    for adt in ast.adts {
-        resolve_adt_item(&adt_scope, &mut var_scope, &mut hir, &mut handler, adt);
+    for ty in ast.tys {
+        resolve_ty_item(&ty_scope, &mut var_scope, &mut hir, &mut handler, ty);
     }
 
     for exec in &ast.execs {
@@ -68,7 +64,7 @@ pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
     }
     if let Some(idx) = find_main(&mut handler, &ast.execs)?
         && let Ok(main) = resolve_exec_item(
-            &adt_scope,
+            &ty_scope,
             &var_scope,
             &mut hir,
             &mut handler,
@@ -80,7 +76,7 @@ pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
     let execs: Vec<_> = ast
         .execs
         .into_iter()
-        .flat_map(|exec| resolve_exec_item(&adt_scope, &var_scope, &mut hir, &mut handler, exec))
+        .flat_map(|exec| resolve_exec_item(&ty_scope, &var_scope, &mut hir, &mut handler, exec))
         .collect();
     hir.add_execs(execs);
 
@@ -103,14 +99,14 @@ fn find_main(error_handler: &mut ErrorHandler, execs: &[AstExecItem]) -> Result<
     Ok(None)
 }
 
-fn resolve_adt_item(
-    adt_scope: &Scope<AdtId>,
+fn resolve_ty_item(
+    ty_scope: &Scope<TyId>,
     var_scope: &mut Scope<VarId>,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
-    item: AdtItem,
+    item: TyItem,
 ) {
-    let &id = adt_scope.get(&item.ident.ident).expect(
+    let &id = ty_scope.get(&item.ident.ident).expect(
         "all ast idents, including this one, should have already been inserted into the scope",
     );
 
@@ -119,11 +115,11 @@ fn resolve_adt_item(
     }
 
     match item.kind {
-        AdtKind::Record(fields) => {
+        TyItemKind::Record(fields) => {
             let fields: Vec<_> = fields
                 .into_iter()
                 .flat_map(|field| {
-                    Ok::<_, HandledError>((field.ident, resolve_ty(adt_scope, handler, field.ty)?))
+                    Ok::<_, HandledError>((field.ident, resolve_ty(ty_scope, handler, field.ty)?))
                 })
                 .collect();
 
@@ -141,28 +137,28 @@ fn resolve_adt_item(
                         span: ident.span,
                     })
                     .collect(),
-                Box::new(HirTy::Adt(id)),
+                Box::new(HirTy::Named(id)),
             );
             let constructor_id = hir.add_var(item.ident.ident, false, item.ident.span);
             hir.add_var_ty(constructor_id, constructor_ty);
             var_scope.insert(item.ident.ident, constructor_id);
 
-            hir.fulfill_adt(
+            hir.fulfill_ty(
                 id,
-                AdtInfo {
+                TyInfo {
                     fields: fields.into(),
                     constructor_id,
                 },
             );
         }
-        AdtKind::Enum(_) => {
+        TyItemKind::Enum(_) => {
             todo!("Pattern Matching");
         }
     }
 }
 
 fn resolve_exec_item(
-    adt_scope: &Scope<AdtId>,
+    ty_scope: &Scope<TyId>,
     var_scope: &Scope<VarId>,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
@@ -174,8 +170,8 @@ fn resolve_exec_item(
 
     match item.kind {
         AstExecKind::Const { ty, val } => {
-            let val = exprs::resolve_expr(adt_scope, var_scope, hir, handler, val);
-            hir.add_var_ty(id, resolve_ty(adt_scope, handler, ty)?);
+            let val = exprs::resolve_expr(ty_scope, var_scope, hir, handler, val);
+            hir.add_var_ty(id, resolve_ty(ty_scope, handler, ty)?);
 
             Ok(HirExecItem {
                 id,
@@ -202,7 +198,7 @@ fn resolve_exec_item(
             let params = params
                 .into_iter()
                 .map(|p| {
-                    let ty = resolve_ty(adt_scope, handler, p.ty)?;
+                    let ty = resolve_ty(ty_scope, handler, p.ty)?;
                     let id = resolve_pat(&mut var_scope, hir, p.pat, p.mutable, Some(ty.clone()));
                     Ok((
                         id,
@@ -214,8 +210,8 @@ fn resolve_exec_item(
                     ))
                 })
                 .try_collect_eager();
-            let body = exprs::resolve_expr(adt_scope, &var_scope, hir, handler, body);
-            let ret_ty = resolve_ty(adt_scope, handler, ret_ty)?;
+            let body = exprs::resolve_expr(ty_scope, &var_scope, hir, handler, body);
+            let ret_ty = resolve_ty(ty_scope, handler, ret_ty)?;
             let (params, param_tys) = params?;
 
             hir.add_var_ty(id, HirTy::Fn(param_tys, Box::new(ret_ty)));
@@ -232,7 +228,7 @@ fn resolve_exec_item(
 }
 
 fn resolve_binding(
-    adt_scope: &Scope<AdtId>,
+    ty_scope: &Scope<TyId>,
     var_scope: &mut Scope<VarId>,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
@@ -240,7 +236,7 @@ fn resolve_binding(
 ) -> Result<VarId> {
     let ty = binding
         .ty
-        .map(|ty| resolve_ty(adt_scope, handler, ty))
+        .map(|ty| resolve_ty(ty_scope, handler, ty))
         .transpose()?;
     Ok(resolve_pat(
         var_scope,
@@ -251,7 +247,7 @@ fn resolve_binding(
     ))
 }
 
-fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -> Result<HirTy> {
+fn resolve_ty(ty_scope: &Scope<TyId>, handler: &mut ErrorHandler, ty: AstTy) -> Result<HirTy> {
     match ty.kind {
         AstTyKind::Int => Ok(HirTy::Int),
         AstTyKind::UInt => Ok(HirTy::UInt),
@@ -259,8 +255,8 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
         AstTyKind::Float => Ok(HirTy::Float),
         AstTyKind::Char => Ok(HirTy::Char),
         AstTyKind::Bool => Ok(HirTy::Bool),
-        AstTyKind::Array(ty) => Ok(HirTy::Array(Box::new(resolve_ty(adt_scope, handler, *ty)?))),
-        AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(adt_scope, handler, tys)?)),
+        AstTyKind::Array(ty) => Ok(HirTy::Array(Box::new(resolve_ty(ty_scope, handler, *ty)?))),
+        AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(ty_scope, handler, tys)?)),
         AstTyKind::Fn(params, ret) => {
             if ret.mutable {
                 todo!("Projections")
@@ -270,22 +266,22 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
                 .into_iter()
                 .map(|param| {
                     Ok(ParamTy {
-                        ty: resolve_ty(adt_scope, handler, param.ty)?,
+                        ty: resolve_ty(ty_scope, handler, param.ty)?,
                         mutable: param.mutable,
                         span: param.span,
                     })
                 })
                 .try_collect_eager();
-            let ret = Box::new(resolve_ty(adt_scope, handler, *ret.ty)?);
+            let ret = Box::new(resolve_ty(ty_scope, handler, *ret.ty)?);
             Ok(HirTy::Fn(params?, ret))
         }
-        AstTyKind::Adt(ident, args) => {
+        AstTyKind::Named(ident, args) => {
             if !args.is_empty() {
                 todo!("Generics")
             }
 
-            match adt_scope.get(&ident).copied() {
-                Some(id) => Ok(HirTy::Adt(id)),
+            match ty_scope.get(&ident).copied() {
+                Some(id) => Ok(HirTy::Named(id)),
                 None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
             }
         }
@@ -293,12 +289,12 @@ fn resolve_ty(adt_scope: &Scope<AdtId>, handler: &mut ErrorHandler, ty: AstTy) -
 }
 
 fn resolve_tys(
-    adt_scope: &Scope<AdtId>,
+    ty_scope: &Scope<TyId>,
     handler: &mut ErrorHandler,
     tys: Vec<AstTy>,
 ) -> Result<Vec<HirTy>> {
     tys.into_iter()
-        .map(|ty| resolve_ty(adt_scope, handler, ty))
+        .map(|ty| resolve_ty(ty_scope, handler, ty))
         .try_collect_eager()
 }
 

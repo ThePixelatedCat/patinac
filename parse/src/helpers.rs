@@ -2,7 +2,7 @@ use std::range::Range;
 
 use itertools::Itertools as _;
 
-use ast::{exprs::Binding, types::Ty};
+use ast::{Binding, Ty};
 use errors::HandledError;
 use ident::{Ident, SpanIdent};
 

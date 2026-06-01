@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use ast::types::{Param, Return, Ty, TyKind};
+use ast::{ParamTy, Return, Ty, TyKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -8,7 +8,7 @@ macro_rules! primitive {
     ($self:ident, $ty:ident) => {
         $self
             .consume($crate::TokKind::$ty)
-            .map(|t| ast::types::TyKind::$ty.span(t.span))
+            .map(|t| ast::TyKind::$ty.span(t.span))
     };
 }
 
@@ -41,7 +41,7 @@ impl Parser<'_> {
                         let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
                         let span = Range::from(start..ty.span.end);
 
-                        Ok(Param {
+                        Ok(ParamTy {
                             ty,
                             mutable: mut_tok.is_some(),
                             span,
@@ -74,7 +74,7 @@ impl Parser<'_> {
                     (vec![], ident.span.end)
                 };
 
-                Ok(TyKind::Adt(ident.ident, generics).span(ident.span.start..end))
+                Ok(TyKind::Named(ident.ident, generics).span(ident.span.start..end))
             }
             _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }

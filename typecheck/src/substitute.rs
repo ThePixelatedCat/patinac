@@ -36,7 +36,7 @@ impl TypeChecker<'_> {
                 let ret = Box::new(self.sub_ty(ret)?);
                 Ok(Ty::Fn(params, ret))
             }
-            PartialTy::Adt(id) => Ok(Ty::Adt(*id)),
+            PartialTy::Named(id) => Ok(Ty::Named(*id)),
             PartialTy::Var(var) => self
                 .table
                 .probe_value(*var)

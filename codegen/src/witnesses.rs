@@ -12,7 +12,7 @@ use inkwell::{
     values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
 };
 
-use hir::{VarId, items::AdtId, types::Ty};
+use hir::{VarId, items::TyId, types::Ty};
 
 use crate::Codegen;
 
@@ -44,7 +44,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             }
             Ty::Array(inner_ty) => self.array_drop(inner_ty),
             Ty::Fn(_, _) => self.closure_drop(),
-            Ty::Adt(id) => self.struct_drop(*id),
+            Ty::Named(id) => self.struct_drop(*id),
         };
         self.builder
             .build_call(func, &[val.into()], "drop")
@@ -68,7 +68,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             }
             Ty::Array(inner_ty) => self.array_copy(inner_ty),
             Ty::Fn(..) => self.closure_copy(),
-            Ty::Adt(id) => self.struct_copy(*id),
+            Ty::Named(id) => self.struct_copy(*id),
         };
         self.builder
             .build_call(
@@ -139,7 +139,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic(),
-            Ty::Adt(id) => self
+            Ty::Named(id) => self
                 .builder
                 .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
                 .unwrap()
@@ -238,16 +238,16 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.fields_equals(ty, inner_tys)
     }
 
-    pub(crate) fn struct_drop(&self, id: AdtId) -> FunctionValue<'ctx> {
-        self.fields_drop(&Ty::Adt(id), self.hir.adt_info(id).fields.tys())
+    pub(crate) fn struct_drop(&self, id: TyId) -> FunctionValue<'ctx> {
+        self.fields_drop(&Ty::Named(id), self.hir.ty_info(id).fields.tys())
     }
 
-    pub(crate) fn struct_copy(&self, id: AdtId) -> FunctionValue<'ctx> {
-        self.fields_copy(&Ty::Adt(id), self.hir.adt_info(id).fields.tys())
+    pub(crate) fn struct_copy(&self, id: TyId) -> FunctionValue<'ctx> {
+        self.fields_copy(&Ty::Named(id), self.hir.ty_info(id).fields.tys())
     }
 
-    pub(crate) fn struct_equals(&self, id: AdtId) -> FunctionValue<'ctx> {
-        self.fields_equals(&Ty::Adt(id), self.hir.adt_info(id).fields.tys())
+    pub(crate) fn struct_equals(&self, id: TyId) -> FunctionValue<'ctx> {
+        self.fields_equals(&Ty::Named(id), self.hir.ty_info(id).fields.tys())
     }
 
     fn fields_drop<'fields>(
@@ -460,7 +460,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .as_global_value()
                 .as_pointer_value(),
             Ty::Fn(..) => self.closure_drop().as_global_value().as_pointer_value(),
-            Ty::Adt(id) => self.struct_drop(*id).as_global_value().as_pointer_value(),
+            Ty::Named(id) => self.struct_drop(*id).as_global_value().as_pointer_value(),
         };
         self.builder
             .build_call(
@@ -535,7 +535,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             Ty::Tuple(inner_tys) => self.tuple_drop(inner_ty, inner_tys),
             Ty::Array(inner_ty) => self.array_drop(inner_ty),
             Ty::Fn(..) => self.closure_drop(),
-            Ty::Adt(id) => self.struct_drop(*id),
+            Ty::Named(id) => self.struct_drop(*id),
         };
         let result = self
             .builder
@@ -989,8 +989,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 });
                 format!("f[{param_names};{}]", self.mangle(ret_ty))
             }
-            Ty::Adt(id) => {
-                let mut name = self.hir.adt_ident(*id).ident.to_string();
+            Ty::Named(id) => {
+                let mut name = self.hir.ty_ident(*id).ident.to_string();
                 name.insert(0, '_');
                 name
             }

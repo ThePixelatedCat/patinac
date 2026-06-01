@@ -20,7 +20,7 @@ fn occurs_check(span: Range<usize>, ty: &PartialTy, var: TyVar) -> Result<(), Er
         | PartialTy::Float
         | PartialTy::Bool
         | PartialTy::Char
-        | PartialTy::Adt(_) => Ok(()),
+        | PartialTy::Named(_) => Ok(()),
         PartialTy::Tuple(tys) => tys.iter().try_for_each(|ty| occurs_check(span, ty, var)),
         PartialTy::Array(ty) => occurs_check(span, ty, var),
         PartialTy::Fn(params, ret) => {
@@ -76,7 +76,7 @@ impl TypeChecker<'_> {
         let base_ty = Self::normalize_ty(table, base_ty);
 
         let base_id = match base_ty {
-            PartialTy::Adt(id) => id,
+            PartialTy::Named(id) => id,
             PartialTy::Var(_) => {
                 return Err(ErrorKind::UninferredVarType
                     .span(base_span)
@@ -87,7 +87,7 @@ impl TypeChecker<'_> {
             }
         };
 
-        let Some(decl_field_ty) = hir.adt_info(base_id).fields.get_ty(field_name.ident) else {
+        let Some(decl_field_ty) = hir.ty_info(base_id).fields.get_ty(field_name.ident) else {
             return Err(ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span));
         };
 
@@ -145,7 +145,7 @@ impl TypeChecker<'_> {
                 })?;
                 Self::unify_ty_ty(table, span, &lhs_ret, &rhs_ret)
             }
-            (PartialTy::Adt(a), PartialTy::Adt(b)) if a == b => Ok(()),
+            (PartialTy::Named(a), PartialTy::Named(b)) if a == b => Ok(()),
             (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
             | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
                 Self::unify_var_var(table, span, lhs_var, rhs_var)
@@ -225,7 +225,7 @@ impl TypeChecker<'_> {
                 let ret = Box::new(Self::normalize_ty(table, ret));
                 PartialTy::Fn(params, ret)
             }
-            PartialTy::Adt(id) => PartialTy::Adt(*id),
+            PartialTy::Named(id) => PartialTy::Named(*id),
             PartialTy::Var(v) => match table.probe_value(*v) {
                 Some(ty) => Self::normalize_ty(table, &ty),
                 None => PartialTy::Var(table.find(*v)),

@@ -2,10 +2,8 @@ use pretty_assertions::assert_eq;
 use smallvec::smallvec;
 
 use ast::{
-    exprs::{ExprKind, InfixOp},
-    items::{AdtItem, AdtKind, ExecItem, ExecKind, Field, Param, Variant},
-    patterns::PatKind,
-    types::TyKind,
+    ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, TyItem, TyItemKind, TyKind,
+    Variant,
 };
 use errors::TEST_HANDLER;
 use ident::Ident;
@@ -35,10 +33,10 @@ fn const_items() {
 fn record_items() {
     assert_eq!(
         Parser::new("record Point(x: Int, y: Int)", TEST_HANDLER).item(),
-        Ok(Item::AdtItem(AdtItem {
+        Ok(Item::TyItem(TyItem {
             ident: Ident::new("Point").span(7..12),
             generics: smallvec![],
-            kind: AdtKind::Record(vec![
+            kind: TyItemKind::Record(vec![
                 Field {
                     ident: Ident::new("x").span(13..14),
                     ty: TyKind::Int.span(16..19),
@@ -58,20 +56,20 @@ record Foo[T, U](
     )";
     assert_eq!(
         Parser::new(input, TEST_HANDLER).item(),
-        Ok(Item::AdtItem(AdtItem {
+        Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(8..11),
             generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
-            kind: AdtKind::Record(vec![
+            kind: TyItemKind::Record(vec![
                 Field {
                     ident: Ident::new("x").span(23..24),
                     ty: TyKind::Char.span(26..30),
                 },
                 Field {
                     ident: Ident::new("bar").span(38..41),
-                    ty: TyKind::Adt(
+                    ty: TyKind::Named(
                         Ident::new("Bar"),
                         vec![
-                            TyKind::Adt(Ident::new("Baz"), vec![TyKind::named("T").span(51..52)])
+                            TyKind::Named(Ident::new("Baz"), vec![TyKind::named("T").span(51..52)])
                                 .span(47..53)
                         ]
                     )
@@ -94,10 +92,10 @@ enum Foo {
 
     assert_eq!(
         Parser::new(input, TEST_HANDLER).item(),
-        Ok(Item::AdtItem(AdtItem {
+        Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(6..9),
             generics: smallvec![],
-            kind: AdtKind::Enum(vec![
+            kind: TyItemKind::Enum(vec![
                 Variant {
                     ident: Ident::new("X").span(16..17),
                     fields: vec![]

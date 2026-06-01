@@ -2,9 +2,7 @@ use pretty_assertions::assert_eq;
 use std::{assert_matches, range::Range};
 
 use ast::{
-    exprs::{Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt},
-    patterns::PatKind,
-    types::TyKind,
+    Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PatKind, PrefixOp, Stmt, TyKind,
 };
 use errors::TEST_HANDLER;
 use ident::Ident;

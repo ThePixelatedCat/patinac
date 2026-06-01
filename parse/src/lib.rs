@@ -10,7 +10,7 @@ mod types;
 
 use std::ops::Range;
 
-use ast::{Ast, exprs::Expr};
+use ast::{Ast, Expr};
 use errors::{ErrorHandler, Result};
 use lex::{Lexer, Tok, TokKind};
 
@@ -41,7 +41,7 @@ impl<'src> Parser<'src> {
         while !self.at(TokKind::Eof) {
             match self.item() {
                 Ok(Item::ExecItem(exec_item)) => ast.execs.push(exec_item),
-                Ok(Item::AdtItem(adt_item)) => ast.adts.push(adt_item),
+                Ok(Item::TyItem(ty_item)) => ast.tys.push(ty_item),
                 Err(_) => {}
             }
         }
