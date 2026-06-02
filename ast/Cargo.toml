@@ -15,5 +15,9 @@ smallvec = { version = "1.15.1", features = [
     "const_new",
 ] }
 
+[dev-dependencies]
+# Internal
+parse = { path = "../parse", features = ["test"] }
+
 [lints]
 workspace = true

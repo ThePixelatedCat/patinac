@@ -52,6 +52,7 @@ dependencies = [
  "derive_more",
  "ident",
  "itertools",
+ "parse",
  "smallvec",
 ]
 

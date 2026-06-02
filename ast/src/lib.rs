@@ -135,10 +135,25 @@ pub struct Expr {
 
 impl Expr {
     /// Creates a single-statement block containing this expression.
-    /// The provided span is to account for the curly braces.
-    /// Primarily exists as a helper for tests.
     ///
-    /// # Example
+    /// The provided span is to account for the curly braces.
+    ///
+    /// This function primarily exists as a helper for tests.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::range::Range;
+    /// # use ast::{ExprKind, Stmt, BlockExpr};
+    /// let expr = ExprKind::Tuple(vec![]).span(2..3);
+    /// assert_eq!(
+    ///     expr.clone().as_block(0..5),
+    ///     BlockExpr {
+    ///         stmts: vec![Stmt::Expr(expr.clone())],
+    ///         span: Range::from(0..5)
+    ///     }
+    /// )
+    /// ```
     pub fn as_block(self, span: impl Into<Range<usize>>) -> BlockExpr {
         BlockExpr {
             stmts: vec![Stmt::Expr(self)],
@@ -148,45 +163,77 @@ impl Expr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// The kinds of expressions.
 pub enum ExprKind {
+    /// A variable name, such as `foo`.
     Ident(Ident),
+    /// A basic literal value, such as `1.2` or `"Hello, World"`. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
+    /// An array literal, such as `[1, 2, 3]`.
     Array(Vec<Expr>),
+    /// A tuple literal, such as `(1, 2.0, "3")`.
     Tuple(Vec<Expr>),
+    /// An infix operation, such as `1 + 2`. This includes assignment.
     Infix {
+        /// The infix operator used.
         op: InfixOp,
+        /// The left-hand side of the operation.
         lhs: Box<Expr>,
+        /// The right-hand side of the operation.
         rhs: Box<Expr>,
     },
+    /// A prefix operation, such as `!true`.
     Prefix {
+        /// The prefix operator used.
         op: PrefixOp,
+        /// The base expression the operator is attached to.
         expr: Box<Expr>,
     },
+    /// Record field access, such as `foo.bar`.
     Field {
+        /// The base expression from which the field is being accessed.
         base: Box<Expr>,
+        /// The name of the field.
         field: SpanIdent,
     },
+    /// Array indexing, such as `foo.[0]`.
     Index {
+        /// The base expression being indexed into.
         arr: Box<Expr>,
+        /// The index to access.
         idx: Box<Expr>,
     },
+    /// A function call, such as `sin(90.0)`.
     Call {
+        /// The function being called.
         func: Box<Expr>,
+        /// The list of arguments being applied.
         args: Vec<Arg>,
     },
+    /// A lambda expression, such as `fn(x) -> x * 2`.
     Lambda {
+        /// The parameters of the function.
         params: Vec<Binding>,
+        /// The body of the function.
         body: Box<Expr>,
     },
+    /// An if expression, such as `if foo { 1.0 } else { 2.0 }`.
     If {
+        /// The condition of the if.
         cond: Box<Expr>,
+        /// The "then" block.
         th: BlockExpr,
+        /// The "else" block, if there is one.
         el: Option<BlockExpr>,
     },
+    /// A match expression, such as `foo.match { Some(x) -> x, None -> panic() }`.
     Match {
+        /// The value being matched against.
         scrutinee: Box<Expr>,
+        /// The match arms.
         arms: Vec<MatchArm>,
     },
+    /// A for-loop expression, such as `for x in [1, 2, 3] { println(x) }`.
     For {
         pat: Pat,
         iter: Box<Expr>,
