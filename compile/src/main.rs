@@ -1,4 +1,6 @@
-use std::{fs, path::PathBuf, range::Range, time::Instant};
+//! The driver for the compiler. Handles command-line arguments and stitches together the compilation phases.
+
+use std::{fs, path::PathBuf, process::ExitCode, range::Range, time::Instant};
 
 use argh::{FromArgs, from_env};
 use yansi::Paint as _;
@@ -28,47 +30,48 @@ struct Args {
     dump: bool,
 }
 
-fn main() {
-    let cli: Args = from_env();
-    let src = match fs::read_to_string(&cli.src_path) {
+fn main() -> ExitCode {
+    let args: Args = from_env();
+
+    let start = Instant::now();
+
+    let src = match fs::read_to_string(&args.src_path) {
         Ok(src) => src,
         Err(err) => {
-            println!(
+            eprintln!(
                 "{error} {reading} {msg}",
                 error = "error".bright_red().bold(),
                 reading = "reading source file:".white().bold(),
                 msg = err.white().bold()
             );
-            return;
+            return ExitCode::FAILURE;
         }
     };
 
-    let start = Instant::now();
-
     let handler_inner: &dyn Fn(&str, Range<usize>, DiagnosticKind) =
-        &|msg, span, kind| print_diagnostic(kind, msg, span, &src);
+        &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
     let handler = ErrorHandler::new(handler_inner);
 
     eprintln!("Parsing...");
     let Ok(ast) = Parser::new(&src, handler.clone()).parse() else {
-        return;
+        return ExitCode::FAILURE;
     };
 
     eprintln!("Resolving...");
     let Ok(mut hir) = nameres::resolve(ast, handler.clone()) else {
-        return;
+        return ExitCode::FAILURE;
     };
 
     eprintln!("Typechecking...");
     let Ok(ty_map) = TypeChecker::new(handler.clone()).type_program(&mut hir) else {
-        return;
+        return ExitCode::FAILURE;
     };
 
     eprintln!("Compiling...");
-    let mode = if cli.dump {
+    let mode = if args.dump {
         CodegenMode::IRDump
     } else {
-        CodegenMode::Emit(cli.src_path.with_extension("o"))
+        CodegenMode::Emit(args.src_path.with_extension("o"))
     };
     let ctx = codegen::create_ctx();
     Codegen::new(
@@ -76,18 +79,23 @@ fn main() {
         &ty_map,
         handler,
         &ctx,
-        cli.src_path.file_name().unwrap().to_str().unwrap(),
+        &args
+            .src_path
+            .file_name()
+            .expect("we read from the file earlier, so we know it is a file")
+            .to_string_lossy(),
     )
-    .codegen(cli.opt_level, mode);
+    .codegen(args.opt_level, mode);
 
     eprintln!(
         "{} in {}ms",
         "Done".bright_green(),
         start.elapsed().as_millis()
     );
+    ExitCode::SUCCESS
 }
 
-fn print_diagnostic(kind: DiagnosticKind, msg: &str, span: Range<usize>, src: &str) {
+fn print_diagnostic(msg: &str, span: Range<usize>, kind: DiagnosticKind, src: &str) {
     let line_start = src[..=span.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
     let line_end = src[span.end..]
         .find(['\n', '\r'])
