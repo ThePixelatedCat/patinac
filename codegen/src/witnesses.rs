@@ -1,15 +1,11 @@
-#![allow(
-    clippy::unwrap_used,
-    reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-)]
-
 use std::fmt::Write as _;
 
 use inkwell::{
-    FloatPredicate, IntPredicate,
+    AtomicOrdering, AtomicRMWBinOp, IntPredicate,
+    intrinsics::Intrinsic,
     module::Linkage,
     types::{BasicType as _, FunctionType, StructType},
-    values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
+    values::{BasicValue as _, FunctionValue},
 };
 
 use hir::{VarId, items::TyId, types::Ty};
@@ -29,123 +25,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub(crate) fn equals_fn_ty(&self) -> FunctionType<'ctx> {
         let ptr = self.ptr_ty().into();
         self.ctx.bool_type().fn_type(&[ptr, ptr], false)
-    }
-
-    pub(crate) fn emit_drop(&self, ty: &Ty, val: BasicValueEnum<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if inner_tys.is_empty() {
-                    return;
-                }
-                self.tuple_drop(ty, inner_tys)
-            }
-            Ty::Array(inner_ty) => self.array_drop(inner_ty),
-            Ty::Fn(_, _) => self.closure_drop(),
-            Ty::Named(id) => self.struct_drop(*id),
-        };
-        self.builder
-            .build_call(func, &[val.into()], "drop")
-            .unwrap();
-    }
-
-    pub(crate) fn emit_copy(&self, ty: &Ty, val: BasicValueEnum<'ctx>, dst: PointerValue<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
-                self.builder.build_store(dst, val).unwrap();
-                return;
-            }
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if inner_tys.is_empty() {
-                    self.builder.build_store(dst, val).unwrap();
-                    return;
-                }
-                self.tuple_copy(ty, inner_tys)
-            }
-            Ty::Array(inner_ty) => self.array_copy(inner_ty),
-            Ty::Fn(..) => self.closure_copy(),
-            Ty::Named(id) => self.struct_copy(*id),
-        };
-        self.builder
-            .build_call(
-                func,
-                &[dst.as_basic_value_enum().into(), val.into()],
-                "copy",
-            )
-            .unwrap();
-    }
-
-    pub(crate) fn emit_equals(
-        &self,
-        ty: &Ty,
-        lhs: BasicValueEnum<'ctx>,
-        rhs: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
-                .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "equals",
-                )
-                .unwrap()
-                .as_basic_value_enum(),
-            Ty::Float => self
-                .builder
-                .build_float_compare(
-                    FloatPredicate::OEQ,
-                    lhs.into_float_value(),
-                    rhs.into_float_value(),
-                    "equals",
-                )
-                .unwrap()
-                .as_basic_value_enum(),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore always equals
-                if inner_tys.is_empty() {
-                    self.ctx.bool_type().const_all_ones().as_basic_value_enum()
-                } else {
-                    self.builder
-                        .build_call(
-                            self.tuple_equals(ty, inner_tys),
-                            &[lhs.into(), rhs.into()],
-                            "equals",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .unwrap_basic()
-                }
-            }
-            Ty::Array(inner_ty) => self
-                .builder
-                .build_call(
-                    self.array_equals(inner_ty),
-                    &[lhs.into(), rhs.into()],
-                    "equals",
-                )
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic(),
-            Ty::Fn(_, _) => self
-                .builder
-                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic(),
-            Ty::Named(id) => self
-                .builder
-                .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic(),
-        }
     }
 
     pub(crate) fn int_equals(&self, ty: &Ty) -> FunctionValue<'ctx> {
@@ -317,11 +196,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let dst = func.get_nth_param(0).unwrap().into_pointer_value();
         let src = func.get_nth_param(1).unwrap().into_pointer_value();
         if self.is_trivial(ty) {
-            let size = lowered_ty.size_of().unwrap();
-            let align = self.target.get_target_data().get_abi_alignment(&lowered_ty);
-            self.builder
-                .build_memcpy(dst, align, src, align, size)
-                .unwrap();
+            self.emit_memcpy(dst, src, &lowered_ty);
         } else {
             // If the struct/tuple is not trivial, we need to copy each field individually
             for (idx, field) in fields.into_iter().enumerate() {
@@ -495,13 +370,50 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let func = self
             .module
             .add_function(&func_name, self.copy_fn_ty(), Some(Linkage::Private));
-        self.builder
-            .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let dst = func.get_nth_param(0).unwrap().into();
-        let src = func.get_nth_param(1).unwrap().into();
-        self.builder
-            .build_call(self.runtime_array_copy(), &[dst, src], "")
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let incr_block = self.ctx.append_basic_block(func, "incr");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let dst = func.get_nth_param(0).unwrap().into_pointer_value();
+        let src = func.get_nth_param(1).unwrap().into_pointer_value();
+
+        self.builder.position_at_end(entry_block);
+        let array_ty = self.array_ty();
+        self.emit_memcpy(dst, src, &array_ty);
+        let payload = self.get_payload(src);
+        let is_null = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "nullchk")
             .unwrap();
+        self.builder
+            .build_conditional_branch(is_null, ret_block, incr_block)
+            .unwrap();
+
+        self.builder.position_at_end(incr_block);
+        let header = unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    self.array_header_ty(),
+                    payload,
+                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
+                    "header",
+                )
+                .unwrap()
+        };
+        let refc = self
+            .builder
+            .build_struct_gep(self.array_header_ty(), header, 0, "refc")
+            .unwrap();
+        self.builder
+            .build_atomicrmw(
+                AtomicRMWBinOp::Add,
+                refc,
+                self.ctx.i64_type().const_int(1, false),
+                AtomicOrdering::Monotonic,
+            )
+            .unwrap();
+        self.builder.build_unconditional_branch(ret_block).unwrap();
+
+        self.builder.position_at_end(ret_block);
         self.builder.build_return(None).unwrap();
 
         self.builder.position_at_end(old_insert_block);
@@ -553,6 +465,368 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .try_as_basic_value()
             .unwrap_basic();
         self.builder.build_return(Some(&result)).unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_init(&self) -> FunctionValue<'ctx> {
+        let func_name = "a[].init";
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the init function
+        let ty = self.ctx.void_type().fn_type(
+            &[
+                self.ptr_ty().into(),
+                self.ctx.i64_type().into(),
+                self.ctx.i64_type().into(),
+            ],
+            false,
+        );
+        let func = self
+            .module
+            .add_function(func_name, ty, Some(Linkage::Private));
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let count_zero_block = self.ctx.append_basic_block(func, "count.zero");
+        let count_not_zero_block = self.ctx.append_basic_block(func, "count.not_zero");
+        //let entry = self.ctx.append_basic_block(func, "entry");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let array = func.get_nth_param(0).unwrap().into_pointer_value();
+        let count = func.get_nth_param(1).unwrap().into_int_value();
+        let size = func.get_nth_param(2).unwrap().into_int_value();
+
+        // Check if the count is zero.
+        {
+            self.builder.position_at_end(entry_block);
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    count,
+                    self.ctx.i64_type().const_zero(),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(cmp, count_zero_block, count_not_zero_block)
+                .unwrap();
+        }
+
+        // If the count is zero, set the payload pointer to null and return.
+        {
+            self.builder.position_at_end(count_zero_block);
+            let payload = self
+                .builder
+                .build_struct_gep(self.array_ty(), array, 0, "")
+                .unwrap();
+            self.builder.build_store(payload, self.null_ptr()).unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+        }
+
+        // If the count isn't zero, calculate capacity and allocate space for capacity + header.
+        {
+            self.builder.position_at_end(count_not_zero_block);
+            // Calculate capacity.
+            let cap = self
+                .builder
+                .build_call(self.array_get_cap(), &[count.into(), size.into()], "")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_int_value();
+            let header_ty = self.array_header_ty();
+            // Add room for header.
+            let alloc_size = self
+                .builder
+                .build_int_add(cap, header_ty.size_of().unwrap(), "")
+                .unwrap();
+            // Allocate.
+            let alloc = self
+                .builder
+                .build_call(self.malloc(), &[alloc_size.into()], "")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_pointer_value();
+            // Store offset pointer to alloc into array out parameter
+            let src_payload = unsafe {
+                self.builder
+                    .build_in_bounds_gep(
+                        header_ty,
+                        alloc,
+                        &[self.ctx.i64_type().const_int(1, false)],
+                        "",
+                    )
+                    .unwrap()
+            };
+            let dst_payload = self
+                .builder
+                .build_struct_gep(self.array_ty(), array, 0, "")
+                .unwrap();
+            self.builder.build_store(dst_payload, src_payload).unwrap();
+            // Initialise each field of the header
+            let refc_ptr = self
+                .builder
+                .build_struct_gep(header_ty, alloc, 0, "")
+                .unwrap();
+            self.builder
+                .build_store(refc_ptr, self.ctx.i64_type().const_int(1, false))
+                .unwrap()
+                .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                .unwrap();
+            let count_ptr = self
+                .builder
+                .build_struct_gep(header_ty, alloc, 1, "")
+                .unwrap();
+            self.builder.build_store(count_ptr, count).unwrap();
+            let cap_ptr = self
+                .builder
+                .build_struct_gep(header_ty, alloc, 2, "")
+                .unwrap();
+            self.builder.build_store(cap_ptr, cap).unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+        }
+
+        self.builder.position_at_end(ret_block);
+        self.builder.build_return(None).unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_get_cap(&self) -> FunctionValue<'ctx> {
+        let func_name = "a[].get_cap";
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the function
+        let ty = self.ctx.i64_type().fn_type(
+            &[self.ctx.i64_type().into(), self.ctx.i64_type().into()],
+            false,
+        );
+        let func = self
+            .module
+            .add_function(func_name, ty, Some(Linkage::Private));
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let count_one_block = self.ctx.append_basic_block(func, "count.one");
+        let size_not_one_block = self.ctx.append_basic_block(func, "size.not_one");
+        let count_not_one_block = self.ctx.append_basic_block(func, "count.not_one");
+        let count_small_block = self.ctx.append_basic_block(func, "count.small");
+        let count_other_block = self.ctx.append_basic_block(func, "count.other");
+        let count_not_pow2_block = self.ctx.append_basic_block(func, "count.not_pow2");
+        let count_pow2_block = self.ctx.append_basic_block(func, "count.pow2");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let count = func.get_nth_param(0).unwrap().into_int_value();
+        let size = func.get_nth_param(1).unwrap().into_int_value();
+
+        // Go to special-case optimisation if the count is 1.
+        {
+            self.builder.position_at_end(entry_block);
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    count,
+                    self.ctx.i64_type().const_int(1, false),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(cmp, count_one_block, count_not_one_block)
+                .unwrap();
+        }
+
+        // Special-case optimisation for 1-element arrays.
+        {
+            self.builder.position_at_end(count_one_block);
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    size,
+                    self.ctx.i64_type().const_int(1, false),
+                    "",
+                )
+                .unwrap();
+            // If element is 1 byte, return 8 bytes because the allocator will probably round to that anyway.
+            // Otherwise branch further.
+            self.builder
+                .build_conditional_branch(cmp, ret_block, size_not_one_block)
+                .unwrap();
+        }
+
+        // Special-case optimisation for 1-element arrays, cont.
+        let size_not_one_cap = {
+            self.builder.position_at_end(size_not_one_block);
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::ULT,
+                    size,
+                    self.ctx.i64_type().const_int(1025, false),
+                    "",
+                )
+                .unwrap();
+            let med_cap = self
+                .builder
+                .build_left_shift(size, self.ctx.i64_type().const_int(2, false), "")
+                .unwrap();
+            // 4 is a good balance for medium-size elements.
+            // For >1kb elements, just use 1 to avoid wasting too much memory.
+            let cap = self.builder.build_select(cmp, med_cap, size, "").unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+            cap
+        };
+
+        // Branch to more special-cases.
+        {
+            self.builder.position_at_end(count_not_one_block);
+            let cmp = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::ULT,
+                    count,
+                    self.ctx.i64_type().const_int(8, false),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(cmp, count_small_block, count_other_block)
+                .unwrap();
+        }
+
+        // If count is less than 8, round it up to 8 elements.
+        let count_small_cap = {
+            self.builder.position_at_end(count_small_block);
+            let cap = self
+                .builder
+                .build_left_shift(size, self.ctx.i64_type().const_int(3, false), "")
+                .unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+            cap
+        };
+
+        // Main path.
+        {
+            self.builder.position_at_end(count_other_block);
+            let ctpop = Intrinsic::find("llvm.ctpop")
+                .unwrap()
+                .get_declaration(&self.module, &[self.ctx.i64_type().into()])
+                .unwrap();
+            let bit_count = self
+                .builder
+                .build_call(ctpop, &[count.into()], "")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_int_value();
+            let is_pow2 = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::ULT,
+                    bit_count,
+                    self.ctx.i64_type().const_int(2, false),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_pow2, count_pow2_block, count_not_pow2_block)
+                .unwrap();
+        }
+
+        // If count isn't a power of 2, round up to one.
+        // (https://stackoverflow.com/a/466242)
+        let rounded_count = {
+            self.builder.position_at_end(count_not_pow2_block);
+            let dec = self
+                .builder
+                .build_int_sub(count, self.ctx.i64_type().const_int(1, false), "")
+                .unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(dec, self.ctx.i64_type().const_int(1, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, dec, "").unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(or, self.ctx.i64_type().const_int(2, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, or, "").unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(or, self.ctx.i64_type().const_int(4, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, or, "").unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(or, self.ctx.i64_type().const_int(8, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, or, "").unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(or, self.ctx.i64_type().const_int(16, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, or, "").unwrap();
+            let shr = self
+                .builder
+                .build_right_shift(or, self.ctx.i64_type().const_int(32, false), false, "")
+                .unwrap();
+            let or = self.builder.build_or(shr, or, "").unwrap();
+            let inc = self
+                .builder
+                .build_int_add(or, self.ctx.i64_type().const_int(1, false), "")
+                .unwrap();
+            self.builder
+                .build_unconditional_branch(count_pow2_block)
+                .unwrap();
+            inc
+        };
+
+        // Once count is a power of 2, multiply it by the element size to get our capacity.
+        let count_other_cap = {
+            self.builder.position_at_end(count_pow2_block);
+            let phi = self.builder.build_phi(self.ctx.i64_type(), "").unwrap();
+            phi.add_incoming(&[
+                (&rounded_count, count_not_pow2_block),
+                (&count, count_other_block),
+            ]);
+            let cap = self
+                .builder
+                .build_int_mul(phi.as_basic_value().into_int_value(), size, "")
+                .unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+            cap
+        };
+
+        // Return the computed capacity.
+        {
+            self.builder.position_at_end(ret_block);
+            let ret_val = self.builder.build_phi(self.ctx.i64_type(), "").unwrap();
+            ret_val.add_incoming(&[
+                (&self.ctx.i64_type().const_int(8, false), count_one_block),
+                (&size_not_one_cap, size_not_one_block),
+                (&count_small_cap, count_small_block),
+                (&count_other_cap, count_pow2_block),
+            ]);
+            self.builder
+                .build_return(Some(&ret_val.as_basic_value()))
+                .unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 
@@ -772,10 +1046,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let dst = func.get_nth_param(0).unwrap().into_pointer_value();
         let src = func.get_nth_param(1).unwrap().into_pointer_value();
         let ty = self.closure_ty();
-        let align = self.target.get_target_data().get_abi_alignment(&ty);
-        self.builder
-            .build_memcpy(dst, align, src, align, ty.size_of().unwrap())
-            .unwrap();
+        self.emit_memcpy(dst, src, &ty);
         // Don't need to clone the environment if there isn't one
         if let Some(env_ty) = env_ty {
             // Allocate the new target environment
@@ -808,10 +1079,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .all(|id| self.is_trivial(self.hir.var_ty(*id)))
             {
                 // If all of the captures are trivial, we can memcpy the whole environment
-                let align = self.target.get_target_data().get_abi_alignment(&env_ty);
-                self.builder
-                    .build_memcpy(dst_env, align, src_env, align, size)
-                    .unwrap();
+                self.emit_memcpy(dst_env, src_env, &env_ty);
             } else {
                 // If some of the captures aren't trivial, we need to copy each of them individually
                 for (idx, ty) in captures.iter().map(|id| self.hir.var_ty(*id)).enumerate() {

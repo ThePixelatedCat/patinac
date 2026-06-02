@@ -1,8 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-)]
-
 use std::iter;
 
 use hir::{
@@ -24,7 +19,7 @@ use inkwell::{
 use crate::Codegen;
 
 impl<'ctx> Codegen<'_, '_, 'ctx> {
-    pub fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    pub(crate) fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
@@ -78,17 +73,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .unwrap();
 
         self.unit()
-    }
-
-    fn get_payload(&self, arr: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        let payload = self
-            .builder
-            .build_struct_gep(self.array_ty(), arr, 0, "payload")
-            .unwrap();
-        self.builder
-            .build_load(self.ptr_ty(), payload, "payload")
-            .unwrap()
-            .into_pointer_value()
     }
 
     fn emit_place(&mut self, expr: ExprId) -> PointerValue<'ctx> {
@@ -276,7 +260,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let alloc = self.emit_alloca_entry(self.array_ty(), "array");
         self.builder
             .build_call(
-                self.runtime_array_new(),
+                self.array_init(),
                 &[
                     alloc.into(),
                     self.ctx

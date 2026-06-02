@@ -1,20 +1,30 @@
+//! Generates LLVM-IR and emits object files from the [`Hir`].
+//!
+//! The entry point to this crate is the [`Codegen`] type, and the [`codegen`][Codegen::codegen] method on it.
+//! Use the [`create_ctx`] function to acquire a [`Context`] for use in [`Codegen::new`].
+
+#![allow(
+    clippy::unwrap_used,
+    reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
+)]
+
 mod exprs;
 mod runtime;
 #[cfg(test)]
 mod test;
 mod witnesses;
 
-use std::{iter, path::PathBuf, range::Range, str::FromStr};
+use std::{iter, path::PathBuf, str::FromStr};
 
 use inkwell::{
-    AddressSpace,
+    AddressSpace, FloatPredicate, IntPredicate,
     builder::Builder,
     context::Context,
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
-    types::{BasicType as _, BasicTypeEnum, FunctionType, StructType},
-    values::{BasicValueEnum, FunctionValue, PointerValue},
+    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
+    values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
@@ -26,20 +36,31 @@ use hir::{
     types::{Param, Ty},
 };
 
+/// What to produce, if anything.
 #[derive(PartialEq, Eq)]
 pub enum CodegenMode {
+    /// Dump the LLVM IR to stderr.
     IRDump,
+    /// Emit an object file at the given path.
     Emit(PathBuf),
+    /// Run verification checks but do nothing else (for testing).
     Silent,
 }
 
+/// What level of optimisation to use.
+///
+/// Currently directly corresponds to the LLVM optimisation levels of the same names.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum OptLevel {
+    /// `-O0`. No optimisation.
     #[default]
     O0 = 0,
+    /// `-O1`.
     O1 = 1,
+    /// `-O2`.
     O2 = 2,
+    /// `-O3`. Full optimisations (minus LTO).
     O3 = 3,
 }
 
@@ -58,6 +79,7 @@ impl FromStr for OptLevel {
 }
 
 impl OptLevel {
+    /// Converts the optimisation level into a string of LLVM optimisation passes, as expected by `opt`.
     #[expect(clippy::as_conversions, reason = "Casting to access enum discriminant")]
     pub fn opt_string(self) -> String {
         match self {
@@ -120,10 +142,8 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         this
     }
 
-    #[allow(
-        clippy::unwrap_used,
-        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-    )]
+    /// # Panics
+    /// Panics if any functions are invalid, or if writing to the output file fails.
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
         for (ty, _) in self.hir.tys() {
             self.build_constructor(ty);
@@ -194,10 +214,6 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    fn report_warning(&mut self, msg: &str, span: Range<usize>) {
-        self.handler.warn(msg, span);
-    }
-
     fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<TyId, StructType<'ctx>> {
         hir.tys()
             .map(|(id, ident)| (id, ctx.opaque_struct_type(&ident.ident.str())))
@@ -261,10 +277,6 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    #[allow(
-        clippy::unwrap_used,
-        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-    )]
     fn build_constructor(&mut self, ty: TyId) {
         let info = self.hir.ty_info(ty);
 
@@ -289,10 +301,6 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         assert!(func.verify(true));
     }
 
-    #[allow(
-        clippy::unwrap_used,
-        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-    )]
     fn populate_func(
         &mut self,
         func: FunctionValue<'ctx>,
@@ -368,6 +376,17 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ty.as_basic_type_enum()
     }
 
+    fn get_payload(&self, arr: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        let payload = self
+            .builder
+            .build_struct_gep(self.array_ty(), arr, 0, "payload")
+            .unwrap();
+        self.builder
+            .build_load(self.ptr_ty(), payload, "payload")
+            .unwrap()
+            .into_pointer_value()
+    }
+
     fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
         if let Some(ty) = self.module.get_struct_type("_Closure") {
             return ty.as_basic_type_enum();
@@ -421,10 +440,6 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    #[allow(
-        clippy::unwrap_used,
-        reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
-    )]
     fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         self.builder.build_alloca(ty, name).unwrap()
     }
@@ -455,9 +470,136 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ptr
     }
 
+    pub(crate) fn emit_drop(&self, ty: &Ty, val: BasicValueEnum<'ctx>) {
+        let func = match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(inner_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if inner_tys.is_empty() {
+                    return;
+                }
+                self.tuple_drop(ty, inner_tys)
+            }
+            Ty::Array(inner_ty) => self.array_drop(inner_ty),
+            Ty::Fn(_, _) => self.closure_drop(),
+            Ty::Named(id) => self.struct_drop(*id),
+        };
+        self.builder
+            .build_call(func, &[val.into()], "drop")
+            .unwrap();
+    }
+
+    pub(crate) fn emit_copy(&self, ty: &Ty, val: BasicValueEnum<'ctx>, dst: PointerValue<'ctx>) {
+        let func = match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
+                self.builder.build_store(dst, val).unwrap();
+                return;
+            }
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(inner_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if inner_tys.is_empty() {
+                    self.builder.build_store(dst, val).unwrap();
+                    return;
+                }
+                self.tuple_copy(ty, inner_tys)
+            }
+            Ty::Array(inner_ty) => self.array_copy(inner_ty),
+            Ty::Fn(..) => self.closure_copy(),
+            Ty::Named(id) => self.struct_copy(*id),
+        };
+        self.builder
+            .build_call(
+                func,
+                &[dst.as_basic_value_enum().into(), val.into()],
+                "copy",
+            )
+            .unwrap();
+    }
+
+    pub(crate) fn emit_equals(
+        &self,
+        ty: &Ty,
+        lhs: BasicValueEnum<'ctx>,
+        rhs: BasicValueEnum<'ctx>,
+    ) -> BasicValueEnum<'ctx> {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    lhs.into_int_value(),
+                    rhs.into_int_value(),
+                    "equals",
+                )
+                .unwrap()
+                .as_basic_value_enum(),
+            Ty::Float => self
+                .builder
+                .build_float_compare(
+                    FloatPredicate::OEQ,
+                    lhs.into_float_value(),
+                    rhs.into_float_value(),
+                    "equals",
+                )
+                .unwrap()
+                .as_basic_value_enum(),
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(inner_tys) => {
+                // If it's empty, it's unit and therefore always equals
+                if inner_tys.is_empty() {
+                    self.ctx.bool_type().const_all_ones().as_basic_value_enum()
+                } else {
+                    self.builder
+                        .build_call(
+                            self.tuple_equals(ty, inner_tys),
+                            &[lhs.into(), rhs.into()],
+                            "equals",
+                        )
+                        .unwrap()
+                        .try_as_basic_value()
+                        .unwrap_basic()
+                }
+            }
+            Ty::Array(inner_ty) => self
+                .builder
+                .build_call(
+                    self.array_equals(inner_ty),
+                    &[lhs.into(), rhs.into()],
+                    "equals",
+                )
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic(),
+            Ty::Fn(_, _) => self
+                .builder
+                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic(),
+            Ty::Named(id) => self
+                .builder
+                .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic(),
+        }
+    }
+
     fn emit_move(&self, ty: &Ty, val: BasicValueEnum<'ctx>, to: PointerValue<'ctx>) {
         self.emit_copy(ty, val, to);
         self.emit_drop(ty, val);
+    }
+
+    /// # Panics
+    /// Panics if the provided type is unsized.
+    fn emit_memcpy(&self, dst: PointerValue<'ctx>, src: PointerValue<'ctx>, ty: &dyn BasicType) {
+        let align = self.target.get_target_data().get_abi_alignment(ty);
+        let size = ty.size_of().expect("sized type");
+        self.builder
+            .build_memcpy(dst, align, src, align, size)
+            .unwrap();
     }
 
     /// # Panics

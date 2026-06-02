@@ -1,5 +1,4 @@
 #include <assert.h>
-#include <backtrace.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -8,7 +7,7 @@
 #include <string.h>
 
 void _panic(const char* msg) {
-    fprintf(stderr, msg);
+    fprintf(stderr, "%s", msg);
     exit(EXIT_FAILURE);
 }
 
@@ -52,36 +51,6 @@ static inline ArrayHeader* get_array_header(Array* array) {
     return (ArrayHeader*)((uint8_t*)array->payload - sizeof(ArrayHeader));
 }
 
-static inline uint64_t get_capacity(uint64_t count, uint64_t elem_size) {
-    if (count == 1) {
-        // Special-case optimisation for 1-element arrays
-        if (elem_size == 1) {
-            return 8; // Round up to 8 bytes because the allocator probably will anyway
-        } else if (elem_size <= 1024) {
-            return 4 * elem_size; // 4 is a nice balance for medium-size elements
-        } else {
-            return elem_size; // For >1kb elements, just use 1 to avoid wasting too much memory
-        }
-    } else if (count < 8) {
-        return 8 * elem_size;
-    } else {
-        // If the count isn't a power of 2, round it up to one
-        // (https://stackoverflow.com/a/466242)
-        if ((count & (count - 1)) != 0) {
-            count--;
-            count |= count >> 1;
-            count |= count >> 2;
-            count |= count >> 4;
-            count |= count >> 8;
-            count |= count >> 16;
-            count |= count >> 32;
-            count++;
-        }
-
-        return count * elem_size;
-    }
-}
-
 void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size) {
     // Don't do anything if the array storage is unallocated (empty array)
     ArrayHeader* header = get_array_header(array);
@@ -103,16 +72,6 @@ void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size) {
         free(header);
         array->payload = NULL;
     }
-}
-
-void _array_copy(Array* dst, Array* src) {
-    // Copy the stack allocation of the array
-    *dst = *src;
-
-    // Increment the ref count
-    ArrayHeader* header = get_array_header(src);
-    if (header == NULL) return;
-    uint64_t old_val = atomic_fetch_add_explicit(&header->refc, 1, memory_order_relaxed);
 }
 
 bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size) {
@@ -143,7 +102,7 @@ void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size) {
     if (old_header == NULL) return;
     if (atomic_load_explicit(&old_header->refc, memory_order_acquire) == 1) return;
 
-    // Allocate new storage with room for the header plus the capacity of the array being copied
+    //  Allocate new storage with room for the header plus the capacity of the array being copied
     void* new_storage = _malloc(sizeof(ArrayHeader) + old_header->capacity);
 
     // Initialize the new header
@@ -166,27 +125,6 @@ void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size) {
     // Insert the new storage and decrement the ref count on the old storage
     array->payload = new_payload;
     atomic_fetch_sub_explicit(&old_header->refc, 1, memory_order_acq_rel);
-}
-
-void _array_new(Array* array, uint64_t count, uint64_t elem_size) {
-    if (count > 0) {
-        // Allocate the storage
-        uint64_t capacity = get_capacity(count, elem_size);
-        void* storage = _malloc(sizeof(ArrayHeader) + capacity);
-        array->payload = storage + sizeof(ArrayHeader);
-
-        // Initialize the header
-        ArrayHeader* header = storage;
-        header->refc = 1;
-        header->count = count;
-        header->capacity = capacity;
-
-        // Initialize the payload
-        uint8_t* payload = (uint8_t*)array->payload;
-        memset(payload, 0, capacity);
-    } else {
-        array->payload = NULL;
-    }
 }
 
 void _array_bounds_check(Array* array, uint64_t idx) {
