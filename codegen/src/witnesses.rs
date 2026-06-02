@@ -379,26 +379,21 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.builder.position_at_end(entry_block);
         let array_ty = self.array_ty();
         self.emit_memcpy(dst, src, &array_ty);
-        let payload = self.get_payload(src);
         let is_null = self
             .builder
-            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "nullchk")
+            .build_int_compare(
+                IntPredicate::EQ,
+                self.get_array_payload(src),
+                self.null_ptr(),
+                "nullchk",
+            )
             .unwrap();
         self.builder
             .build_conditional_branch(is_null, ret_block, incr_block)
             .unwrap();
 
         self.builder.position_at_end(incr_block);
-        let header = unsafe {
-            self.builder
-                .build_in_bounds_gep(
-                    self.array_header_ty(),
-                    payload,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
-                    "header",
-                )
-                .unwrap()
-        };
+        let header = self.get_array_header(src);
         let refc = self
             .builder
             .build_struct_gep(self.array_header_ty(), header, 0, "refc")
@@ -471,11 +466,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_init(&self) -> FunctionValue<'ctx> {
-        let func_name = "a[].init";
+    pub(crate) fn array_init(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("a[{}].init", self.mangle(elem_ty));
 
         // Check if we already built this function
-        if let Some(func) = self.module.get_function(func_name) {
+        if let Some(func) = self.module.get_function(&func_name) {
             return func;
         }
 
@@ -483,17 +478,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the init function
-        let ty = self.ctx.void_type().fn_type(
-            &[
-                self.ptr_ty().into(),
-                self.ctx.i64_type().into(),
-                self.ctx.i64_type().into(),
-            ],
-            false,
-        );
+        let ty = self
+            .ctx
+            .void_type()
+            .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
         let func = self
             .module
-            .add_function(func_name, ty, Some(Linkage::Private));
+            .add_function(&func_name, ty, Some(Linkage::Private));
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let count_zero_block = self.ctx.append_basic_block(func, "count.zero");
         let count_not_zero_block = self.ctx.append_basic_block(func, "count.not_zero");
@@ -501,7 +492,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let ret_block = self.ctx.append_basic_block(func, "return");
         let array = func.get_nth_param(0).unwrap().into_pointer_value();
         let count = func.get_nth_param(1).unwrap().into_int_value();
-        let size = func.get_nth_param(2).unwrap().into_int_value();
 
         // Check if the count is zero.
         {
@@ -537,7 +527,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             // Calculate capacity.
             let cap = self
                 .builder
-                .build_call(self.array_get_cap(), &[count.into(), size.into()], "")
+                .build_call(self.array_calc_cap(elem_ty), &[count.into()], "")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
@@ -603,11 +593,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_get_cap(&self) -> FunctionValue<'ctx> {
-        let func_name = "a[].get_cap";
+    pub(crate) fn array_calc_cap(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("a[{}].calc_cap", self.mangle(elem_ty));
 
         // Check if we already built this function
-        if let Some(func) = self.module.get_function(func_name) {
+        if let Some(func) = self.module.get_function(&func_name) {
             return func;
         }
 
@@ -615,13 +605,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the function
-        let ty = self.ctx.i64_type().fn_type(
-            &[self.ctx.i64_type().into(), self.ctx.i64_type().into()],
-            false,
-        );
+        let ty = self
+            .ctx
+            .i64_type()
+            .fn_type(&[self.ctx.i64_type().into()], false);
         let func = self
             .module
-            .add_function(func_name, ty, Some(Linkage::Private));
+            .add_function(&func_name, ty, Some(Linkage::Private));
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let count_one_block = self.ctx.append_basic_block(func, "count.one");
         let size_not_one_block = self.ctx.append_basic_block(func, "size.not_one");
@@ -632,7 +622,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let count_pow2_block = self.ctx.append_basic_block(func, "count.pow2");
         let ret_block = self.ctx.append_basic_block(func, "return");
         let count = func.get_nth_param(0).unwrap().into_int_value();
-        let size = func.get_nth_param(1).unwrap().into_int_value();
+        let size = self.lower_ty(elem_ty).size_of().unwrap();
 
         // Go to special-case optimisation if the count is 1.
         {
@@ -827,6 +817,79 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_return(Some(&ret_val.as_basic_value()))
                 .unwrap();
         }
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_bounds_check(&self) -> FunctionValue<'ctx> {
+        let func_name = "a[].bounds_check";
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the function
+        let ty = self
+            .ctx
+            .void_type()
+            .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
+        let func = self
+            .module
+            .add_function(func_name, ty, Some(Linkage::Private));
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let bounds_block = self.ctx.append_basic_block(func, "bounds_chk");
+        let panic_block = self.ctx.append_basic_block(func, "panic");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let array = func.get_nth_param(0).unwrap().into_pointer_value();
+        let index = func.get_nth_param(1).unwrap().into_int_value();
+
+        self.builder.position_at_end(entry_block);
+        let header = self.get_array_header(array);
+        let is_null = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "")
+            .unwrap();
+        self.builder
+            .build_conditional_branch(is_null, panic_block, bounds_block)
+            .unwrap();
+
+        self.builder.position_at_end(bounds_block);
+        let count = self
+            .builder
+            .build_struct_gep(self.array_header_ty(), header, 1, "")
+            .unwrap();
+        let count = self
+            .builder
+            .build_load(self.ctx.i64_type(), count, "")
+            .unwrap()
+            .into_int_value();
+        let is_in_bounds = self
+            .builder
+            .build_int_compare(IntPredicate::ULT, index, count, "")
+            .unwrap();
+        self.builder
+            .build_conditional_branch(is_in_bounds, ret_block, panic_block)
+            .unwrap();
+
+        self.builder.position_at_end(panic_block);
+        let panic_msg = self
+            .builder
+            .build_global_string_ptr("index out of bounds", "oob_panic_msg")
+            .unwrap()
+            .as_pointer_value();
+        self.builder
+            .build_call(self.panic(), &[panic_msg.into()], "")
+            .unwrap();
+        self.builder.build_unconditional_branch(ret_block).unwrap();
+
+        self.builder.position_at_end(ret_block);
+        self.builder.build_return(None).unwrap();
 
         self.builder.position_at_end(old_insert_block);
 

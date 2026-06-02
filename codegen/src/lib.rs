@@ -376,15 +376,28 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ty.as_basic_type_enum()
     }
 
-    fn get_payload(&self, arr: PointerValue<'ctx>) -> PointerValue<'ctx> {
+    fn get_array_payload(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
         let payload = self
             .builder
-            .build_struct_gep(self.array_ty(), arr, 0, "payload")
+            .build_struct_gep(self.array_ty(), array, 0, "payload")
             .unwrap();
         self.builder
             .build_load(self.ptr_ty(), payload, "payload")
             .unwrap()
             .into_pointer_value()
+    }
+
+    fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    self.array_header_ty(),
+                    self.get_array_payload(array),
+                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
+                    "header",
+                )
+                .unwrap()
+        }
     }
 
     fn closure_ty(&self) -> BasicTypeEnum<'ctx> {

@@ -83,16 +83,4 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         );
         self.module.add_function("_array_unique", ty, None)
     }
-
-    /// `void _array_bounds_check(Array* array, uint64_t idx)`.
-    pub(crate) fn runtime_bounds_check(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("_array_bounds_check") {
-            return func;
-        }
-        let ty = self
-            .ctx
-            .void_type()
-            .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
-        self.module.add_function("_array_bounds_check", ty, None)
-    }
 }

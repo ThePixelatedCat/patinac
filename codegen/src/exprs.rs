@@ -94,11 +94,14 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 };
                 let arr = self.emit_place(*arr);
                 let idx = self.emit_expr(*idx);
+                self.builder
+                    .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
+                    .unwrap();
                 unsafe {
                     self.builder
                         .build_in_bounds_gep(
                             self.lower_ty(elem_ty),
-                            self.get_payload(arr),
+                            self.get_array_payload(arr),
                             &[idx.into_int_value()],
                             "elemptr",
                         )
@@ -141,6 +144,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     Ty::Named(id) => self.struct_copy(*id).as_global_value().as_pointer_value(),
                 };
                 let arr = self.emit_unique_place(*arr);
+                let idx = self.emit_expr(*idx);
+                self.builder
+                    .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
+                    .unwrap();
                 self.builder
                     .build_call(
                         self.runtime_array_unique(),
@@ -152,12 +159,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                         "",
                     )
                     .unwrap();
-                let idx = self.emit_expr(*idx);
                 unsafe {
                     self.builder
                         .build_in_bounds_gep(
                             self.lower_ty(elem_ty),
-                            self.get_payload(arr),
+                            self.get_array_payload(arr),
                             &[idx.into_int_value()],
                             "elemptr",
                         )
@@ -251,16 +257,15 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     fn emit_array(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
-        let Ty::Array(inner_ty) = ty else {
+        let Ty::Array(elem_ty) = ty else {
             unreachable!("ICE")
         };
-        let lowered_inner_ty = self.lower_ty(inner_ty);
 
         // Allocate the array.
         let alloc = self.emit_alloca_entry(self.array_ty(), "array");
         self.builder
             .build_call(
-                self.array_init(),
+                self.array_init(elem_ty),
                 &[
                     alloc.into(),
                     self.ctx
@@ -271,14 +276,14 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                             false,
                         )
                         .into(),
-                    lowered_inner_ty.size_of().unwrap().into(),
                 ],
                 "",
             )
             .unwrap();
 
         // Initialize each element.
-        let payload = self.get_payload(alloc);
+        let payload = self.get_array_payload(alloc);
+        let lowered_elem_ty = self.lower_ty(elem_ty);
         for (idx, expr) in exprs.iter().enumerate() {
             let idx = self.ctx.i64_type().const_int(
                 u64::try_from(idx).expect("I doubt we'll see 128bit CPUs any time soon"),
@@ -286,11 +291,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             );
             let ptr = unsafe {
                 self.builder
-                    .build_in_bounds_gep(lowered_inner_ty, payload, &[idx], "ptr")
+                    .build_in_bounds_gep(lowered_elem_ty, payload, &[idx], "ptr")
                     .unwrap()
             };
             let elem = self.emit_expr(*expr);
-            self.emit_move(inner_ty, elem, ptr);
+            self.emit_move(elem_ty, elem, ptr);
         }
 
         alloc.as_basic_value_enum()
@@ -510,13 +515,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let arr = self.emit_expr(arr);
         let idx = self.emit_expr(idx);
         self.builder
-            .build_call(self.runtime_bounds_check(), &[arr.into(), idx.into()], "")
+            .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
             .unwrap();
         let elem_ptr = unsafe {
             self.builder
                 .build_in_bounds_gep(
                     self.lower_ty(elem_ty),
-                    self.get_payload(arr.into_pointer_value()),
+                    self.get_array_payload(arr.into_pointer_value()),
                     &[idx.into_int_value()],
                     "elemptr",
                 )
