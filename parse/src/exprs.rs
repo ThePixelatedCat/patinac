@@ -1,4 +1,4 @@
-use std::range::Range;
+use std::{debug_assert_matches, range::Range, str::CharIndices};
 
 use itertools::Itertools as _;
 
@@ -144,21 +144,75 @@ impl Parser<'_> {
         self.ident().map(|i| ExprKind::Ident(i.ident).span(i.span))
     }
 
-    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Range<usize>)> {
-        fn process_escapes(input: &str) -> String {
-            input
-                .replace(r"\'", "\'")
-                .replace(r#"\""#, "\"")
-                .replace(r"\\", "\\")
-                .replace(r"\n", "\n")
-                .replace(r"\r", "\r")
-                .replace(r"\t", "\t")
-                .replace(r"\0", "\0")
+    fn process_escapes(&mut self, src: &str, start: usize) -> Result<String> {
+        let mut chars = src.char_indices();
+        let mut out = String::new();
+        while let Some((_, c)) = chars.next() {
+            let c = match c {
+                '\\' => match chars.next().expect("lexer produced standalone `\\`") {
+                    (_, '\\') => '\\',
+                    (_, '\'') => '\'',
+                    (_, '"') => '"',
+                    (_, '0') => '\0',
+                    (_, 'n') => '\n',
+                    (_, 'r') => '\r',
+                    (_, 't') => '\t',
+                    (i, 'u') => self.process_unicode_escape(&mut chars, start, i + 2)?,
+                    (_, c) => c,
+                },
+                c => c,
+            };
+            out.push(c);
+        }
+        Ok(out)
+    }
+
+    fn process_unicode_escape(
+        &mut self,
+        chars: &mut CharIndices<'_>,
+        start: usize,
+        start_offset: usize,
+    ) -> Result<char> {
+        debug_assert_matches!(
+            chars.next(),
+            Some((_, '{')),
+            "lexer produced invalid unicode escape"
+        );
+
+        let (mut end_offset, value) = chars
+            .next()
+            .expect("lexer produced unterminated unicode escape");
+        let mut value = value
+            .to_digit(16)
+            .expect("lexer produced unicode escape with invalid digit");
+
+        loop {
+            match chars.next() {
+                Some((_, '}')) => break,
+                Some((i, c)) => {
+                    let digit = c
+                        .to_digit(16)
+                        .expect("lexer produced unicode escape with invalid digit");
+                    value = (value << 4u8) + digit;
+                    end_offset = i;
+                }
+                None => {
+                    unreachable!("lexer produced unterminated unicode escape")
+                }
+            }
         }
 
-        let tok = self.peek()?;
-        let f: fn(&str) -> LitExpr = match tok {
-            TokKind::IntLit => |src| {
+        char::from_u32(value).ok_or_else(|| {
+            self.handler
+                .err(ErrorKind::BadUnicodeEscape.span(start + start_offset..start + end_offset + 1))
+        })
+    }
+
+    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Range<usize>)> {
+        let tok = self.next()?;
+        let src = self.src_of(tok);
+        let lit = match tok.kind {
+            TokKind::IntLit => {
                 let num = match src.get(0..2) {
                     Some("0b") => u64::from_str_radix(&src[2..], 2),
                     Some("0o") => u64::from_str_radix(&src[2..], 8),
@@ -166,36 +220,37 @@ impl Parser<'_> {
                     _ => src.parse(),
                 };
                 LitExpr::Int(num.expect("ICE: lexer produced invalid int token"))
-            },
-            TokKind::FloatLit => |src| {
-                LitExpr::Float(
-                    src.parse()
-                        .expect("ICE: lexer produced invalid float token"),
-                )
-            },
-            TokKind::CharLit => |src: &str| {
-                LitExpr::Char(
-                    process_escapes(&src[1..src.len() - 1])
-                        .chars()
-                        .exactly_one()
-                        .expect("ICE: lexer produced char token with multiple characters"),
-                )
-            },
-            TokKind::StringLit => |src: &str| {
+            }
+            TokKind::FloatLit => LitExpr::Float(
+                src.parse()
+                    .expect("ICE: lexer produced invalid float token"),
+            ),
+            TokKind::CharLit => LitExpr::Char(
+                self.process_escapes(&src[1..src.len() - 1], tok.span.start + 1)?
+                    .chars()
+                    .exactly_one()
+                    .expect("ICE: lexer produced char token with multiple characters"),
+            ),
+            TokKind::StringLit => {
                 if src.starts_with('#') {
                     LitExpr::String(src[2..src.len() - 2].to_string())
                 } else {
-                    LitExpr::String(process_escapes(&src[1..src.len() - 1]))
+                    LitExpr::String(
+                        self.process_escapes(&src[1..src.len() - 1], tok.span.start + 1)?,
+                    )
                 }
-            },
-            TokKind::True => |_| LitExpr::Bool(true),
-            TokKind::False => |_| LitExpr::Bool(false),
+            }
+            TokKind::True => LitExpr::Bool(true),
+            TokKind::False => LitExpr::Bool(false),
             _ => {
-                return Err(self.err_next(ErrorKind::Unexpected, &["Expected a literal"]));
+                return Err(self.handler.err(
+                    ErrorKind::Unexpected(tok.kind)
+                        .span(tok.span)
+                        .with_static_ctx("Expected a literal"),
+                ));
             }
         };
-
-        self.consume(tok).map(|tok| (f(self.src_of(tok)), tok.span))
+        Ok((lit, tok.span))
     }
 
     fn array_lit_expr(&mut self) -> Result<Expr> {

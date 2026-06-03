@@ -43,6 +43,16 @@ fn lit_expressions() {
     );
 
     assert_eq!(
+        Parser::new(r#""\\n""#, TEST_HANDLER).expr(),
+        Ok(ExprKind::string("\\n").span(0..5))
+    );
+
+    assert_eq!(
+        Parser::new(r"'\u{1f308}'", TEST_HANDLER).expr(),
+        Ok(ExprKind::char('🌈').span(0..11))
+    );
+
+    assert_eq!(
         Parser::new(r#"(42,(2),"end")"#, TEST_HANDLER).expr(),
         Ok(ExprKind::Tuple(vec![
             ExprKind::int(42).span(1..3),

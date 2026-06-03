@@ -10,6 +10,8 @@ use crate::TokKind;
 pub enum ErrorKind {
     #[display("invalid token")]
     BadToken,
+    #[display("invalid unicode codepoint")]
+    BadUnicodeEscape,
     #[display("expected {expected}, found {found}")]
     Mismatched { expected: TokKind, found: TokKind },
     #[display("unexpected token {_0}")]
