@@ -1,5 +1,3 @@
-use std::fmt::Write as _;
-
 use inkwell::{
     AtomicOrdering, AtomicRMWBinOp, IntPredicate,
     intrinsics::Intrinsic,
@@ -13,22 +11,73 @@ use hir::{VarId, items::TyId, types::Ty};
 use crate::Codegen;
 
 impl<'ctx> Codegen<'_, '_, 'ctx> {
-    pub(crate) fn drop_fn_ty(&self) -> FunctionType<'ctx> {
+    pub(crate) fn drop_func_ty(&self) -> FunctionType<'ctx> {
         self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false)
     }
 
-    pub(crate) fn copy_fn_ty(&self) -> FunctionType<'ctx> {
+    pub(crate) fn copy_func_ty(&self) -> FunctionType<'ctx> {
         let ptr = self.ptr_ty().into();
         self.ctx.void_type().fn_type(&[ptr, ptr], false)
     }
 
-    pub(crate) fn equals_fn_ty(&self) -> FunctionType<'ctx> {
+    pub(crate) fn equals_func_ty(&self) -> FunctionType<'ctx> {
         let ptr = self.ptr_ty().into();
         self.ctx.bool_type().fn_type(&[ptr, ptr], false)
     }
 
+    /// Returns the drop witness function for the provided type, or `None` if it is a trivial type.
+    pub(crate) fn drop_func(&self, ty: &Ty) -> Option<FunctionValue<'ctx>> {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => None,
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(elem_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if elem_tys.is_empty() {
+                    None
+                } else {
+                    Some(self.tuple_drop(ty, elem_tys))
+                }
+            }
+            Ty::Array(elem_ty) => Some(self.array_drop(ty, elem_ty)),
+            Ty::Fn(..) => Some(self.closure_drop()),
+            Ty::Named(id) => Some(self.struct_drop(*id)),
+        }
+    }
+
+    /// Returns the copy witness function for the provided type, or `None` if it is a trivial type.
+    pub(crate) fn copy_func(&self, ty: &Ty) -> Option<FunctionValue<'ctx>> {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => None,
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(elem_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if elem_tys.is_empty() {
+                    None
+                } else {
+                    Some(self.tuple_copy(ty, elem_tys))
+                }
+            }
+            Ty::Array(elem_ty) => Some(self.array_copy(elem_ty)),
+            Ty::Fn(..) => Some(self.closure_copy()),
+            Ty::Named(id) => Some(self.struct_copy(*id)),
+        }
+    }
+
+    /// Returns the equals witness function for the provided type.
+    pub(crate) fn equals_func(&self, ty: &Ty) -> FunctionValue<'ctx> {
+        match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self.int_equals(ty),
+            Ty::Float => self.float_equals(),
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(elem_tys) => self.tuple_equals(ty, elem_tys),
+            Ty::Array(elem_ty) => self.array_equals(ty, elem_ty),
+            Ty::Fn(..) => self.closure_equals(),
+            Ty::Named(id) => self.struct_equals(*id),
+        }
+    }
+
     pub(crate) fn int_equals(&self, ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle(ty));
+        let func_name = format!("{}.equals", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -41,7 +90,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the equality function
         let func =
             self.module
-                .add_function(&func_name, self.equals_fn_ty(), Some(Linkage::Private));
+                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let ty = self.lower_ty(ty);
@@ -67,7 +116,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     pub(crate) fn float_equals(&self) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle(&Ty::Float));
+        let func_name = format!("{}.equals", self.mangle_ty(&Ty::Float));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -80,7 +129,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the equality function
         let func =
             self.module
-                .add_function(&func_name, self.equals_fn_ty(), Some(Linkage::Private));
+                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let ty = self.ctx.f64_type();
@@ -134,7 +183,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.drop", self.mangle(ty));
+        let func_name = format!("{}.drop", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -145,9 +194,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the drop function
-        let func = self
-            .module
-            .add_function(&func_name, self.drop_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.drop_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lowered_ty = self.lower_ty(ty);
@@ -176,7 +225,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.copy", self.mangle(ty));
+        let func_name = format!("{}.copy", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -187,9 +236,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the copy function
-        let func = self
-            .module
-            .add_function(&func_name, self.copy_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.copy_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lowered_ty = self.lower_ty(ty);
@@ -235,7 +284,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         ty: &Ty,
         fields: impl IntoIterator<Item = &'fields Ty>,
     ) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle(ty));
+        let func_name = format!("{}.equals", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -248,7 +297,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the equality function
         let func =
             self.module
-                .add_function(&func_name, self.equals_fn_ty(), Some(Linkage::Private));
+                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lowered_ty = self.lower_ty(ty);
@@ -307,8 +356,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_drop(&self, inner_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].drop", self.mangle(inner_ty));
+    pub(crate) fn array_drop(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.drop", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -319,31 +368,22 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the drop function
-        let func = self
-            .module
-            .add_function(&func_name, self.drop_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.drop_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let elem_drop = match inner_ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => self.null_ptr(),
-            Ty::Tuple(inner_tys) => self
-                .tuple_drop(inner_ty, inner_tys)
-                .as_global_value()
-                .as_pointer_value(),
-            Ty::Array(inner_ty) => self
-                .array_drop(inner_ty)
-                .as_global_value()
-                .as_pointer_value(),
-            Ty::Fn(..) => self.closure_drop().as_global_value().as_pointer_value(),
-            Ty::Named(id) => self.struct_drop(*id).as_global_value().as_pointer_value(),
-        };
+        let elem_drop = self.drop_func(elem_ty).map_or_else(
+            || self.null_ptr(),
+            |f| f.as_global_value().as_pointer_value(),
+        );
         self.builder
             .build_call(
                 self.runtime_array_drop(),
                 &[
                     func.get_first_param().unwrap().into(),
                     elem_drop.into(),
-                    self.lower_ty(inner_ty).size_of().unwrap().into(),
+                    self.lower_ty(elem_ty).size_of().unwrap().into(),
                 ],
                 "",
             )
@@ -355,8 +395,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_copy(&self, inner_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].copy", self.mangle(inner_ty));
+    pub(crate) fn array_copy(&self, ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.copy", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -367,9 +407,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the copy function
-        let func = self
-            .module
-            .add_function(&func_name, self.copy_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.copy_func_ty(), Some(Linkage::Private));
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let incr_block = self.ctx.append_basic_block(func, "incr");
         let ret_block = self.ctx.append_basic_block(func, "return");
@@ -416,8 +456,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_equals(&self, inner_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].equals", self.mangle(inner_ty));
+    pub(crate) fn array_equals(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.equals", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -430,20 +470,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the copy function
         let func =
             self.module
-                .add_function(&func_name, self.equals_fn_ty(), Some(Linkage::Private));
+                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lhs = func.get_nth_param(0).unwrap().into();
         let rhs = func.get_nth_param(1).unwrap().into();
-        let elem_equals = match inner_ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self.int_equals(inner_ty),
-            Ty::Float => self.float_equals(),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => self.tuple_drop(inner_ty, inner_tys),
-            Ty::Array(inner_ty) => self.array_drop(inner_ty),
-            Ty::Fn(..) => self.closure_drop(),
-            Ty::Named(id) => self.struct_drop(*id),
-        };
         let result = self
             .builder
             .build_call(
@@ -451,8 +482,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 &[
                     lhs,
                     rhs,
-                    elem_equals.as_global_value().as_pointer_value().into(),
-                    self.lower_ty(inner_ty).size_of().unwrap().into(),
+                    self.equals_func(elem_ty)
+                        .as_global_value()
+                        .as_pointer_value()
+                        .into(),
+                    self.lower_ty(elem_ty).size_of().unwrap().into(),
                 ],
                 "",
             )
@@ -467,7 +501,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     pub(crate) fn array_init(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].init", self.mangle(elem_ty));
+        let func_name = format!("a[{}].init", self.mangle_ty(elem_ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -594,7 +628,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     pub(crate) fn array_calc_cap(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].calc_cap", self.mangle(elem_ty));
+        let func_name = format!("a[{}].calc_cap", self.mangle_ty(elem_ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -910,7 +944,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the drop function
         let func = self
             .module
-            .add_function(func_name, self.drop_fn_ty(), Some(Linkage::Private));
+            .add_function(func_name, self.drop_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let val = func.get_first_param().unwrap();
@@ -924,7 +958,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .unwrap();
         self.builder
             .build_indirect_call(
-                self.drop_fn_ty(),
+                self.drop_func_ty(),
                 drop_func.into_pointer_value(),
                 &[val.into()],
                 "",
@@ -948,25 +982,25 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Save the builder's current insertion block to restore at the end
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
-        // Create the drop function
+        // Create the function
         let func = self
             .module
-            .add_function(func_name, self.copy_fn_ty(), Some(Linkage::Private));
+            .add_function(func_name, self.copy_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let dst = func.get_nth_param(0).unwrap();
         let src = func.get_nth_param(1).unwrap();
         let copy_func = self
             .builder
-            .build_struct_gep(self.closure_ty(), src.into_pointer_value(), 3, "copyfn")
+            .build_struct_gep(self.closure_ty(), src.into_pointer_value(), 3, "")
             .unwrap();
         let copy_func = self
             .builder
-            .build_load(self.ptr_ty(), copy_func, "copyfn")
+            .build_load(self.ptr_ty(), copy_func, "")
             .unwrap();
         self.builder
             .build_indirect_call(
-                self.copy_fn_ty(),
+                self.copy_func_ty(),
                 copy_func.into_pointer_value(),
                 &[dst.into(), src.into()],
                 "",
@@ -993,7 +1027,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the drop function
         let func = self
             .module
-            .add_function(func_name, self.drop_fn_ty(), Some(Linkage::Private));
+            .add_function(func_name, self.drop_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lhs = func.get_nth_param(0).unwrap();
@@ -1008,7 +1042,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .unwrap();
         self.builder
             .build_indirect_call(
-                self.equals_fn_ty(),
+                self.equals_func_ty(),
                 equals_func.into_pointer_value(),
                 &[lhs.into(), rhs.into()],
                 "",
@@ -1038,9 +1072,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the drop function
-        let func = self
-            .module
-            .add_function(&func_name, self.drop_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.drop_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         // Don't need to do anything if there's no captures
@@ -1100,9 +1134,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the copy function
-        let func = self
-            .module
-            .add_function(&func_name, self.copy_fn_ty(), Some(Linkage::Private));
+        let func =
+            self.module
+                .add_function(&func_name, self.copy_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         // Copy the source into the target.
@@ -1199,7 +1233,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // Create the equality function
         let func =
             self.module
-                .add_function(&func_name, self.equals_fn_ty(), Some(Linkage::Private));
+                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
@@ -1297,34 +1331,5 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.builder.position_at_end(old_insert_block);
 
         func
-    }
-
-    fn mangle(&self, ty: &Ty) -> String {
-        match ty {
-            Ty::Int => "i".to_string(),
-            Ty::UInt => "u".to_string(),
-            Ty::Byte => "h".to_string(),
-            Ty::Float => "f".to_string(),
-            Ty::Char => "c".to_string(),
-            Ty::Bool => "b".to_string(),
-            Ty::Tuple(tys) => format!(
-                "t[{}]",
-                tys.iter().map(|ty| self.mangle(ty)).collect::<String>()
-            ),
-            Ty::Array(ty) => format!("a[{}]", self.mangle(ty)),
-            Ty::Fn(params, ret_ty) => {
-                let param_names = params.iter().fold(String::new(), |mut s, p| {
-                    let mut_str = if p.mutable { "m" } else { "" };
-                    let _ = write!(s, "{mut_str}{}", self.mangle(&p.ty));
-                    s
-                });
-                format!("f[{param_names};{}]", self.mangle(ret_ty))
-            }
-            Ty::Named(id) => {
-                let mut name = self.hir.ty_ident(*id).ident.to_string();
-                name.insert(0, '_');
-                name
-            }
-        }
     }
 }

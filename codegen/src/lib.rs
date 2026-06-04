@@ -14,7 +14,7 @@ mod runtime;
 mod test;
 mod witnesses;
 
-use std::{iter, path::PathBuf, str::FromStr};
+use std::{fmt::Write as _, iter, path::PathBuf, str::FromStr};
 
 use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
@@ -125,7 +125,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             .create_target_machine_from_options(&triple, TargetMachineOptions::default())
             .unwrap();
 
-        let this = Self {
+        Self {
             hir,
             ty_map,
             handler,
@@ -133,18 +133,22 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             builder: ctx.create_builder(),
             module,
             target: target_machine,
-            structs: Self::build_structs(hir, ctx),
+            structs: SecondaryMap::new(),
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
             lambda_counter: 0,
-        };
-        this.populate_structs();
-        this
+        }
     }
 
     /// # Panics
     /// Panics if any functions are invalid, or if writing to the output file fails.
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
+        for (ty, _) in self.hir.tys() {
+            self.create_struct(ty);
+        }
+        for (ty, _) in self.hir.tys() {
+            self.build_struct(ty);
+        }
         for (ty, _) in self.hir.tys() {
             self.build_constructor(ty);
         }
@@ -153,7 +157,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { .. } => {
-                    self.build_func(exec.id);
+                    self.create_func(exec.id);
                 }
             }
         }
@@ -184,7 +188,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     let Ty::Fn(_, ret_ty) = self.hir.var_ty(exec.id) else {
                         unreachable!("ICE")
                     };
-                    self.populate_func(self.funcs[exec.id], params, ret_ty, *body);
+                    self.build_func(self.funcs[exec.id], params, ret_ty, *body);
                 }
             }
         }
@@ -214,73 +218,45 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    fn build_structs(hir: &Hir, ctx: &'ctx Context) -> SecondaryMap<TyId, StructType<'ctx>> {
-        hir.tys()
-            .map(|(id, ident)| (id, ctx.opaque_struct_type(&ident.ident.str())))
-            .collect()
+    fn create_struct(&mut self, id: TyId) {
+        let name = Self::mangle_name(self.hir.ty_ident(id).ident.to_string());
+        self.structs.insert(id, self.ctx.opaque_struct_type(&name));
     }
 
-    fn populate_structs(&self) {
-        for (id, ty) in &self.structs {
-            let field_tys: Vec<_> = (&self.hir.ty_info(id).fields)
-                .into_iter()
-                .map(|(_, ty)| {
-                    if let Ty::Named(field_id) = ty
-                        && *field_id == id
-                    {
-                        todo!("Recursive records")
-                    } else {
-                        self.lower_ty(ty)
-                    }
-                })
-                .collect();
-            ty.set_body(&field_tys, false);
-        }
+    fn build_struct(&self, id: TyId) {
+        let field_tys: Vec<_> = (&self.hir.ty_info(id).fields)
+            .into_iter()
+            .map(|(_, ty)| {
+                if let Ty::Named(field_id) = ty
+                    && *field_id == id
+                {
+                    todo!("Recursive records")
+                } else {
+                    self.lower_ty(ty)
+                }
+            })
+            .collect();
+        self.structs[id].set_body(&field_tys, false);
     }
 
-    fn build_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
+    fn create_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
         let Ty::Fn(params, ret_ty) = self.hir.var_ty(id) else {
             unreachable!("ICE")
         };
-        let func = self.module.add_function(
-            &self.hir.var_info(id).ident.str(),
-            self.build_func_ty(params, ret_ty),
-            None,
-        );
+        let name = Self::mangle_name(self.hir.var_info(id).ident.to_string());
+        let func = self
+            .module
+            .add_function(&name, self.func_ty(params, ret_ty), None);
         self.funcs.insert(id, func);
         self.vars
             .insert(id, func.as_global_value().as_pointer_value());
         func
     }
 
-    fn build_func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
-        let mut param_tys: Vec<_> = params
-            .iter()
-            .map(|p| {
-                if p.mutable || Self::is_indirect(&p.ty) {
-                    self.ptr_ty()
-                } else {
-                    self.lower_ty(&p.ty)
-                }
-                .into()
-            })
-            .collect();
-
-        // Add parameter for the environment
-        param_tys.push(self.ptr_ty().into());
-
-        if Self::is_indirect(ret_ty) {
-            param_tys.insert(0, self.ptr_ty().into());
-            self.ctx.void_type().fn_type(&param_tys, false)
-        } else {
-            self.lower_ty(ret_ty).fn_type(&param_tys, false)
-        }
-    }
-
     fn build_constructor(&mut self, ty: TyId) {
         let info = self.hir.ty_info(ty);
 
-        let func = self.build_func(info.constructor_id);
+        let func = self.create_func(info.constructor_id);
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
@@ -301,7 +277,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         assert!(func.verify(true));
     }
 
-    fn populate_func(
+    fn build_func(
         &mut self,
         func: FunctionValue<'ctx>,
         params: &[VarId],
@@ -400,6 +376,31 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
+    fn func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
+        let mut param_tys: Vec<_> = params
+            .iter()
+            .map(|p| {
+                if p.mutable || Self::is_indirect(&p.ty) {
+                    self.ptr_ty()
+                } else {
+                    self.lower_ty(&p.ty)
+                }
+                .into()
+            })
+            .collect();
+
+        // Add parameter for the environment
+        param_tys.push(self.ptr_ty().into());
+
+        // Add parameter for return out-pointer if needed
+        if Self::is_indirect(ret_ty) {
+            param_tys.insert(0, self.ptr_ty().into());
+            self.ctx.void_type().fn_type(&param_tys, false)
+        } else {
+            self.lower_ty(ret_ty).fn_type(&param_tys, false)
+        }
+    }
+
     fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
         if let Some(ty) = self.module.get_struct_type("_Closure") {
             return ty.as_basic_type_enum();
@@ -484,19 +485,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     pub(crate) fn emit_drop(&self, ty: &Ty, val: BasicValueEnum<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if inner_tys.is_empty() {
-                    return;
-                }
-                self.tuple_drop(ty, inner_tys)
-            }
-            Ty::Array(inner_ty) => self.array_drop(inner_ty),
-            Ty::Fn(_, _) => self.closure_drop(),
-            Ty::Named(id) => self.struct_drop(*id),
+        // Trivial types don't have a drop function and don't need dropping
+        let Some(func) = self.drop_func(ty) else {
+            return;
         };
         self.builder
             .build_call(func, &[val.into()], "drop")
@@ -504,23 +495,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     pub(crate) fn emit_copy(&self, ty: &Ty, val: BasicValueEnum<'ctx>, dst: PointerValue<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
-                self.builder.build_store(dst, val).unwrap();
-                return;
-            }
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if inner_tys.is_empty() {
-                    self.builder.build_store(dst, val).unwrap();
-                    return;
-                }
-                self.tuple_copy(ty, inner_tys)
-            }
-            Ty::Array(inner_ty) => self.array_copy(inner_ty),
-            Ty::Fn(..) => self.closure_copy(),
-            Ty::Named(id) => self.struct_copy(*id),
+        // Trivial types don't have a copy function and don't need dropping
+        let Some(func) = self.copy_func(ty) else {
+            return;
         };
         self.builder
             .build_call(
@@ -578,7 +555,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::Array(inner_ty) => self
                 .builder
                 .build_call(
-                    self.array_equals(inner_ty),
+                    self.array_equals(ty, inner_ty),
                     &[lhs.into(), rhs.into()],
                     "equals",
                 )
@@ -623,5 +600,35 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             .expect("builder has been positioned")
             .get_parent()
             .expect("builder is within function")
+    }
+
+    fn mangle_name(mut name: String) -> String {
+        name.insert(0, '_');
+        name
+    }
+
+    fn mangle_ty(&self, ty: &Ty) -> String {
+        match ty {
+            Ty::Int => "i".to_string(),
+            Ty::UInt => "u".to_string(),
+            Ty::Byte => "h".to_string(),
+            Ty::Float => "f".to_string(),
+            Ty::Char => "c".to_string(),
+            Ty::Bool => "b".to_string(),
+            Ty::Tuple(tys) => format!(
+                "T{}",
+                tys.iter().map(|ty| self.mangle_ty(ty)).collect::<String>()
+            ),
+            Ty::Array(ty) => format!("A{}", self.mangle_ty(ty)),
+            Ty::Fn(params, ret_ty) => {
+                let param_names = params.iter().fold(String::new(), |mut s, p| {
+                    let prefix = if p.mutable { "M" } else { "P" };
+                    let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
+                    s
+                });
+                format!("f[{param_names};{}]", self.mangle_ty(ret_ty))
+            }
+            Ty::Named(id) => Self::mangle_name(self.hir.ty_ident(*id).ident.to_string()),
+        }
     }
 }

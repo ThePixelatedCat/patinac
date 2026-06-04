@@ -128,21 +128,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             }
             Expr::Index { arr, idx } => {
                 let elem_ty = self.ty_map.ty(expr);
-                let elem_copy = match elem_ty {
-                    Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => {
-                        self.null_ptr()
-                    }
-                    Ty::Tuple(inner_tys) => self
-                        .tuple_copy(elem_ty, inner_tys)
-                        .as_global_value()
-                        .as_pointer_value(),
-                    Ty::Array(elem_ty) => self
-                        .array_copy(elem_ty)
-                        .as_global_value()
-                        .as_pointer_value(),
-                    Ty::Fn(..) => self.closure_copy().as_global_value().as_pointer_value(),
-                    Ty::Named(id) => self.struct_copy(*id).as_global_value().as_pointer_value(),
-                };
+                let elem_copy = self.copy_func(elem_ty).map_or_else(
+                    || self.null_ptr(),
+                    |f| f.as_global_value().as_pointer_value(),
+                );
                 let arr = self.emit_unique_place(*arr);
                 let idx = self.emit_expr(*idx);
                 self.builder
@@ -612,7 +601,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             let Ty::Fn(params, ret_ty) = self.ty_map.ty(func) else {
                 unreachable!()
             };
-            let func_ty = self.build_func_ty(params, ret_ty);
+            let func_ty = self.func_ty(params, ret_ty);
             let func = self
                 .builder
                 .build_struct_gep(ty, closure, 0, "func")
@@ -688,7 +677,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             };
             let func = self.module.add_function(
                 &func_name,
-                self.build_func_ty(param_tys, ret_ty),
+                self.func_ty(param_tys, ret_ty),
                 Some(Linkage::Private),
             );
             self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
