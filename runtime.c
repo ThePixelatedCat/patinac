@@ -1,25 +1,12 @@
-#include <assert.h>
-#include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-void _panic(const char* msg) {
+void panic(const char* msg) {
     fprintf(stderr, "%s", msg);
     exit(EXIT_FAILURE);
 }
-
-void* _malloc(uint64_t size) {
-    void* ptr = malloc(size);
-    if (ptr == NULL) _panic("allocation failed");
-    return ptr;
-}
-
-typedef const void (*DropFn)(void*);
-typedef const void (*CopyFn)(void*, void*);
-typedef const bool (*EqualFn)(const void*, const void*);
 
 /// A type-erased array
 ///
@@ -49,7 +36,7 @@ static inline ArrayHeader* get_array_header(Array* array) {
     return (ArrayHeader*)((uint8_t*)array->payload - sizeof(ArrayHeader));
 }
 
-bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size) {
+bool _array_equals(Array* lhs, Array* rhs, bool (*elem_equals)(void*, void*), uint64_t elem_size) {
     uint8_t* lhs_payload = (uint8_t*)lhs->payload;
     uint8_t* rhs_payload = (uint8_t*)rhs->payload;
     // True if the arrays share storage. This will also catch if both payloads are null
@@ -69,35 +56,4 @@ bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_si
         }
     }
     return true;
-}
-
-void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size) {
-    // If the array is empty or it's already unique, don't need to do anything
-    ArrayHeader* old_header = get_array_header(array);
-    if (old_header == NULL) return;
-    if (atomic_load_explicit(&old_header->refc, memory_order_acquire) == 1) return;
-
-    //  Allocate new storage with room for the header plus the capacity of the array being copied
-    void* new_storage = _malloc(sizeof(ArrayHeader) + old_header->capacity);
-
-    // Initialize the new header
-    ArrayHeader* new_header = new_storage;
-    new_header->refc = 1;
-    new_header->count = old_header->count;
-    new_header->capacity = old_header->capacity;
-
-    // Initialise the new payload with copies of the current elements
-    uint8_t* new_payload = new_storage + sizeof(ArrayHeader);
-    if (elem_copy == NULL) {
-        memcpy(new_payload, array->payload, old_header->capacity);
-    } else {
-        uint8_t* src = array->payload;
-        for (size_t i = 0; i < old_header->count; ++i) {
-            elem_copy(&new_payload[i * elem_size], &src[i * elem_size]);
-        }
-    }
-
-    // Insert the new storage and decrement the ref count on the old storage
-    array->payload = new_payload;
-    atomic_fetch_sub_explicit(&old_header->refc, 1, memory_order_acq_rel);
 }

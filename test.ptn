@@ -1,12 +1,12 @@
 fn main(): () = {
-    let mut foo = [1, 2, 3]
+    let mut foo = [[1], [2]]
     let mut bar = foo
     swap(mut foo.[0], mut foo.[1])
-    print foo.[0]
-    print foo.[1]
+    print foo.[0].[0]
+    print foo.[1].[0]
 }
 
-fn swap(mut a: Int, mut b: Int): () = { 
+fn swap(mut a: [Int], mut b: [Int]): () = { 
     let a_tmp = a
     a = b
     b = a_tmp

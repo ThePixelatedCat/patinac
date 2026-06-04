@@ -443,6 +443,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .unwrap()
                 .into_int_value();
             let index = self.emit_alloca_entry(self.ctx.i64_type().as_basic_type_enum(), "index");
+            self.builder
+                .build_store(index, self.ctx.i64_type().const_zero())
+                .unwrap();
             let payload = self.get_array_payload(array);
             let empty = self
                 .builder
@@ -503,7 +506,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.builder.build_unconditional_branch(ret_block).unwrap();
         }
 
-        // Return
+        // Return.
         {
             self.builder.position_at_end(ret_block);
             self.builder.build_return(None).unwrap();
@@ -717,7 +720,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.builder
                 .build_store(refc_ptr, self.ctx.i64_type().const_int(1, false))
                 .unwrap()
-                .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                .set_atomic_ordering(AtomicOrdering::Monotonic)
                 .unwrap();
             let count_ptr = self
                 .builder
@@ -734,6 +737,239 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
         self.builder.position_at_end(ret_block);
         self.builder.build_return(None).unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    pub(crate) fn array_unique(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.unique", self.mangle_ty(ty));
+
+        // Check if we already built this function
+        if let Some(func) = self.module.get_function(&func_name) {
+            return func;
+        }
+
+        // Save the builder's current insertion block to restore at the end.
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
+        // Create the function and blocks, and extract the arguments.
+        let func_ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
+        let func = self
+            .module
+            .add_function(&func_name, func_ty, Some(Linkage::Private));
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let unique_block = self.ctx.append_basic_block(func, "unique");
+        let alloc_block = self.ctx.append_basic_block(func, "alloc");
+        let store_block = self.ctx.append_basic_block(func, "store");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let array = func.get_first_param().unwrap().into_pointer_value();
+
+        // Return immediately if the array hasn't been allocated.
+        let header = {
+            self.builder.position_at_end(entry_block);
+            let header = self.get_array_header(array);
+            let is_null = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_null, ret_block, unique_block)
+                .unwrap();
+            header
+        };
+
+        let header_ty = self.array_header_ty();
+
+        // Check if it's already unique.
+        {
+            self.builder.position_at_end(unique_block);
+            let refc = self
+                .builder
+                .build_struct_gep(header_ty, header, 0, "")
+                .unwrap();
+            let refc = self
+                .builder
+                .build_load(self.ctx.i64_type(), refc, "")
+                .unwrap();
+            refc.as_instruction_value()
+                .unwrap()
+                .set_atomic_ordering(AtomicOrdering::Acquire)
+                .unwrap();
+            let is_unique = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    refc.into_int_value(),
+                    self.ctx.i64_type().const_int(1, false),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_unique, ret_block, alloc_block)
+                .unwrap();
+        }
+
+        // Allocate the new array and store the metadata.
+        self.builder.position_at_end(alloc_block);
+        // Allocate capacity + header size.
+        let capacity = self
+            .builder
+            .build_struct_gep(header_ty, header, 2, "")
+            .unwrap();
+        let capacity = self
+            .builder
+            .build_load(self.ctx.i64_type(), capacity, "")
+            .unwrap()
+            .into_int_value();
+        let alloc_size = self
+            .builder
+            .build_int_add(capacity, header_ty.size_of().unwrap(), "")
+            .unwrap();
+        let alloc = self
+            .builder
+            .build_call(self.malloc(), &[alloc_size.into()], "")
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic()
+            .into_pointer_value();
+        // Initialise refcount to 1.
+        let refc_ptr = self
+            .builder
+            .build_struct_gep(header_ty, alloc, 0, "")
+            .unwrap();
+        self.builder
+            .build_store(refc_ptr, self.ctx.i64_type().const_int(1, false))
+            .unwrap()
+            .set_atomic_ordering(AtomicOrdering::Monotonic)
+            .unwrap();
+        // Initialise count to existing count.
+        let count = self
+            .builder
+            .build_struct_gep(header_ty, header, 1, "")
+            .unwrap();
+        let count = self
+            .builder
+            .build_load(self.ctx.i64_type(), count, "")
+            .unwrap()
+            .into_int_value();
+        let new_count = self
+            .builder
+            .build_struct_gep(header_ty, alloc, 1, "")
+            .unwrap();
+        self.builder.build_store(new_count, count).unwrap();
+        // Initialise capacity to existing capacity.
+        let new_capacity = self
+            .builder
+            .build_struct_gep(header_ty, alloc, 2, "")
+            .unwrap();
+        self.builder.build_store(new_capacity, capacity).unwrap();
+        // Get payloads.
+        let payload = self.get_array_payload(array);
+        let new_payload = unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    header_ty,
+                    alloc,
+                    &[self.ctx.i64_type().const_int(1, false)],
+                    "",
+                )
+                .unwrap()
+        };
+        // Either memcpy or copy each element, depending on whether the element type is trivial
+        if self.is_trivial(elem_ty) {
+            let align = self
+                .target
+                .get_target_data()
+                .get_abi_alignment(&self.lower_ty(elem_ty));
+            self.builder
+                .build_memcpy(new_payload, align, payload, align, capacity)
+                .unwrap();
+            self.builder
+                .build_unconditional_branch(store_block)
+                .unwrap();
+        } else {
+            let empty = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    count,
+                    self.ctx.i64_type().const_zero(),
+                    "",
+                )
+                .unwrap();
+            let loop_block = self.ctx.prepend_basic_block(store_block, "loop");
+            let index = self.emit_alloca_entry(self.ctx.i64_type().as_basic_type_enum(), "index");
+            self.builder
+                .build_store(index, self.ctx.i64_type().const_zero())
+                .unwrap();
+            self.builder
+                .build_conditional_branch(empty, store_block, loop_block)
+                .unwrap();
+            // Loop over each element and copy it.
+            {
+                self.builder.position_at_end(loop_block);
+                let curr_index = self
+                    .builder
+                    .build_load(self.ctx.i64_type(), index, "")
+                    .unwrap()
+                    .into_int_value();
+                let lowered_elem_ty = self.lower_ty(elem_ty);
+                let elem = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(lowered_elem_ty, payload, &[curr_index], "")
+                        .unwrap()
+                };
+                let new_elem = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(lowered_elem_ty, new_payload, &[curr_index], "")
+                        .unwrap()
+                };
+                self.emit_copy(elem_ty, elem.as_basic_value_enum(), new_elem);
+                let new_index = self
+                    .builder
+                    .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
+                    .unwrap();
+                self.builder.build_store(index, new_index).unwrap();
+                let done = self
+                    .builder
+                    .build_int_compare(IntPredicate::UGE, new_index, count, "")
+                    .unwrap();
+                self.builder
+                    .build_conditional_branch(done, store_block, loop_block)
+                    .unwrap();
+            }
+        }
+
+        // Store the new payload in the array and decrement the refcount on the original array.
+        {
+            self.builder.position_at_end(store_block);
+            let payload_ptr = self
+                .builder
+                .build_struct_gep(self.array_ty(), array, 0, "")
+                .unwrap();
+            self.builder.build_store(payload_ptr, new_payload).unwrap();
+            let refc = self
+                .builder
+                .build_struct_gep(header_ty, header, 0, "")
+                .unwrap();
+            self.builder
+                .build_atomicrmw(
+                    AtomicRMWBinOp::Sub,
+                    refc,
+                    self.ctx.i64_type().const_int(1, false),
+                    AtomicOrdering::SequentiallyConsistent,
+                )
+                .unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+        }
+
+        // Return.
+        {
+            self.builder.position_at_end(ret_block);
+            self.builder.build_return(None).unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 

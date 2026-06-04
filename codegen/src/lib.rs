@@ -373,16 +373,25 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        unsafe {
+        let payload = self.get_array_payload(array);
+        let header = unsafe {
             self.builder
                 .build_in_bounds_gep(
                     self.array_header_ty(),
-                    self.get_array_payload(array),
+                    payload,
                     &[self.ctx.i64_type().const_int(1, true).const_neg()],
                     "header",
                 )
                 .unwrap()
-        }
+        };
+        let is_null = self
+            .builder
+            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "")
+            .unwrap();
+        self.builder
+            .build_select(is_null, self.null_ptr(), header, "")
+            .unwrap()
+            .into_pointer_value()
     }
 
     fn func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {

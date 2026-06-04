@@ -127,26 +127,15 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .unwrap()
             }
             Expr::Index { arr, idx } => {
+                let ty = self.ty_map.ty(*arr);
                 let elem_ty = self.ty_map.ty(expr);
-                let elem_copy = self.copy_func(elem_ty).map_or_else(
-                    || self.null_ptr(),
-                    |f| f.as_global_value().as_pointer_value(),
-                );
                 let arr = self.emit_unique_place(*arr);
                 let idx = self.emit_expr(*idx);
                 self.builder
                     .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
                     .unwrap();
                 self.builder
-                    .build_call(
-                        self.runtime_array_unique(),
-                        &[
-                            arr.into(),
-                            elem_copy.into(),
-                            self.lower_ty(elem_ty).size_of().unwrap().into(),
-                        ],
-                        "",
-                    )
+                    .build_call(self.array_unique(ty, elem_ty), &[arr.into()], "")
                     .unwrap();
                 unsafe {
                     self.builder
