@@ -57,7 +57,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     Some(self.tuple_copy(ty, elem_tys))
                 }
             }
-            Ty::Array(elem_ty) => Some(self.array_copy(elem_ty)),
+            Ty::Array(_) => Some(self.array_copy(ty)),
             Ty::Fn(..) => Some(self.closure_copy()),
             Ty::Named(id) => Some(self.struct_copy(*id)),
         }
@@ -359,36 +359,155 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub(crate) fn array_drop(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
         let func_name = format!("{}.drop", self.mangle_ty(ty));
 
-        // Check if we already built this function
+        // Check if we already built this function.
         if let Some(func) = self.module.get_function(&func_name) {
             return func;
         }
 
-        // Save the builder's current insertion block to restore at the end
+        // Save the builder's current insertion block to restore at the end.
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
-        // Create the drop function
+        // Create the function and blocks, and extract the arguments.
         let func =
             self.module
                 .add_function(&func_name, self.drop_func_ty(), Some(Linkage::Private));
-        self.builder
-            .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let elem_drop = self.drop_func(elem_ty).map_or_else(
-            || self.null_ptr(),
-            |f| f.as_global_value().as_pointer_value(),
-        );
-        self.builder
-            .build_call(
-                self.runtime_array_drop(),
-                &[
-                    func.get_first_param().unwrap().into(),
-                    elem_drop.into(),
-                    self.lower_ty(elem_ty).size_of().unwrap().into(),
-                ],
-                "",
-            )
-            .unwrap();
-        self.builder.build_return(None).unwrap();
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let decr_block = self.ctx.append_basic_block(func, "decr");
+        let drop_block = self.ctx.append_basic_block(func, "drop");
+        let loop_block = self.ctx.append_basic_block(func, "loop");
+        let free_block = self.ctx.append_basic_block(func, "free");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let array = func.get_first_param().unwrap().into_pointer_value();
+
+        // Return immediately if the array hasn't been allocated.
+        let header = {
+            self.builder.position_at_end(entry_block);
+            let header = self.get_array_header(array);
+            let is_null = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_null, ret_block, decr_block)
+                .unwrap();
+            header
+        };
+
+        // Decrement refcount and branch to drop block if it hits 0 and the element type needs to be dropped.
+        // We rely on LLVM to optimise out the drop block if it isn't needed for the element type.
+        {
+            self.builder.position_at_end(decr_block);
+            let refc = self
+                .builder
+                .build_struct_gep(self.array_header_ty(), header, 0, "refc")
+                .unwrap();
+            let old_refc = self
+                .builder
+                .build_atomicrmw(
+                    AtomicRMWBinOp::Sub,
+                    refc,
+                    self.ctx.i64_type().const_int(1, false),
+                    AtomicOrdering::AcquireRelease,
+                )
+                .unwrap();
+            let no_refs = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    old_refc,
+                    self.ctx.i64_type().const_int(1, false),
+                    "",
+                )
+                .unwrap();
+
+            let target_block = if self.is_trivial(elem_ty) {
+                free_block
+            } else {
+                drop_block
+            };
+            self.builder
+                .build_conditional_branch(no_refs, target_block, ret_block)
+                .unwrap();
+        }
+
+        // Initialise the loop to drop all the elements.
+        let (count, index, payload) = {
+            self.builder.position_at_end(drop_block);
+            let count = self
+                .builder
+                .build_struct_gep(self.array_header_ty(), header, 1, "count")
+                .unwrap();
+            let count = self
+                .builder
+                .build_load(self.ctx.i64_type(), count, "")
+                .unwrap()
+                .into_int_value();
+            let index = self.emit_alloca_entry(self.ctx.i64_type().as_basic_type_enum(), "index");
+            let payload = self.get_array_payload(array);
+            let empty = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    count,
+                    self.ctx.i64_type().const_zero(),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(empty, free_block, loop_block)
+                .unwrap();
+            (count, index, payload)
+        };
+
+        // Loop over each element and free it.
+        {
+            self.builder.position_at_end(loop_block);
+            let curr_index = self
+                .builder
+                .build_load(self.ctx.i64_type(), index, "")
+                .unwrap()
+                .into_int_value();
+            let elem = unsafe {
+                self.builder
+                    .build_in_bounds_gep(self.lower_ty(elem_ty), payload, &[curr_index], "")
+                    .unwrap()
+            };
+            self.emit_drop(elem_ty, elem.as_basic_value_enum());
+            let new_index = self
+                .builder
+                .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
+                .unwrap();
+            self.builder.build_store(index, new_index).unwrap();
+            let done = self
+                .builder
+                .build_int_compare(IntPredicate::UGE, new_index, count, "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(done, free_block, loop_block)
+                .unwrap();
+        }
+
+        // Free the memory allocation.
+        {
+            self.builder.position_at_end(free_block);
+            self.builder
+                .build_call(self.free(), &[header.into()], "")
+                .unwrap();
+            let payload_ptr = self
+                .builder
+                .build_struct_gep(self.array_ty(), array, 0, "")
+                .unwrap();
+            self.builder
+                .build_store(payload_ptr, self.null_ptr())
+                .unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+        }
+
+        // Return
+        {
+            self.builder.position_at_end(ret_block);
+            self.builder.build_return(None).unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 
@@ -419,21 +538,16 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.builder.position_at_end(entry_block);
         let array_ty = self.array_ty();
         self.emit_memcpy(dst, src, &array_ty);
+        let header = self.get_array_header(src);
         let is_null = self
             .builder
-            .build_int_compare(
-                IntPredicate::EQ,
-                self.get_array_payload(src),
-                self.null_ptr(),
-                "nullchk",
-            )
+            .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "nullchk")
             .unwrap();
         self.builder
             .build_conditional_branch(is_null, ret_block, incr_block)
             .unwrap();
 
         self.builder.position_at_end(incr_block);
-        let header = self.get_array_header(src);
         let refc = self
             .builder
             .build_struct_gep(self.array_header_ty(), header, 0, "refc")
@@ -500,8 +614,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_init(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].init", self.mangle_ty(elem_ty));
+    pub(crate) fn array_init(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.init", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -512,17 +626,16 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the init function
-        let ty = self
+        let func_ty = self
             .ctx
             .void_type()
             .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
         let func = self
             .module
-            .add_function(&func_name, ty, Some(Linkage::Private));
+            .add_function(&func_name, func_ty, Some(Linkage::Private));
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let count_zero_block = self.ctx.append_basic_block(func, "count.zero");
         let count_not_zero_block = self.ctx.append_basic_block(func, "count.not_zero");
-        //let entry = self.ctx.append_basic_block(func, "entry");
         let ret_block = self.ctx.append_basic_block(func, "return");
         let array = func.get_nth_param(0).unwrap().into_pointer_value();
         let count = func.get_nth_param(1).unwrap().into_int_value();
@@ -561,7 +674,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             // Calculate capacity.
             let cap = self
                 .builder
-                .build_call(self.array_calc_cap(elem_ty), &[count.into()], "")
+                .build_call(self.array_calc_cap(ty, elem_ty), &[count.into()], "")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
@@ -580,7 +693,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_pointer_value();
-            // Store offset pointer to alloc into array out parameter
+            // Store offset pointer to alloc into array out parameter.
             let src_payload = unsafe {
                 self.builder
                     .build_in_bounds_gep(
@@ -596,7 +709,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_struct_gep(self.array_ty(), array, 0, "")
                 .unwrap();
             self.builder.build_store(dst_payload, src_payload).unwrap();
-            // Initialise each field of the header
+            // Initialise each field of the header.
             let refc_ptr = self
                 .builder
                 .build_struct_gep(header_ty, alloc, 0, "")
@@ -627,8 +740,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_calc_cap(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("a[{}].calc_cap", self.mangle_ty(elem_ty));
+    pub(crate) fn array_calc_cap(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+        let func_name = format!("{}.calc_cap", self.mangle_ty(ty));
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(&func_name) {
@@ -858,7 +971,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     pub(crate) fn array_bounds_check(&self) -> FunctionValue<'ctx> {
-        let func_name = "a[].bounds_check";
+        let func_name = "bounds_check";
 
         // Check if we already built this function
         if let Some(func) = self.module.get_function(func_name) {

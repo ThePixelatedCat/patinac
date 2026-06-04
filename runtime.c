@@ -17,8 +17,6 @@ void* _malloc(uint64_t size) {
     return ptr;
 }
 
-void _free(void* ptr) { free(ptr); }
-
 typedef const void (*DropFn)(void*);
 typedef const void (*CopyFn)(void*, void*);
 typedef const bool (*EqualFn)(const void*, const void*);
@@ -49,29 +47,6 @@ typedef struct ArrayHeader {
 static inline ArrayHeader* get_array_header(Array* array) {
     if (array->payload == NULL) return NULL;
     return (ArrayHeader*)((uint8_t*)array->payload - sizeof(ArrayHeader));
-}
-
-void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size) {
-    // Don't do anything if the array storage is unallocated (empty array)
-    ArrayHeader* header = get_array_header(array);
-    if (header == NULL) return;
-
-    // Decrement the ref count
-    int old_val = atomic_fetch_sub_explicit(&header->refc, 1, memory_order_acq_rel);
-
-    // If the ref count reached zero, we drop each element if needed and
-    // deallocate the storage
-    if (old_val == 1) {
-        if (elem_drop != NULL) {
-            uint8_t* payload = (uint8_t*)array->payload;
-            for (size_t i = 0; i < header->count; ++i) {
-                elem_drop(&payload[i * elem_size]);
-            }
-        }
-
-        free(header);
-        array->payload = NULL;
-    }
 }
 
 bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size) {
@@ -125,12 +100,4 @@ void _array_unique(Array* array, CopyFn elem_copy, uint64_t elem_size) {
     // Insert the new storage and decrement the ref count on the old storage
     array->payload = new_payload;
     atomic_fetch_sub_explicit(&old_header->refc, 1, memory_order_acq_rel);
-}
-
-void _array_bounds_check(Array* array, uint64_t idx) {
-    ArrayHeader* header = get_array_header(array);
-    if ((header == NULL) || (idx >= header->count)) {
-        _panic("index out of bounds");
-        return;
-    }
 }

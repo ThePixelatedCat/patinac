@@ -104,19 +104,28 @@ pub struct Codegen<'hir, 'handler, 'ctx> {
     lambda_counter: u32,
 }
 
+/// Creates a new [`Context`].
+///
+/// This is a direct wrapper over [`Context::create()`], and exists so that other crates don't have to depend on Inkwell directly.
 pub fn create_ctx() -> Context {
     Context::create()
 }
 
 impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
+    /// Creates a new [`Codegen`] for a package with the given name.
+    ///
+    /// The context should be obtained via [`create_ctx()`].
+    ///
+    /// # Panics
+    /// Panics if there is an issue initialising the target.
     pub fn new(
         hir: &'hir Hir,
         ty_map: &'hir TyMap,
         handler: ErrorHandler<'handler>,
         ctx: &'ctx Context,
-        module_name: &str,
+        package_name: &str,
     ) -> Self {
-        let module = ctx.create_module(module_name);
+        let module = ctx.create_module(package_name);
 
         Target::initialize_native(&InitializationConfig::default()).unwrap();
         let triple = TargetMachine::get_default_triple();
@@ -331,21 +340,21 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     fn array_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("_Array") {
+        if let Some(ty) = self.module.get_struct_type("Array") {
             return ty.as_basic_type_enum();
         }
 
-        let ty = self.ctx.opaque_struct_type("_Array");
+        let ty = self.ctx.opaque_struct_type("Array");
         ty.set_body(&[self.ptr_ty()], false);
         ty.as_basic_type_enum()
     }
 
     fn array_header_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("_ArrayHeader") {
+        if let Some(ty) = self.module.get_struct_type("ArrayHeader") {
             return ty.as_basic_type_enum();
         }
 
-        let ty = self.ctx.opaque_struct_type("_ArrayHeader");
+        let ty = self.ctx.opaque_struct_type("ArrayHeader");
         let i64_ty = self.ctx.i64_type().as_basic_type_enum();
         // Refcount, element count, capacity
         ty.set_body(&[i64_ty, i64_ty, i64_ty], false);
@@ -402,11 +411,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("_Closure") {
+        if let Some(ty) = self.module.get_struct_type("Closure") {
             return ty.as_basic_type_enum();
         }
 
-        let ty = self.ctx.opaque_struct_type("_Closure");
+        let ty = self.ctx.opaque_struct_type("Closure");
         ty.set_body(
             &[
                 // Function
@@ -485,9 +494,19 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     pub(crate) fn emit_drop(&self, ty: &Ty, val: BasicValueEnum<'ctx>) {
-        // Trivial types don't have a drop function and don't need dropping
-        let Some(func) = self.drop_func(ty) else {
-            return;
+        let func = match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(elem_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if elem_tys.is_empty() {
+                    return;
+                }
+                self.tuple_drop(ty, elem_tys)
+            }
+            Ty::Array(elem_ty) => self.array_drop(ty, elem_ty),
+            Ty::Fn(_, _) => self.closure_drop(),
+            Ty::Named(id) => self.struct_drop(*id),
         };
         self.builder
             .build_call(func, &[val.into()], "drop")
@@ -495,9 +514,23 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     pub(crate) fn emit_copy(&self, ty: &Ty, val: BasicValueEnum<'ctx>, dst: PointerValue<'ctx>) {
-        // Trivial types don't have a copy function and don't need dropping
-        let Some(func) = self.copy_func(ty) else {
-            return;
+        let func = match ty {
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
+                self.builder.build_store(dst, val).unwrap();
+                return;
+            }
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(elem_tys) => {
+                // If it's empty, it's unit and therefore trivial + direct
+                if elem_tys.is_empty() {
+                    self.builder.build_store(dst, val).unwrap();
+                    return;
+                }
+                self.tuple_copy(ty, elem_tys)
+            }
+            Ty::Array(_) => self.array_copy(ty),
+            Ty::Fn(..) => self.closure_copy(),
+            Ty::Named(id) => self.struct_copy(*id),
         };
         self.builder
             .build_call(
@@ -616,7 +649,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::Char => "c".to_string(),
             Ty::Bool => "b".to_string(),
             Ty::Tuple(tys) => format!(
-                "T{}",
+                "T{}E",
                 tys.iter().map(|ty| self.mangle_ty(ty)).collect::<String>()
             ),
             Ty::Array(ty) => format!("A{}", self.mangle_ty(ty)),
@@ -626,7 +659,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
                     s
                 });
-                format!("f[{param_names};{}]", self.mangle_ty(ret_ty))
+                format!("F{param_names}R{}", self.mangle_ty(ret_ty))
             }
             Ty::Named(id) => Self::mangle_name(self.hir.ty_ident(*id).ident.to_string()),
         }

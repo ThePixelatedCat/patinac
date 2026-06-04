@@ -254,7 +254,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let alloc = self.emit_alloca_entry(self.array_ty(), "array");
         self.builder
             .build_call(
-                self.array_init(elem_ty),
+                self.array_init(ty, elem_ty),
                 &[
                     alloc.into(),
                     self.ctx

@@ -20,11 +20,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     pub(crate) fn free(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("_free") {
+        if let Some(func) = self.module.get_function("free") {
             return func;
         }
         let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
-        self.module.add_function("_free", ty, None)
+        self.module.add_function("free", ty, None)
     }
 
     pub(crate) fn panic(&self) -> FunctionValue<'ctx> {
@@ -33,22 +33,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
         let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
         self.module.add_function("_panic", ty, None)
-    }
-
-    /// `void _array_drop(Array* array, DropFn elem_drop, uint64_t elem_size)`.
-    pub(crate) fn runtime_array_drop(&self) -> FunctionValue<'ctx> {
-        if let Some(func) = self.module.get_function("_array_drop") {
-            return func;
-        }
-        let ty = self.ctx.void_type().fn_type(
-            &[
-                self.ptr_ty().into(),
-                self.ptr_ty().into(),
-                self.ctx.i64_type().into(),
-            ],
-            false,
-        );
-        self.module.add_function("_array_drop", ty, None)
     }
 
     /// `bool _array_equals(Array* lhs, Array* rhs, EqualFn elem_equals, uint64_t elem_size)`.
