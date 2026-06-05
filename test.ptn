@@ -4,6 +4,7 @@ fn main(): () = {
     swap(mut foo.[0], mut foo.[1])
     print foo.[0].[0]
     print foo.[1].[0]
+    print foo.[2].[0]
 }
 
 fn swap(mut a: [Int], mut b: [Int]): () = { 

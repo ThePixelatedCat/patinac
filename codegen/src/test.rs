@@ -148,7 +148,8 @@ fn closures() {
     let input = "
     fn main(): () = {
         let m = 3
-        apply(fn(n) -> print n + m, 2)
+        let f = apply
+        f(fn(n) -> print n + m, 2)
     }
 
     fn apply(f: Fn(UInt) -> (), v: UInt): () = f(v)

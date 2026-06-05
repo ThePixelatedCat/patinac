@@ -86,7 +86,41 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         if let Some(func) = self.module.get_function("panic") {
             return func;
         }
+
+        // Save the builder's current insertion block to restore at the end.
+        let old_insert_block = self.builder.get_insert_block().unwrap();
+
         let ty = self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false);
-        self.module.add_function("panic", ty, None)
+        let func = self
+            .module
+            .add_function("panic", ty, Some(Linkage::Private));
+        self.builder
+            .position_at_end(self.ctx.append_basic_block(func, "entry"));
+        self.builder
+            .build_call(self.printf(), &[func.get_first_param().unwrap().into()], "")
+            .unwrap();
+        self.builder
+            .build_call(
+                self.exit(),
+                &[self.ctx.i32_type().const_int(1, false).into()],
+                "",
+            )
+            .unwrap();
+        self.builder.build_return(None).unwrap();
+
+        self.builder.position_at_end(old_insert_block);
+
+        func
+    }
+
+    fn exit(&self) -> FunctionValue<'ctx> {
+        if let Some(func) = self.module.get_function("exit") {
+            return func;
+        }
+        let ty = self
+            .ctx
+            .void_type()
+            .fn_type(&[self.ctx.i32_type().into()], false);
+        self.module.add_function("exit", ty, None)
     }
 }
