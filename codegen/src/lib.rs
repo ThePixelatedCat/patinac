@@ -24,7 +24,7 @@ use inkwell::{
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
-    values::{BasicValue as _, BasicValueEnum, FunctionValue, PointerValue},
+    values::{BasicValue as _, BasicValueEnum, FunctionValue, IntValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
@@ -374,16 +374,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
 
     fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
         let payload = self.get_array_payload(array);
-        let header = unsafe {
-            self.builder
-                .build_in_bounds_gep(
-                    self.array_header_ty(),
-                    payload,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
-                    "header",
-                )
-                .unwrap()
-        };
+        let header = self.get_array_header_from_payload(payload);
         let is_null = self
             .builder
             .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "")
@@ -392,6 +383,19 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             .build_select(is_null, self.null_ptr(), header, "")
             .unwrap()
             .into_pointer_value()
+    }
+
+    fn get_array_header_from_payload(&self, payload: PointerValue<'ctx>) -> PointerValue<'ctx> {
+        unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    self.array_header_ty(),
+                    payload,
+                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
+                    "header",
+                )
+                .unwrap()
+        }
     }
 
     fn func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
@@ -555,7 +559,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ty: &Ty,
         lhs: BasicValueEnum<'ctx>,
         rhs: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> IntValue<'ctx> {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
                 .builder
@@ -565,8 +569,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     rhs.into_int_value(),
                     "equals",
                 )
-                .unwrap()
-                .as_basic_value_enum(),
+                .unwrap(),
             Ty::Float => self
                 .builder
                 .build_float_compare(
@@ -575,13 +578,12 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     rhs.into_float_value(),
                     "equals",
                 )
-                .unwrap()
-                .as_basic_value_enum(),
+                .unwrap(),
             Ty::Char => todo!("Strings"),
             Ty::Tuple(inner_tys) => {
                 // If it's empty, it's unit and therefore always equals
                 if inner_tys.is_empty() {
-                    self.ctx.bool_type().const_all_ones().as_basic_value_enum()
+                    self.ctx.bool_type().const_int(1, false)
                 } else {
                     self.builder
                         .build_call(
@@ -592,6 +594,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                         .unwrap()
                         .try_as_basic_value()
                         .unwrap_basic()
+                        .into_int_value()
                 }
             }
             Ty::Array(inner_ty) => self
@@ -603,19 +606,22 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 )
                 .unwrap()
                 .try_as_basic_value()
-                .unwrap_basic(),
+                .unwrap_basic()
+                .into_int_value(),
             Ty::Fn(_, _) => self
                 .builder
                 .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
                 .unwrap()
                 .try_as_basic_value()
-                .unwrap_basic(),
+                .unwrap_basic()
+                .into_int_value(),
             Ty::Named(id) => self
                 .builder
                 .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
                 .unwrap()
                 .try_as_basic_value()
-                .unwrap_basic(),
+                .unwrap_basic()
+                .into_int_value(),
         }
     }
 

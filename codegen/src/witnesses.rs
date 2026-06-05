@@ -25,135 +25,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.ctx.bool_type().fn_type(&[ptr, ptr], false)
     }
 
-    /// Returns the drop witness function for the provided type, or `None` if it is a trivial type.
-    pub(crate) fn drop_func(&self, ty: &Ty) -> Option<FunctionValue<'ctx>> {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => None,
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if elem_tys.is_empty() {
-                    None
-                } else {
-                    Some(self.tuple_drop(ty, elem_tys))
-                }
-            }
-            Ty::Array(elem_ty) => Some(self.array_drop(ty, elem_ty)),
-            Ty::Fn(..) => Some(self.closure_drop()),
-            Ty::Named(id) => Some(self.struct_drop(*id)),
-        }
-    }
-
-    /// Returns the copy witness function for the provided type, or `None` if it is a trivial type.
-    pub(crate) fn copy_func(&self, ty: &Ty) -> Option<FunctionValue<'ctx>> {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => None,
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
-                if elem_tys.is_empty() {
-                    None
-                } else {
-                    Some(self.tuple_copy(ty, elem_tys))
-                }
-            }
-            Ty::Array(_) => Some(self.array_copy(ty)),
-            Ty::Fn(..) => Some(self.closure_copy()),
-            Ty::Named(id) => Some(self.struct_copy(*id)),
-        }
-    }
-
-    /// Returns the equals witness function for the provided type.
-    pub(crate) fn equals_func(&self, ty: &Ty) -> FunctionValue<'ctx> {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self.int_equals(ty),
-            Ty::Float => self.float_equals(),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(elem_tys) => self.tuple_equals(ty, elem_tys),
-            Ty::Array(elem_ty) => self.array_equals(ty, elem_ty),
-            Ty::Fn(..) => self.closure_equals(),
-            Ty::Named(id) => self.struct_equals(*id),
-        }
-    }
-
-    pub(crate) fn int_equals(&self, ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle_ty(ty));
-
-        // Check if we already built this function
-        if let Some(func) = self.module.get_function(&func_name) {
-            return func;
-        }
-
-        // Save the builder's current insertion block to restore at the end.
-        let old_insert_block = self.builder.get_insert_block().unwrap();
-
-        // Create the equality function
-        let func =
-            self.module
-                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
-        self.builder
-            .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let ty = self.lower_ty(ty);
-        let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
-        let lhs = self.builder.build_load(ty, lhs, "lhs").unwrap();
-        let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
-        let rhs = self.builder.build_load(ty, rhs, "rhs").unwrap();
-        let equals = self
-            .builder
-            .build_int_compare(
-                IntPredicate::EQ,
-                lhs.into_int_value(),
-                rhs.into_int_value(),
-                "equals",
-            )
-            .unwrap()
-            .as_basic_value_enum();
-        self.builder.build_return(Some(&equals)).unwrap();
-
-        self.builder.position_at_end(old_insert_block);
-
-        func
-    }
-
-    pub(crate) fn float_equals(&self) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle_ty(&Ty::Float));
-
-        // Check if we already built this function
-        if let Some(func) = self.module.get_function(&func_name) {
-            return func;
-        }
-
-        // Save the builder's current insertion block to restore at the end.
-        let old_insert_block = self.builder.get_insert_block().unwrap();
-
-        // Create the equality function
-        let func =
-            self.module
-                .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
-        self.builder
-            .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let ty = self.ctx.f64_type();
-        let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
-        let lhs = self.builder.build_load(ty, lhs, "lhs").unwrap();
-        let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
-        let rhs = self.builder.build_load(ty, rhs, "rhs").unwrap();
-        let equals = self
-            .builder
-            .build_int_compare(
-                IntPredicate::EQ,
-                lhs.into_int_value(),
-                rhs.into_int_value(),
-                "equals",
-            )
-            .unwrap()
-            .as_basic_value_enum();
-        self.builder.build_return(Some(&equals)).unwrap();
-
-        self.builder.position_at_end(old_insert_block);
-
-        func
-    }
-
     pub(crate) fn tuple_drop(&self, ty: &Ty, inner_tys: &[Ty]) -> FunctionValue<'ctx> {
         self.fields_drop(ty, inner_tys)
     }
@@ -335,9 +206,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
             // If the fields are equal, continue to a new block for the next comparison, else branch to the not-equal block
             let eq_block = self.ctx.append_basic_block(func, "eq");
-            let equals = self.emit_equals(field, lhs, rhs).into_int_value();
+            let equal = self.emit_equals(field, lhs, rhs);
             self.builder
-                .build_conditional_branch(equals, eq_block, ne_block)
+                .build_conditional_branch(equal, eq_block, ne_block)
                 .unwrap();
             self.builder.position_at_end(eq_block);
         }
@@ -588,29 +459,180 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let func =
             self.module
                 .add_function(&func_name, self.equals_func_ty(), Some(Linkage::Private));
-        self.builder
-            .position_at_end(self.ctx.append_basic_block(func, "entry"));
-        let lhs = func.get_nth_param(0).unwrap().into();
-        let rhs = func.get_nth_param(1).unwrap().into();
-        let result = self
-            .builder
-            .build_call(
-                self.runtime_array_equals(),
-                &[
-                    lhs,
-                    rhs,
-                    self.equals_func(elem_ty)
-                        .as_global_value()
-                        .as_pointer_value()
-                        .into(),
-                    self.lower_ty(elem_ty).size_of().unwrap().into(),
-                ],
-                "",
-            )
-            .unwrap()
-            .try_as_basic_value()
-            .unwrap_basic();
-        self.builder.build_return(Some(&result)).unwrap();
+        let entry_block = self.ctx.append_basic_block(func, "entry");
+        let null_block = self.ctx.append_basic_block(func, "null");
+        let count_block = self.ctx.append_basic_block(func, "count");
+        let empty_block = self.ctx.append_basic_block(func, "empty");
+        let loop_init_block = self.ctx.append_basic_block(func, "loop_init");
+        let loop_block = self.ctx.append_basic_block(func, "loop");
+        // let free_block = self.ctx.append_basic_block(func, "free");
+        let ret_block = self.ctx.append_basic_block(func, "return");
+        let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
+        let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
+
+        // Always equal if the arrays share storage. This will also handle both arrays being unallocated.
+        let (lhs_payload, rhs_payload) = {
+            self.builder.position_at_end(entry_block);
+            let lhs_payload = self.get_array_payload(lhs);
+            let rhs_payload = self.get_array_payload(rhs);
+            let equal = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, lhs_payload, rhs_payload, "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(equal, ret_block, null_block)
+                .unwrap();
+            (lhs_payload, rhs_payload)
+        };
+
+        // If either array is unallocated, they're not equal (both being unallocated is handled in the entry block).
+        {
+            self.builder.position_at_end(null_block);
+            let lhs_null = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, lhs_payload, self.null_ptr(), "")
+                .unwrap();
+            let rhs_null = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, rhs_payload, self.null_ptr(), "")
+                .unwrap();
+            let either_null = self.builder.build_or(lhs_null, rhs_null, "").unwrap();
+            self.builder
+                .build_conditional_branch(either_null, ret_block, count_block)
+                .unwrap();
+        }
+
+        // If the arrays' counts aren't equal, they're not equal.
+        let count = {
+            self.builder.position_at_end(count_block);
+            let lhs_header = self.get_array_header_from_payload(lhs_payload);
+            let lhs_count = self
+                .builder
+                .build_struct_gep(self.array_header_ty(), lhs_header, 1, "")
+                .unwrap();
+            let lhs_count = self
+                .builder
+                .build_load(self.ctx.i64_type(), lhs_count, "")
+                .unwrap()
+                .into_int_value();
+            let rhs_header = self.get_array_header_from_payload(rhs_payload);
+            let rhs_count = self
+                .builder
+                .build_struct_gep(self.array_header_ty(), rhs_header, 1, "")
+                .unwrap();
+            let rhs_count = self
+                .builder
+                .build_load(self.ctx.i64_type(), rhs_count, "")
+                .unwrap()
+                .into_int_value();
+            let counts_eq = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, lhs_count, rhs_count, "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(counts_eq, empty_block, ret_block)
+                .unwrap();
+            lhs_count
+        };
+
+        // If the arrays are empty, they're equal.
+        {
+            self.builder.position_at_end(empty_block);
+            let empty = self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    count,
+                    self.ctx.i64_type().const_zero(),
+                    "",
+                )
+                .unwrap();
+            self.builder
+                .build_conditional_branch(empty, ret_block, loop_init_block)
+                .unwrap();
+        }
+
+        // Initialise the loop.
+        let index = {
+            self.builder.position_at_end(loop_init_block);
+            let index = self.emit_alloca_entry(self.ctx.i64_type().as_basic_type_enum(), "index");
+            self.builder
+                .build_store(index, self.ctx.i64_type().const_zero())
+                .unwrap();
+            self.builder.build_unconditional_branch(loop_block).unwrap();
+            index
+        };
+
+        // Loop over each pair of elements to check their equality.
+        let equal = {
+            self.builder.position_at_end(loop_block);
+            let curr_index = self
+                .builder
+                .build_load(self.ctx.i64_type(), index, "")
+                .unwrap()
+                .into_int_value();
+            let lowered_elem_ty = self.lower_ty(elem_ty);
+            let lhs_elem = unsafe {
+                self.builder
+                    .build_in_bounds_gep(lowered_elem_ty, lhs_payload, &[curr_index], "")
+                    .unwrap()
+            };
+            let rhs_elem = unsafe {
+                self.builder
+                    .build_in_bounds_gep(lowered_elem_ty, rhs_payload, &[curr_index], "")
+                    .unwrap()
+            };
+            // Need to load the elements if they're direct.
+            let equal = if Self::is_indirect(elem_ty) {
+                self.emit_equals(elem_ty, lhs_elem.into(), rhs_elem.into())
+            } else {
+                let lhs_elem = self
+                    .builder
+                    .build_load(lowered_elem_ty, lhs_elem, "")
+                    .unwrap();
+                let rhs_elem = self
+                    .builder
+                    .build_load(lowered_elem_ty, rhs_elem, "")
+                    .unwrap();
+                self.emit_equals(elem_ty, lhs_elem, rhs_elem)
+            };
+            let new_index = self
+                .builder
+                .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
+                .unwrap();
+            self.builder.build_store(index, new_index).unwrap();
+            let done = self
+                .builder
+                .build_int_compare(IntPredicate::UGE, new_index, count, "")
+                .unwrap();
+            let should_cont = self
+                .builder
+                .build_select(done, self.ctx.bool_type().const_zero(), equal, "")
+                .unwrap()
+                .into_int_value();
+            self.builder
+                .build_conditional_branch(should_cont, loop_block, ret_block)
+                .unwrap();
+            equal
+        };
+
+        // Return the equality value.
+        {
+            self.builder.position_at_end(ret_block);
+            let ret_val = self.builder.build_phi(self.ctx.bool_type(), "").unwrap();
+            let true_val = self.ctx.bool_type().const_int(1, false);
+            let false_val = self.ctx.bool_type().const_zero();
+            ret_val.add_incoming(&[
+                (&true_val, entry_block),
+                (&false_val, null_block),
+                (&false_val, count_block),
+                (&true_val, empty_block),
+                (&equal, loop_block),
+            ]);
+            self.builder
+                .build_return(Some(&ret_val.as_basic_value()))
+                .unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 
@@ -1659,11 +1681,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     };
                     // Bail out if we found a difference.
                     let eq_block = self.ctx.append_basic_block(func, "eq");
-                    let test = self
-                        .emit_equals(ty, lhs_capture, rhs_capture)
-                        .into_int_value();
+                    let equal = self.emit_equals(ty, lhs_capture, rhs_capture);
                     self.builder
-                        .build_conditional_branch(test, eq_block, ne_block)
+                        .build_conditional_branch(equal, eq_block, ne_block)
                         .unwrap();
                     self.builder.position_at_end(eq_block);
                 }

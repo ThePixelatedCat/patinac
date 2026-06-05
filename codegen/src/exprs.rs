@@ -387,11 +387,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 let equals = self.emit_equals(ty, lhs, rhs);
                 if op == InfixOp::Neq {
                     self.builder
-                        .build_not(equals.into_int_value(), "not_equals")
+                        .build_not(equals, "")
                         .unwrap()
                         .as_basic_value_enum()
                 } else {
-                    equals
+                    equals.as_basic_value_enum()
                 }
             }
             InfixOp::Gt => self

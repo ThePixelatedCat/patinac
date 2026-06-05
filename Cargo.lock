@@ -138,7 +138,6 @@ dependencies = [
  "hir",
  "ident",
  "inkwell",
- "itertools",
  "nameres",
  "parse",
  "slotmap",
