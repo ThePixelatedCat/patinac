@@ -65,16 +65,16 @@ impl Parser<'_> {
                 .span(span))
             }
             TokKind::Ident => {
-                let ident = self.ident()?;
+                let (path, span) = self.path()?;
 
                 let (generics, end) = if self.at(TokKind::LBracket) {
                     self.delimited_list(Self::ty, TokKind::LBracket, TokKind::RBracket)
                         .map(|(g, s)| (g, s.end))?
                 } else {
-                    (vec![], ident.span.end)
+                    (vec![], span.end)
                 };
 
-                Ok(TyKind::Named(ident.ident, generics).span(ident.span.start..end))
+                Ok(TyKind::Named(path, generics).span(span.start..end))
             }
             _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }

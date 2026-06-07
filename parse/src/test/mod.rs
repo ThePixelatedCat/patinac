@@ -9,7 +9,7 @@ use smallvec::smallvec;
 
 use ast::{
     Arg, Binding, BlockExpr, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, ParamTy, PatKind,
-    Return, Stmt, TyItem, TyItemKind, TyKind,
+    Path, Return, Stmt, TyItem, TyItemKind, TyKind,
 };
 use errors::{DUMMY_HANDLER, TEST_HANDLER};
 use ident::Ident;
@@ -54,10 +54,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                     Param {
                         pat: PatKind::ident("bar").span(27..30),
                         ty: TyKind::Named(
-                            Ident::new("Bar"),
+                            Path::single(Ident::new("Bar")),
                             vec![
                                 TyKind::Named(
-                                    Ident::new("Baz"),
+                                    Path::single(Ident::new("Baz")),
                                     vec![TyKind::named("T").span(40..41)],
                                 )
                                 .span(36..42),
@@ -214,10 +214,10 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                 Field {
                     ident: Ident::new("bar").span(259..262),
                     ty: TyKind::Named(
-                        Ident::new("Bar"),
+                        Path::single(Ident::new("Bar")),
                         vec![
                             TyKind::Named(
-                                Ident::new("Baz"),
+                                Path::single(Ident::new("Baz")),
                                 vec![TyKind::named("T").span(272..273)]
                             )
                             .span(268..274),

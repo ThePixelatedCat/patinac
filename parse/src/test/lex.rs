@@ -65,7 +65,7 @@ fn single_char_tokens_with_whitespace() {
 
 #[test]
 fn maybe_multiple_char_tokens() {
-    let src = "&&=<=_!=||**->";
+    let src = "&&=<=_!=||**->::";
     assert_eq!(
         test_lex(src),
         Ok(vec![
@@ -77,6 +77,7 @@ fn maybe_multiple_char_tokens() {
             T::Or.span(8..10),
             T::Exponent.span(10..12),
             T::Arrow.span(12..14),
+            T::PathSep.span(14..16)
         ]),
     );
 }

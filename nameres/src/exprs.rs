@@ -31,7 +31,7 @@ pub fn resolve_expr(
     expr: AstExpr,
 ) -> Result<ExprId> {
     let new_expr = match expr.kind {
-        ExprKind::Ident(ident) => match var_scope.get(&ident) {
+        ExprKind::Var(ident) => match var_scope.get(&ident) {
             Some(&id) => HirExpr::Ident(id),
             None => {
                 return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span)));
@@ -281,7 +281,7 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
 
 fn collect_captures(captures: &mut HashSet<Ident>, expr: &AstExpr) {
     match &expr.kind {
-        ExprKind::Ident(ident) => {
+        ExprKind::Var(ident) => {
             captures.insert(*ident);
         }
         ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}

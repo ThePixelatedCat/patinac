@@ -12,15 +12,71 @@ use smallvec::SmallVec;
 
 use ident::{Ident, SpanIdent};
 
-/// The top-level representation of a program, containing all of the program's items.
+/// The top-level representation of a single module, containing all of the module's items.
 ///
 /// For easier manipulation, these items are split into [ type definitions][TyItem] and "[executable items][ExecItem]" (items containing expressions).
 #[derive(Default)]
 pub struct Ast {
-    /// The type definitions of a program, containing both `enum` and `record` definitions.
+    /// The type definitions of a module, containing both `enum` and `record` definitions.
     pub tys: Vec<TyItem>,
-    /// The "executable items" of a program. These are the items that contain expressions.
+    /// The "executable items" of a module. These are the items that contain expressions.
     pub execs: Vec<ExecItem>,
+}
+
+/// A path made of one or more identifiers.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Path {
+    head: SmallVec<[Ident; 4]>,
+    tail: Ident,
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut string = String::new();
+        for ident in &self.head {
+            string.push_str(&ident.str());
+            string.push_str("::");
+        }
+        string.push_str(&self.tail.str());
+        string.fmt(f)
+    }
+}
+
+impl Path {
+    /// Create a path made of a single identifier.
+    pub const fn single(ident: Ident) -> Self {
+        Self {
+            head: SmallVec::new_const(),
+            tail: ident,
+        }
+    }
+
+    /// Add to the end of the path.
+    pub fn push(&mut self, ident: Ident) {
+        self.head.push(self.tail);
+        self.tail = ident;
+    }
+
+    /// Attempts to create a path, returning None if the provided `Vec` is empty.
+    pub fn new(mut path: Vec<Ident>) -> Option<Self> {
+        let tail = path.pop()?;
+        Some(Self {
+            head: path.into(),
+            tail,
+        })
+    }
+
+    /// Creates a path of a constant length.
+    ///
+    /// # Panics
+    /// Will panic at compile-time if the length is 0.
+    pub fn new_const<const N: usize>(path: [Ident; N]) -> Self {
+        const { assert!(N > 0, "path must be non-empty") }
+        Self {
+            head: SmallVec::from_slice(&path[0..N - 1]),
+            tail: path[N - 1],
+        }
+    }
 }
 
 /// The definition of a type, either a `record` or a `enum`.
@@ -166,7 +222,7 @@ impl Expr {
 /// The kinds of expressions.
 pub enum ExprKind {
     /// A variable name, such as `foo`.
-    Ident(Ident),
+    Var(Path),
     /// A basic literal value, such as `1.2` or `"Hello, World"`. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
     /// An array literal, such as `[1, 2, 3]`.
@@ -257,7 +313,7 @@ impl ExprKind {
     }
 
     pub fn ident(string: &str) -> Self {
-        Self::Ident(Ident::new(string))
+        Self::Var(Path::single(Ident::new(string)))
     }
 
     pub const fn int(i: u64) -> Self {
@@ -392,7 +448,7 @@ pub enum TyKind {
     #[display("fn({}) -> {_1}", _0.iter().join(", "))]
     Fn(Vec<ParamTy>, Return),
     #[display("{_0}[{}]", _1.iter().join(", "))]
-    Named(Ident, Vec<Ty>),
+    Named(Path, Vec<Ty>),
 }
 
 impl TyKind {
@@ -409,7 +465,7 @@ impl TyKind {
     }
 
     pub fn named(name: &str) -> Self {
-        Self::Named(Ident::new(name), vec![])
+        Self::Named(Path::single(Ident::new(name)), vec![])
     }
 
     /// Helper to create a new [`TyKind::Named`] for a `String`.

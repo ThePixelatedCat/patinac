@@ -35,6 +35,14 @@ fn main() -> ExitCode {
 
     let start = Instant::now();
 
+    let handler_inner: &dyn Fn(&str, Range<usize>, DiagnosticKind) =
+        &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
+    let handler = ErrorHandler::new(handler_inner);
+
+    eprintln!("Traversing...");
+    let modules = module::gather_modules(&args.src_path);
+
+    eprintln!("Parsing...");
     let src = match fs::read_to_string(&args.src_path) {
         Ok(src) => src,
         Err(err) => {
@@ -48,11 +56,6 @@ fn main() -> ExitCode {
         }
     };
 
-    let handler_inner: &dyn Fn(&str, Range<usize>, DiagnosticKind) =
-        &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
-    let handler = ErrorHandler::new(handler_inner);
-
-    eprintln!("Parsing...");
     let Ok(ast) = Parser::new(&src, handler.clone()).parse() else {
         return ExitCode::FAILURE;
     };

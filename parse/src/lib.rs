@@ -1,3 +1,7 @@
+//! Parses source text into an AST, reporting any errors along the way with as much recovery as possible.
+//!
+//! The entry point to this crate is the [`Parser`] type.
+
 mod error;
 mod exprs;
 mod helpers;
@@ -16,6 +20,9 @@ use lex::{Lexer, Tok, TokKind};
 
 use crate::{error::ErrorKind, items::Item};
 
+/// Manages the state needing for parsing.
+///
+/// Construct with [`Parser::new()`], then produce an [`Ast`] (or errors) with [`Parser::parse()`].
 pub struct Parser<'src> {
     src: &'src str,
     toks: Lexer<'src>,
@@ -23,6 +30,7 @@ pub struct Parser<'src> {
 }
 
 impl<'src> Parser<'src> {
+    /// Constructs a [`Parser`] for `src`, reporting errors through `handler`.
     pub fn new(src: &'src str, handler: ErrorHandler<'src>) -> Self {
         Self {
             src,
@@ -31,10 +39,11 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Parses the source this was constructed with into an AST.
+    /// Parses the source this [`Parser`] was constructed with into an [`Ast`].
     ///
     /// # Errors
-    /// If parsing produces any errors, an error will be returned, but only after the rest of parsing is complete.
+    /// If parsing produces any errors, they will be sent to the [`ErrorHandler`] this [`Parser`] was constructed with,
+    /// and an error will be returned.
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 

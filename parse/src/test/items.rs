@@ -2,7 +2,7 @@ use pretty_assertions::assert_eq;
 use smallvec::smallvec;
 
 use ast::{
-    ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, TyItem, TyItemKind, TyKind,
+    ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
     Variant,
 };
 use errors::TEST_HANDLER;
@@ -67,10 +67,13 @@ record Foo[T, U](
                 Field {
                     ident: Ident::new("bar").span(38..41),
                     ty: TyKind::Named(
-                        Ident::new("Bar"),
+                        Path::single(Ident::new("Bar")),
                         vec![
-                            TyKind::Named(Ident::new("Baz"), vec![TyKind::named("T").span(51..52)])
-                                .span(47..53)
+                            TyKind::Named(
+                                Path::single(Ident::new("Baz")),
+                                vec![TyKind::named("T").span(51..52)]
+                            )
+                            .span(47..53)
                         ]
                     )
                     .span(43..54),

@@ -23,9 +23,11 @@ use crate::error::ErrorKind;
 
 type Scope<Id> = im_rc::HashMap<Ident, Id, RandomState>;
 
+/// Resolves and lowers the provided [`Asts`][Ast] into a single [`Hir`].
+///
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name.
-pub fn resolve(mut ast: Ast, mut handler: ErrorHandler) -> Result<Hir> {
+pub fn resolve(mut modules: Vec<Ast>, mut handler: ErrorHandler) -> Result<Hir> {
     let mut hir = Hir::default();
 
     let mut ty_scope = Scope::default();

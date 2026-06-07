@@ -2,7 +2,7 @@ use std::range::Range;
 
 use itertools::Itertools as _;
 
-use ast::{Binding, Ty};
+use ast::{Binding, Path, Ty};
 use errors::HandledError;
 use ident::{Ident, SpanIdent};
 
@@ -42,6 +42,22 @@ impl Parser<'_> {
     pub(crate) fn ident(&mut self) -> Result<SpanIdent> {
         self.consume(TokKind::Ident)
             .map(|tok| Ident::new(self.src_of(tok)).span(tok.span))
+    }
+
+    pub(crate) fn path(&mut self) -> Result<(Path, Range<usize>)> {
+        let ident = self.ident()?;
+        let start = ident.span.start;
+
+        let mut path = Path::single(ident.ident);
+        let mut end = ident.span.end;
+
+        while self.consume_at(TokKind::PathSep).is_some() {
+            let ident = self.ident()?;
+            end = ident.span.end;
+            path.push(ident.ident);
+        }
+
+        Ok((path, Range::from(start..end)))
     }
 
     pub(crate) fn delimited_list<T, F>(

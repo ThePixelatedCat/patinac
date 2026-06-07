@@ -29,7 +29,7 @@ impl Parser<'_> {
 
     fn expr_inner(&mut self, ref_binding_power: u8) -> Result<Expr> {
         let mut lhs = match self.peek()? {
-            TokKind::Ident => self.ident_expr(),
+            TokKind::Ident => self.var_expr(),
             TokKind::IntLit
             | TokKind::FloatLit
             | TokKind::CharLit
@@ -140,8 +140,9 @@ impl Parser<'_> {
         Ok((lhs, op))
     }
 
-    fn ident_expr(&mut self) -> Result<Expr> {
-        self.ident().map(|i| ExprKind::Ident(i.ident).span(i.span))
+    fn var_expr(&mut self) -> Result<Expr> {
+        self.path()
+            .map(|(path, span)| ExprKind::Var(path).span(span))
     }
 
     fn process_escapes(&mut self, src: &str, start: usize) -> Result<String> {

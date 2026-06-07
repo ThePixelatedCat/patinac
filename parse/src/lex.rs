@@ -5,7 +5,7 @@ use logos::Logos;
 
 pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Range<usize>>> + 'src>>;
 
-/// Produces an iterator over tokens extracted from the source..
+/// Produces an iterator over tokens extracted from the source.
 pub fn lex(src: &str) -> Lexer<'_> {
     let iter = TokKind::lexer(src).spanned().map(|(tok, span)| match tok {
         Ok(tok) => Ok(tok.span(span)),
@@ -21,6 +21,7 @@ pub struct Tok {
     pub span: Range<usize>,
 }
 
+#[allow(clippy::doc_paragraphs_missing_punctuation, reason = "displaydoc")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Logos, PartialEq, Eq, Debug, Display, Clone, Copy)]
 #[logos(skip(r"//.*", allow_greedy = true))]
@@ -28,204 +29,207 @@ pub struct Tok {
 #[logos(subpattern escape = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
 pub enum TokKind {
     /* LITERALS */
-    /// integer literal.
+    /// integer literal
     #[regex("(?&dec_int)|(0b[0-1][0-1_]*)|(0o[0-7][0-7_]*)|(0x[0-9a-fA-F][0-9a-fA-F_]*)")]
     IntLit,
-    /// float literal.
+    /// float literal
     #[regex(r"(?&dec_int)\.(?&dec_int)([Ee]-?(?&dec_int))?")]
     FloatLit,
-    /// string literal.
+    /// string literal
     #[regex(r##"("([^"\\]|(?&escape))*")|((?s)#".*"#)"##, allow_greedy = true)]
     StringLit,
-    /// character literal.
+    /// character literal
     #[regex(r"'([^\t\n\r'\\]|(?&escape))'")]
     CharLit,
 
     /* DELIMITERS */
-    /// `(`.
+    /// `(`
     #[token("(")]
     LParen,
-    /// `)`.
+    /// `)`
     #[token(")")]
     RParen,
-    /// `{{`.
+    /// `{{`
     #[token("{")]
     LBrace,
-    /// `}}`.
+    /// `}}`
     #[token("}")]
     RBrace,
-    /// `[`.
+    /// `[`
     #[token("[")]
     LBracket,
-    /// `]`.
+    /// `]`
     #[token("]")]
     RBracket,
 
     /* SYMBOLS */
-    /// `=`.
+    /// `=`
     #[token("=")]
     Eq,
-    /// `.`.
+    /// `.`
     #[token(".")]
     Dot,
-    /// `,`.
+    /// `,`
     #[token(",")]
     Comma,
-    /// `:`.
+    /// `:`
     #[token(":")]
     Colon,
-    /// `_`.
+    /// `_`
     #[token("_")]
     Underscore,
-    /// `->`.
+    /// `->`
     #[token("->")]
     Arrow,
+    /// `::`
+    #[token("::")]
+    PathSep,
 
     /* OPERATORS */
-    /// `+`.
+    /// `+`
     #[token("+")]
     Plus,
-    /// `+.`.
+    /// `+.`
     #[token("+.")]
     PlusF,
-    /// `-`.
+    /// `-`
     #[token("-")]
     Minus,
-    /// `-.`.
+    /// `-.`
     #[token("-.")]
     MinusF,
-    /// `*`.
+    /// `*`
     #[token("*")]
     Times,
-    /// `*.`.
+    /// `*.`
     #[token("*.")]
     TimesF,
-    /// `/`.
+    /// `/`
     #[token("/")]
     Divide,
-    /// `/.`.
+    /// `/.`
     #[token("/.")]
     DivideF,
-    /// `**`.
+    /// `**`
     #[token("**")]
     Exponent,
-    /// `&&`.
+    /// `&&`
     #[token("&&")]
     And,
-    /// `||`.
+    /// `||`
     #[token("||")]
     Or,
-    /// `^`.
+    /// `^`
     #[token("^")]
     Xor,
-    /// `!`.
+    /// `!`
     #[token("!")]
     Bang,
-    /// `==`.
+    /// `==`
     #[token("==")]
     Eqq,
-    /// `!=`.
+    /// `!=`
     #[token("!=")]
     Neq,
-    /// `<`.
+    /// `<`
     #[token("<")]
     Lt,
-    /// `>`.
+    /// `>`
     #[token(">")]
     Gt,
-    /// `<=`.
+    /// `<=`
     #[token("<=")]
     Leq,
-    /// `>=`.
+    /// `>=`
     #[token(">=")]
     Geq,
 
     /* KEYWORDS */
-    /// `Int`.
+    /// `Int`
     #[token("Int")]
     Int,
-    /// `UInt`.
+    /// `UInt`
     #[token("UInt")]
     UInt,
-    /// `Byte`.
+    /// `Byte`
     #[token("Byte")]
     Byte,
-    /// `Float`.
+    /// `Float`
     #[token("Float")]
     Float,
-    /// `Bool`.
+    /// `Bool`
     #[token("Bool")]
     Bool,
-    /// `Char`.
+    /// `Char`
     #[token("Char")]
     Char,
-    /// `Fn`.
+    /// `Fn`
     #[token("Fn")]
     FnTy,
-    /// `let`.
+    /// `let`
     #[token("let")]
     Let,
-    /// `mut`.
+    /// `mut`
     #[token("mut")]
     Mut,
-    /// `const`.
+    /// `const`
     #[token("const")]
     Const,
-    /// `fn`.
+    /// `fn`
     #[token("fn")]
     Fn,
-    /// `record`.
+    /// `record`
     #[token("record")]
     Record,
-    /// `enum`.
+    /// `enum`
     #[token("enum")]
     Enum,
-    /// `if`.
+    /// `if`
     #[token("if")]
     If,
-    /// `else`.
+    /// `else`
     #[token("else")]
     Else,
-    /// `match`.
+    /// `match`
     #[token("match")]
     Match,
-    /// `for`.
+    /// `for`
     #[token("for")]
     For,
-    /// `in`.
+    /// `in`
     #[token("in")]
     In,
-    /// `loop`.
+    /// `loop`
     #[token("loop")]
     Loop,
-    /// `return`.
+    /// `return`
     #[token("return")]
     Return,
-    /// `break`.
+    /// `break`
     #[token("break")]
     Break,
-    /// `continue`.
+    /// `continue`
     #[token("continue")]
     Continue,
-    /// `true`.
+    /// `true`
     #[token("true")]
     True,
-    /// `false`.
+    /// `false`
     #[token("false")]
     False,
 
-    /// `print`.
+    /// `print`
     #[token("print")]
     Print,
 
     /* MISC */
-    /// identifier.
+    /// identifier
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
-    /// whitespace.
+    /// whitespace
     #[regex(r"\p{Pattern_White_Space}+")]
     Whitespace,
-    /// end-of-file.
+    /// end-of-file
     #[cfg_attr(test, proptest(skip))]
     Eof,
 }

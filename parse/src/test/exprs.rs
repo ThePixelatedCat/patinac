@@ -2,7 +2,8 @@ use pretty_assertions::assert_eq;
 use std::{assert_matches, range::Range};
 
 use ast::{
-    Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PatKind, PrefixOp, Stmt, TyKind,
+    Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PatKind, Path, PrefixOp, Stmt,
+    TyKind,
 };
 use errors::TEST_HANDLER;
 use ident::Ident;
@@ -85,6 +86,16 @@ fn lit_expressions() {
     assert_eq!(
         Parser::new("foo", TEST_HANDLER).expr(),
         Ok(ExprKind::ident("foo").span(0..3))
+    );
+
+    assert_eq!(
+        Parser::new("foo::bar::baz", TEST_HANDLER).expr(),
+        Ok(ExprKind::Var(Path::new_const([
+            Ident::new("foo"),
+            Ident::new("bar"),
+            Ident::new("baz")
+        ]))
+        .span(0..13))
     );
 }
 
