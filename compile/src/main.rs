@@ -5,7 +5,7 @@ use std::{fs, path::PathBuf, process::ExitCode, range::Range, time::Instant};
 use argh::{FromArgs, from_env};
 use yansi::Paint as _;
 
-use codegen::{Codegen, CodegenMode, OptLevel};
+use codegen_llvm::{Codegen, CodegenMode, OptLevel};
 use errors::{DiagnosticKind, ErrorHandler};
 use parse::Parser;
 
@@ -73,7 +73,7 @@ fn main() -> ExitCode {
     } else {
         CodegenMode::Emit(args.src_path.with_extension("o"))
     };
-    let ctx = codegen::create_ctx();
+    let ctx = codegen_llvm::create_ctx();
     Codegen::new(
         &hir,
         &ty_map,

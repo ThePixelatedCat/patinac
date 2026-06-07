@@ -1,19 +1,22 @@
 [package]
-name = "compile"
+name = "codegen_cl"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 # Internal
+ident.path = "../ident"
+hir.path = "../hir"
 errors.path = "../errors"
-ast.path = "../ast"
+# External
+cranelift = { version = "0.132.1", features = ["module", "object", "native"] }
+slotmap = "1.1.1"
+
+[dev-dependencies]
+# Internal
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"
-codegen_llvm.path = "../codegen_llvm"
-# External
-yansi = "1.0.1"
-argh = { version = "0.1.19", features = ["help"], default-features = false }
 
 [lints]
 workspace = true
