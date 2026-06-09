@@ -12,13 +12,19 @@ mod exprs;
 mod runtime;
 #[cfg(test)]
 mod test;
-mod witnesses;
+//mod witnesses;
 
 use std::{cmp::Reverse, fmt::Write as _, fs, iter, path::PathBuf, str::FromStr};
 
 use cranelift::{
-    codegen::{Context, ir::StackSlot, isa::CallConv, settings::Flags},
-    module::{FuncId, FuncOrDataId, Linkage, Module},
+    codegen::{
+        Context,
+        ir::{FuncRef, Inst, StackSlot},
+        isa::CallConv,
+        settings::Flags,
+    },
+    module::{DataDescription, DataId, FuncId, FuncOrDataId, Linkage, Module},
+    native,
     object::{ObjectBuilder, ObjectModule},
     prelude::*,
 };
@@ -92,23 +98,21 @@ pub struct Codegen<'hir, 'handler> {
     handler: ErrorHandler<'handler>,
     module: ObjectModule,
     funcs: SecondaryMap<VarId, FuncId>,
-    vars: SecondaryMap<VarId, VirtualValue>,
+    vars: SecondaryMap<VarId, Var>,
     lambda_counter: u32,
 }
 
 #[derive(Clone, Copy)]
-enum VirtualValue {
+enum Var {
     Direct(Value),
-    Indirect(Value),
-    Variable(Variable),
+    Mutable(Variable),
 }
 
-impl VirtualValue {
+impl Var {
     fn get_val(self, builder: &mut FunctionBuilder) -> Value {
         match self {
-            Self::Indirect(value) => value,
             Self::Direct(value) => value,
-            Self::Variable(var) => builder.use_var(var),
+            Self::Mutable(var) => builder.use_var(var),
         }
     }
 }
@@ -130,7 +134,7 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
         let isa = {
             let mut builder = settings::builder();
             builder.set("opt_level", "speed").unwrap();
-            isa::lookup(TARGET_TRIPLE)
+            cranelift::native::builder() //isa::lookup(TARGET_TRIPLE)
                 .unwrap()
                 .finish(Flags::new(builder))
                 .unwrap()
@@ -295,32 +299,33 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
         func_ctx: &mut FunctionBuilderContext,
         ty: TyId,
     ) {
-        let info = self.hir.ty_info(ty);
+        todo!("Records/Tuples")
+        // let info = self.hir.ty_info(ty);
 
-        let func = self.create_func(info.constructor_id);
+        // let func = self.create_func(info.constructor_id);
 
-        let mut builder = FunctionBuilder::new(&mut ctx.func, func_ctx);
-        builder.func.signature = self.get_signature(func);
+        // let mut builder = FunctionBuilder::new(&mut ctx.func, func_ctx);
+        // builder.func.signature = self.get_signature(func);
 
-        // Create the function's entry block.
-        let entry_block = builder.create_block();
-        builder.switch_to_block(entry_block);
-        builder.append_block_params_for_function_params(entry_block);
-        builder.seal_block(entry_block);
+        // // Create the function's entry block.
+        // let entry_block = builder.create_block();
+        // builder.switch_to_block(entry_block);
+        // builder.append_block_params_for_function_params(entry_block);
+        // builder.seal_block(entry_block);
 
-        let mut params = builder.block_params(entry_block).to_vec().into_iter();
-        let out_ptr = params.next().unwrap();
-        for (idx, (arg, field_ty)) in iter::zip(params, info.fields.tys()).enumerate() {
-            let field_ptr = self.gep_record(&mut builder, ty, out_ptr, idx);
-            self.emit_copy(&mut builder, field_ty, arg, field_ptr);
-        }
+        // let mut params = builder.block_params(entry_block).to_vec().into_iter();
+        // let out_ptr = params.next().unwrap();
+        // for (idx, (arg, field_ty)) in iter::zip(params, info.fields.tys()).enumerate() {
+        //     let field_ptr = self.gep_record(&mut builder, ty, out_ptr, idx);
+        //     self.emit_copy(&mut builder, field_ty, arg, field_ptr);
+        // }
 
-        builder.ins().return_(&[]);
+        // builder.ins().return_(&[]);
 
-        codegen::verify_function(&builder.func, self.module.isa()).unwrap();
-        builder.finalize();
-        self.module.define_function(func, ctx).unwrap();
-        ctx.clear();
+        // codegen::verify_function(&builder.func, self.module.isa()).unwrap();
+        // builder.finalize();
+        // self.module.define_function(func, ctx).unwrap();
+        // ctx.clear();
     }
 
     fn build_func(
@@ -340,6 +345,15 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
         builder.switch_to_block(entry_block);
         builder.append_block_params_for_function_params(entry_block);
         builder.seal_block(entry_block);
+
+        // // Skip the first argument if it's an out-pointer
+        let offset = if Self::is_indirect(ret_ty) { 1 } else { 0 };
+        for (param, arg) in iter::zip(
+            params,
+            builder.block_params(entry_block).iter().skip(offset),
+        ) {
+            self.vars.insert(*param, Var::Direct(*arg));
+        }
 
         let body = self.emit_expr(&mut builder, body);
 
@@ -364,12 +378,13 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
             Ty::Float => types::F64,
             Ty::Char => todo!("Strings"),
             Ty::Tuple(elem_tys) => {
-                let elem_tys: Vec<_> = elem_tys.iter().map(|ty| self.lower_ty(ty)).collect();
-                self.ctx.struct_type(&elem_tys, false).as_basic_type_enum()
+                todo!()
+                // let elem_tys: Vec<_> = elem_tys.iter().map(|ty| self.lower_ty(ty)).collect();
+                // self.ctx.struct_type(&elem_tys, false).as_basic_type_enum()
             }
             Ty::Array(_) => self.array_ty(),
             Ty::Fn(..) => self.closure_ty(),
-            Ty::Named(id) => self.structs[*id].as_basic_type_enum(),
+            Ty::Named(id) => todo!(), //self.structs[*id].as_basic_type_enum(),
         }
     }
 
@@ -378,98 +393,103 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
     }
 
     fn array_header_ty(&self) -> Type {
-        if let Some(ty) = self.module.get_struct_type("ArrayHeader") {
-            return ty.as_basic_type_enum();
-        }
+        todo!()
+        // if let Some(ty) = self.module.get_struct_type("ArrayHeader") {
+        //     return ty.as_basic_type_enum();
+        // }
 
-        let ty = self.ctx.opaque_struct_type("ArrayHeader");
-        let i64_ty = self.ctx.i64_type().as_basic_type_enum();
-        // Refcount, element count, capacity
-        ty.set_body(&[i64_ty, i64_ty, i64_ty], false);
-        ty.as_basic_type_enum()
+        // let ty = self.ctx.opaque_struct_type("ArrayHeader");
+        // let i64_ty = self.ctx.i64_type().as_basic_type_enum();
+        // // Refcount, element count, capacity
+        // ty.set_body(&[i64_ty, i64_ty, i64_ty], false);
+        // ty.as_basic_type_enum()
     }
 
-    fn get_array_payload(&self, array: Value) -> PointerValue<'ctx> {
-        let payload = self
-            .builder
-            .build_struct_gep(self.array_ty(), array, 0, "payload")
-            .unwrap();
-        self.builder
-            .build_load(self.ptr_ty(), payload, "payload")
-            .unwrap()
-            .into_pointer_value()
+    fn get_array_payload(&self, array: Value) -> Value {
+        todo!()
+        // let payload = self
+        //     .builder
+        //     .build_struct_gep(self.array_ty(), array, 0, "payload")
+        //     .unwrap();
+        // self.builder
+        //     .build_load(self.ptr_ty(), payload, "payload")
+        //     .unwrap()
+        //     .into_pointer_value()
     }
 
-    fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        let payload = self.get_array_payload(array);
-        let header = self.get_array_header_from_payload(payload);
-        let is_null = self
-            .builder
-            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "")
-            .unwrap();
-        self.builder
-            .build_select(is_null, self.null_ptr(), header, "")
-            .unwrap()
-            .into_pointer_value()
+    fn get_array_header(&self, array: Value) -> Value {
+        todo!()
+        // let payload = self.get_array_payload(array);
+        // let header = self.get_array_header_from_payload(payload);
+        // let is_null = self
+        //     .builder
+        //     .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "")
+        //     .unwrap();
+        // self.builder
+        //     .build_select(is_null, self.null_ptr(), header, "")
+        //     .unwrap()
+        //     .into_pointer_value()
     }
 
-    fn get_array_header_from_payload(&self, payload: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        unsafe {
-            self.builder
-                .build_in_bounds_gep(
-                    self.array_header_ty(),
-                    payload,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
-                    "header",
-                )
-                .unwrap()
-        }
+    fn get_array_header_from_payload(&self, payload: Value) -> Value {
+        todo!()
+        // unsafe {
+        //     self.builder
+        //         .build_in_bounds_gep(
+        //             self.array_header_ty(),
+        //             payload,
+        //             &[self.ctx.i64_type().const_int(1, true).const_neg()],
+        //             "header",
+        //         )
+        //         .unwrap()
+        // }
     }
 
-    fn closure_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("Closure") {
-            return ty.as_basic_type_enum();
-        }
+    fn closure_ty(&self) -> Type {
+        todo!()
+        // if let Some(ty) = self.module.get_struct_type("Closure") {
+        //     return ty.as_basic_type_enum();
+        // }
 
-        let ty = self.ctx.opaque_struct_type("Closure");
-        ty.set_body(
-            &[
-                // Function
-                self.ptr_ty(),
-                // Environment
-                self.ptr_ty(),
-                // Drop
-                self.ptr_ty(),
-                // Copy
-                self.ptr_ty(),
-                // Eq
-                self.ptr_ty(),
-            ],
-            false,
-        );
-        ty.as_basic_type_enum()
+        // let ty = self.ctx.opaque_struct_type("Closure");
+        // ty.set_body(
+        //     &[
+        //         // Function
+        //         self.ptr_ty(),
+        //         // Environment
+        //         self.ptr_ty(),
+        //         // Drop
+        //         self.ptr_ty(),
+        //         // Copy
+        //         self.ptr_ty(),
+        //         // Eq
+        //         self.ptr_ty(),
+        //     ],
+        //     false,
+        // );
+        // ty.as_basic_type_enum()
     }
 
     fn ptr_ty(&self) -> Type {
         self.module.isa().pointer_type()
     }
 
-    fn null_ptr(&self) -> Value {
-        todo!()
+    fn null_ptr(&self, builder: &mut FunctionBuilder) -> Value {
+        builder.ins().iconst(self.ptr_ty(), 0)
     }
 
-    fn gep_record(
-        &self,
-        builder: &mut FunctionBuilder,
-        ty: TyId,
-        base_ptr: Value,
-        idx: usize,
-    ) -> Value {
-        let fields = self.hir.ty_info(ty).fields;
-        assert!(idx < fields.len(), "field index out of bounds");
-        let offset = fields.tys().map(|ty| self.size_of(ty)).take(idx + 1).sum();
-        builder.ins().iadd_imm(base_ptr, i64::from(offset))
-    }
+    // fn gep_record(
+    //     &self,
+    //     builder: &mut FunctionBuilder,
+    //     ty: TyId,
+    //     base_ptr: Value,
+    //     idx: usize,
+    // ) -> Value {
+    //     let fields = self.hir.ty_info(ty).fields;
+    //     assert!(idx < fields.len(), "field index out of bounds");
+    //     let offset = fields.tys().map(|ty| self.size_of(ty)).take(idx + 1).sum();
+    //     builder.ins().iadd_imm(base_ptr, i64::from(offset))
+    // }
 
     /// Returns the stack size of the given type in bytes, accounting for struct padding.
     fn size_of(&self, ty: &Ty) -> u32 {
@@ -548,7 +568,22 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
         }
     }
 
-    pub(crate) fn emit_drop(&self, builder: &mut FunctionBuilder, ty: &Ty, val: VirtualValue) {
+    fn call<'build>(
+        &mut self,
+        builder: &'build mut FunctionBuilder,
+        func: FuncId,
+        params: &[Value],
+    ) -> &'build [Value] {
+        let func = self.decl_func(builder, func);
+        let inst = builder.ins().call(func, params);
+        builder.inst_results(inst)
+    }
+
+    fn decl_func(&mut self, builder: &mut FunctionBuilder, func: FuncId) -> FuncRef {
+        self.module.declare_func_in_func(func, &mut builder.func)
+    }
+
+    pub(crate) fn emit_drop(&self, builder: &mut FunctionBuilder, ty: &Ty, val: Value) {
         let func = match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
             Ty::Char => todo!("Strings"),
@@ -557,128 +592,87 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
                 if elem_tys.is_empty() {
                     return;
                 }
-                self.tuple_drop(ty, elem_tys)
+                todo!("Records/Tuples")
+                //self.tuple_drop(ty, elem_tys)
             }
-            Ty::Array(elem_ty) => self.array_drop(ty, elem_ty),
-            Ty::Fn(_, _) => self.closure_drop(),
-            Ty::Named(id) => self.struct_drop(*id),
+            Ty::Array(elem_ty) => todo!("Arrays"), //self.array_drop(ty, elem_ty),
+            Ty::Fn(_, _) => todo!("Closures"),     //self.closure_drop(),
+            Ty::Named(id) => todo!("Records/Tuples"), //self.struct_drop(*id),
         };
-        self.builder
-            .build_call(func, &[val.into()], "drop")
-            .unwrap();
+        self.call(builder, func, &[val]);
     }
 
-    pub(crate) fn emit_copy(
-        &self,
-        builder: &mut FunctionBuilder,
-        ty: &Ty,
-        src: VirtualValue,
-        dst: Value,
-    ) {
+    pub(crate) fn emit_copy(&self, builder: &mut FunctionBuilder, ty: &Ty, src: Value, dst: Value) {
         let func = match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
-                builder
-                    .ins()
-                    .store(MemFlags::trusted(), src.get_val(builder), dst, 0);
+                builder.ins().store(MemFlags::trusted(), src, dst, 0);
                 return;
             }
             Ty::Char => todo!("Strings"),
             Ty::Tuple(elem_tys) => {
                 // If it's empty, it's unit and therefore trivial + direct
                 if elem_tys.is_empty() {
-                    builder
-                        .ins()
-                        .store(MemFlags::trusted(), src.get_val(builder), dst, 0);
+                    builder.ins().store(MemFlags::trusted(), src, dst, 0);
                     return;
                 }
-                self.tuple_copy(ty, elem_tys)
+                todo!("Records/Tuples")
+                //self.tuple_copy(ty, elem_tys)
             }
-            Ty::Array(_) => self.array_copy(ty),
-            Ty::Fn(..) => self.closure_copy(),
-            Ty::Named(id) => self.struct_copy(*id),
+            Ty::Array(_) => todo!("Arrays"), //self.array_copy(ty),
+            Ty::Fn(..) => todo!("Closures"), //self.closure_copy(),
+            Ty::Named(id) => todo!("Records/Tuples"), //self.struct_copy(*id),
         };
-        builder
-            .ins()
-            .call(
-                func,
-                &[dst.as_basic_value_enum().into(), val.into()],
-                "copy",
-            )
-            .unwrap();
+        self.call(builder, func, &[dst, src]);
     }
 
     pub(crate) fn emit_equals(
         &self,
+        builder: &mut FunctionBuilder,
         ty: &Ty,
-        lhs: BasicValueEnum<'ctx>,
-        rhs: BasicValueEnum<'ctx>,
-    ) -> IntValue<'ctx> {
+        lhs: Value,
+        rhs: Value,
+    ) -> Value {
         match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
-                .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    lhs.into_int_value(),
-                    rhs.into_int_value(),
-                    "equals",
-                )
-                .unwrap(),
-            Ty::Float => self
-                .builder
-                .build_float_compare(
-                    FloatPredicate::OEQ,
-                    lhs.into_float_value(),
-                    rhs.into_float_value(),
-                    "equals",
-                )
-                .unwrap(),
+            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => builder.ins().icmp(IntCC::Equal, lhs, rhs),
+            Ty::Float => builder.ins().fcmp(FloatCC::Equal, lhs, rhs),
             Ty::Char => todo!("Strings"),
             Ty::Tuple(inner_tys) => {
                 // If it's empty, it's unit and therefore always equals
                 if inner_tys.is_empty() {
-                    self.ctx.bool_type().const_int(1, false)
+                    builder.ins().iconst(types::I8, 1)
                 } else {
-                    self.builder
-                        .build_call(
-                            self.tuple_equals(ty, inner_tys),
-                            &[lhs.into(), rhs.into()],
-                            "equals",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .unwrap_basic()
-                        .into_int_value()
+                    todo!("Records/Tuples")
+                    // self.builder
+                    //     .build_call(
+                    //         self.tuple_equals(ty, inner_tys),
+                    //         &[lhs.into(), rhs.into()],
+                    //         "equals",
+                    //     )
+                    //     .unwrap()
+                    //     .try_as_basic_value()
+                    //     .unwrap_basic()
+                    //     .into_int_value()
                 }
             }
-            Ty::Array(inner_ty) => self
-                .builder
-                .build_call(
-                    self.array_equals(ty, inner_ty),
-                    &[lhs.into(), rhs.into()],
-                    "equals",
-                )
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
-                .into_int_value(),
-            Ty::Fn(_, _) => self
-                .builder
-                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
-                .into_int_value(),
-            Ty::Named(id) => self
-                .builder
-                .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
-                .into_int_value(),
+            Ty::Array(inner_ty) => {
+                todo!("Arrays")
+                //self.call(builder, self.array_equals(ty, inner_ty), &[lhs, rhs])[0]
+            }
+            Ty::Fn(_, _) => todo!("Closures"), //self.call(builder, self.closure_equals(), &[lhs, rhs])[0],
+            Ty::Named(id) => todo!("Records/Tuples"), //self.call(builder, self.struct_equals(*id), &[lhs, rhs])[0],
         }
     }
 
-    fn emit_move(&self, builder: &mut FunctionBuilder, ty: &Ty, val: VirtualValue, to: Value) {
+    fn emit_alloc(&self, builder: &mut FunctionBuilder, ty: &Ty) -> Value {
+        let slot = builder.create_sized_stack_slot(StackSlotData::new(
+            StackSlotKind::ExplicitSlot,
+            self.size_of(ty),
+            0,
+        ));
+        builder.ins().stack_addr(self.ptr_ty(), slot, 0)
+    }
+
+    fn emit_move(&self, builder: &mut FunctionBuilder, ty: &Ty, val: Value, to: Value) {
         self.emit_copy(builder, ty, val, to);
         self.emit_drop(builder, ty, val);
     }
@@ -690,14 +684,21 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
         builder.call_memcpy(self.module.target_config(), dst, src, size);
     }
 
-    /// # Panics
-    /// Panics if the builder is not positioned, or is positioned but not within a function.
-    fn curr_function(&self) -> FunctionValue<'ctx> {
-        self.builder
-            .get_insert_block()
-            .expect("builder has been positioned")
-            .get_parent()
-            .expect("builder is within function")
+    fn emit_global_string(
+        &mut self,
+        builder: &mut FunctionBuilder,
+        name: &str,
+        contents: &[u8],
+    ) -> Value {
+        let data = self
+            .module
+            .declare_data(name, Linkage::Local, false, false)
+            .unwrap();
+        let mut descr = DataDescription::new();
+        descr.define(Box::from(contents));
+        self.module.define_data(data, &descr);
+        let global = self.module.declare_data_in_func(data, &mut builder.func);
+        builder.ins().global_value(self.ptr_ty(), global)
     }
 
     fn mangle_name(mut name: String) -> String {

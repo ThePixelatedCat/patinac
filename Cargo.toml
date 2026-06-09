@@ -11,7 +11,7 @@ members = [
     "hir",
     "typecheck",
     "codegen_llvm",
-    # "codegen_cl",
+    "codegen_cl",
 ]
 
 [workspace.lints.clippy]
