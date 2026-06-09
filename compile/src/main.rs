@@ -1,6 +1,6 @@
 //! The driver for the compiler. Handles command-line arguments and stitches together the compilation phases.
 
-use std::{fs, io::Read, path::PathBuf, process::ExitCode, range::Range, time::Instant};
+use std::{io::Read, path::PathBuf, process::ExitCode, range::Range, time::Instant};
 
 use argh::{FromArgs, from_env};
 use yansi::Paint as _;
@@ -53,28 +53,28 @@ fn main() -> ExitCode {
     };
 
     eprintln!("Parsing...");
-    let modules = modules.map(|name, file| {
+    let Ok(package) = modules.map(|name, file| {
         let mut src = String::new();
         match file.read_to_string(&mut src) {
             Ok(_) => {}
             Err(err) => {
                 eprintln!(
-                    "{error} {reading} {name}{} {msg}",
+                    "{error} {reading} {name}{colon} {msg}",
                     error = "error".bright_red().bold(),
                     reading = "reading module".white().bold(),
-                    ":".white().bold(),
+                    colon = ":".white().bold(),
                     msg = err.white().bold()
                 );
-                return Err(ExitCode::FAILURE);
+                return Err(());
             }
         };
-        Parser::new(&src, handler.clone())
-            .parse()
-            .map_err(|_| ExitCode::FAILURE)
-    });
+        Parser::new(&src, handler.clone()).parse().map_err(|_| ())
+    }) else {
+        return ExitCode::FAILURE;
+    };
 
     eprintln!("Resolving...");
-    let Ok(mut hir) = nameres::resolve(ast, handler.clone()) else {
+    let Ok(mut hir) = nameres::resolve(package, handler.clone()) else {
         return ExitCode::FAILURE;
     };
 

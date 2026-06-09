@@ -15,7 +15,7 @@ slotmap = "1.1.1"
 [dev-dependencies]
 # Internal
 parse.path = "../parse"
-nameres.path = "../nameres"
+nameres = { path = "../nameres", features = ["test"] }
 typecheck.path = "../typecheck"
 
 [lints]

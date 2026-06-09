@@ -2,15 +2,13 @@ use std::assert_matches;
 
 use errors::{ErrorHandler, Result};
 use hir::types::{Param, Ty};
-use parse::Parser;
 use std::range::Range;
 
 use crate::TypeChecker;
 
-#[allow(clippy::unwrap_used, reason = "Test utility")]
-fn check_expr(input: &str) -> Result<Ty> {
-    let expr = Parser::parse_expr(input).unwrap();
-    let (expr, mut hir) = nameres::test_resolve_expr(expr).unwrap();
+#[allow(clippy::unwrap_used, reason = "test utility")]
+fn check_expr(src: &str) -> Result<Ty> {
+    let (expr, mut hir) = nameres::test_resolve_expr(src).unwrap();
 
     let mut checker = TypeChecker::new(ErrorHandler::TEST);
     checker.build_context(&hir);
@@ -20,12 +18,12 @@ fn check_expr(input: &str) -> Result<Ty> {
     Ok(checker.sub_all(&mut hir)?.ty(expr).clone())
 }
 
-#[allow(clippy::unwrap_used, reason = "Test utility")]
-fn check_full(input: &str) -> Result<()> {
-    let ast = Parser::new(input, ErrorHandler::TEST).parse().unwrap();
-    let mut hir = nameres::resolve(ast, ErrorHandler::TEST).unwrap();
-    TypeChecker::new(ErrorHandler::TEST).type_program(&mut hir)?;
-    Ok(())
+#[allow(clippy::unwrap_used, reason = "test utility")]
+fn check_full(src: &str) -> Result<()> {
+    let mut hir = nameres::test_resolve_ast(src).unwrap();
+    TypeChecker::new(ErrorHandler::TEST)
+        .type_program(&mut hir)
+        .map(|_| ())
 }
 
 #[test]

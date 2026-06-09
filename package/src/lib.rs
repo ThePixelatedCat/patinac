@@ -3,145 +3,154 @@
 use std::{
     fs::{self, DirEntry, File},
     io,
-    ops::Deref,
     path::{Path, PathBuf},
 };
 
 use derive_more::{Display, Error, From};
+use slotmap::{DefaultKey, SlotMap};
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
 pub struct Package<T> {
-    modules: Vec<Module<T>>,
-    root_index: usize,
-}
-
-impl<'this, T> IntoIterator for &'this Package<T> {
-    type Item = ModuleRef<'this, T>;
-    type IntoIter = Iter<'this, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        Iter {
-            package: self,
-            curr_index: 0,
-        }
-    }
+    modules: SlotMap<DefaultKey, Module<T>>,
+    root_key: DefaultKey,
 }
 
 impl<T> Package<T> {
-    /// Returns a reference to the root module of this package.
-    pub const fn root(&self) -> ModuleRef<'_, T> {
-        self.get_ref(self.root_index)
+    /// Removes and returns the root module of this package.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "implementation detail, should never happen"
+    )]
+    pub fn take_root(&mut self) -> Module<T> {
+        self.modules
+            .remove(self.root_key)
+            .expect("key was gotten from this slotmap")
     }
 
-    /// Returns an iterator over the modules of this package.
-    ///
-    /// The order that modules are yielded is unstable and should not be relied on.
-    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
-        self.into_iter()
+    /// Removes and returns all children of the provided module.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "implementation detail, should never happen"
+    )]
+    pub fn take_children_of(&mut self, module: &Module<T>) -> Vec<Module<T>> {
+        module
+            .children
+            .iter()
+            .map(|m| {
+                self.modules
+                    .remove(*m)
+                    .expect("key was gotten from this slotmap")
+            })
+            .collect()
     }
 
     /// Applies a fallible mapping function to the contents of each module, producing a new package.
     ///
     /// # Errors
     /// Returns the first error produced by the mapping function.
-    pub fn map<U, E, F: FnMut(&str, T) -> Result<U, E>>(self, mut f: F) -> Result<Package<U>, E> {
-        let modules = self
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "implementation detail, should never happen"
+    )]
+    pub fn map<U, E, F: FnMut(&str, T) -> Result<U, E>>(
+        mut self,
+        mut f: F,
+    ) -> Result<Package<U>, E> {
+        let mut modules = SlotMap::new();
+        let root_key = self
             .modules
-            .into_iter()
-            .map(|module| {
-                f(&module.name, module.contents).map(|contents| Module {
-                    parent: module.parent,
-                    name: module.name,
-                    contents,
-                    children: module.children,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Package {
-            modules,
-            root_index: self.root_index,
-        })
+            .remove(self.root_key)
+            .expect("key was gotten from this slotmap")
+            .map(&mut f, &mut self, &mut modules, None)?;
+        Ok(Package { modules, root_key })
     }
 
     fn new(root: Module<T>) -> Self {
-        Self {
-            modules: vec![root],
-            root_index: 0,
-        }
+        let mut modules = SlotMap::new();
+        let root_key = modules.insert(root);
+        Self { modules, root_key }
     }
 
-    fn add(&mut self, module: Module<T>) -> usize {
-        self.modules.push(module);
-        self.modules.len() - 1
-    }
-
-    const fn get_ref(&self, index: usize) -> ModuleRef<'_, T> {
-        ModuleRef {
-            package: self,
-            module_index: index,
-        }
+    fn insert(&mut self, module: Module<T>) -> DefaultKey {
+        self.modules.insert(module)
     }
 }
 
-/// An iterator over the modules of a [`Package`].
-///
-/// See [`Package::iter()`] for more.
-pub struct Iter<'pkg, T> {
-    package: &'pkg Package<T>,
-    curr_index: usize,
+impl<T> From<ModuleTree<T>> for Package<T> {
+    fn from(value: ModuleTree<T>) -> Self {
+        let mut modules = SlotMap::new();
+        let root_key = from_tree_helper(value, &mut modules, None);
+        Self { modules, root_key }
+    }
 }
 
-impl<'pkg, T> Iterator for Iter<'pkg, T> {
-    type Item = ModuleRef<'pkg, T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        (self.curr_index < self.package.modules.len()).then(|| {
-            let result = self.package.get_ref(self.curr_index);
-            self.curr_index += 1;
-            result
-        })
-    }
+fn from_tree_helper<T>(
+    tree: ModuleTree<T>,
+    modules: &mut SlotMap<DefaultKey, Module<T>>,
+    parent: Option<DefaultKey>,
+) -> DefaultKey {
+    let key = modules.insert(Module {
+        parent,
+        name: tree.name,
+        contents: tree.contents,
+        children: Vec::new(),
+    });
+    modules[key].children = tree
+        .children
+        .into_iter()
+        .map(|m| from_tree_helper(m, modules, Some(key)))
+        .collect();
+    key
 }
 
 /// A module, generic over it's contents.
 pub struct Module<T> {
-    parent: Option<usize>,
+    parent: Option<DefaultKey>,
     /// The name of this module, determined by it's filename.
     pub name: String,
     /// The generic contents of this module.
     pub contents: T,
-    children: Vec<usize>,
+    children: Vec<DefaultKey>,
 }
 
-/// A reference to a module and it's containing package.
-///
-/// Allows easy traversal of a package via [`parent()`][`Self::parent()`] and [`children()`][`Self::children()`].
-#[derive(Clone, Copy)]
-pub struct ModuleRef<'pkg, T> {
-    package: &'pkg Package<T>,
-    module_index: usize,
-}
-
-impl<T> Deref for ModuleRef<'_, T> {
-    type Target = Module<T>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.package.modules[self.module_index]
+impl<T> Module<T> {
+    fn map<U, E, F: FnMut(&str, T) -> Result<U, E>>(
+        self,
+        f: &mut F,
+        old_package: &mut Package<T>,
+        new_modules: &mut SlotMap<DefaultKey, Module<U>>,
+        parent: Option<DefaultKey>,
+    ) -> Result<DefaultKey, E> {
+        let contents = f(&self.name, self.contents)?;
+        let key = new_modules.insert(Module {
+            parent,
+            name: self.name,
+            contents,
+            children: Vec::new(),
+        });
+        new_modules[key].children = self
+            .children
+            .into_iter()
+            .map(|m| {
+                old_package
+                    .modules
+                    .remove(m)
+                    .expect("key was gotten from this slotmap")
+                    .map(f, old_package, new_modules, Some(key))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(key)
     }
 }
 
-impl<T> ModuleRef<'_, T> {
-    /// Returns a reference to this module's parent, if it has one.
-    ///
-    /// All modules except the root module have a parent.
-    pub fn parent(&self) -> Option<Self> {
-        self.parent.map(|index| self.package.get_ref(index))
-    }
-
-    /// Returns an iterator over this module's children.
-    pub fn children(&self) -> impl Iterator<Item = Self> {
-        self.children.iter().map(|i| self.package.get_ref(*i))
-    }
+/// A naive tree representation of a module structure. Used for constructing [`Packages`][Package] for tests.
+pub struct ModuleTree<T> {
+    /// The name of this module.
+    pub name: String,
+    /// The generic contents of this module.
+    pub contents: T,
+    /// The children of this module.
+    pub children: Vec<Self>,
 }
 
 /// Errors that can arise from [`gather_modules()`].
@@ -217,17 +226,17 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
             contents: root,
             children: Vec::new(),
         });
-        let root_index = package.root_index;
+        let root_key = package.root_key;
 
         let mut children = Vec::new();
         for entry in fs::read_dir(root_path)? {
             let entry = entry?;
             if should_search(&entry) {
-                children.push(gather_module(entry.path(), &mut package, Some(root_index))?);
+                children.push(gather_module(entry.path(), &mut package, Some(root_key))?);
             }
         }
 
-        package.modules[root_index].children = children;
+        package.modules[root_key].children = children;
 
         Ok(package)
     } else {
@@ -249,8 +258,8 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
 fn gather_module(
     path: PathBuf,
     package: &mut Package<File>,
-    parent: Option<usize>,
-) -> Result<usize, Error> {
+    parent: Option<DefaultKey>,
+) -> Result<DefaultKey, Error> {
     let name = match path
         .file_prefix()
         .expect("provided path shouldn't end in `..`")
@@ -279,7 +288,7 @@ fn gather_module(
             }
         };
 
-        let index = package.add(Module {
+        let index = package.insert(Module {
             parent,
             name,
             contents: root,
@@ -298,7 +307,7 @@ fn gather_module(
 
         Ok(index)
     } else {
-        Ok(package.add(Module {
+        Ok(package.insert(Module {
             parent,
             name,
             contents: File::open(path).expect("provided path should exist"),

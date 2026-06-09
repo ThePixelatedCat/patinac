@@ -1,17 +1,16 @@
-use errors::TEST_HANDLER;
-use parse::Parser;
+use errors::ErrorHandler;
 use typecheck::TypeChecker;
 
 use crate::{Codegen, CodegenMode, OptLevel};
 
-fn check(input: &str, opt_level: OptLevel) {
-    let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
-    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
-    let ty_map = TypeChecker::new(TEST_HANDLER)
+fn check(src: &str, opt_level: OptLevel) {
+    let mut hir = nameres::test_resolve_ast(src).unwrap();
+    let ty_map = TypeChecker::new(ErrorHandler::TEST)
         .type_program(&mut hir)
         .unwrap();
     let ctx = crate::create_ctx();
-    Codegen::new(&hir, &ty_map, TEST_HANDLER, &ctx, "test").codegen(opt_level, CodegenMode::Silent);
+    Codegen::new(&hir, &ty_map, ErrorHandler::TEST, &ctx, "test")
+        .codegen(opt_level, CodegenMode::Silent);
 }
 
 #[test]

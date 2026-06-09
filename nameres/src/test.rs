@@ -1,33 +1,8 @@
 use std::assert_matches;
 
-use errors::{Result, TEST_HANDLER};
-use hir::Hir;
+use errors::ErrorHandler;
+use package::ModuleTree;
 use parse::Parser;
-
-use crate::{Scope, exprs};
-
-#[allow(clippy::unwrap_used, reason = "Test utility")]
-fn test_resolve_expr(input: &str) -> Result<Hir> {
-    let expr = Parser::parse_expr(input).unwrap();
-    let mut hir = Hir::default();
-    let mut handler = TEST_HANDLER;
-    exprs::resolve_expr(
-        &Scope::default(),
-        &Scope::default(),
-        &mut hir,
-        &mut handler,
-        expr,
-    )?;
-    Ok(hir)
-}
-
-#[allow(clippy::unwrap_used, reason = "Test utility")]
-fn test_resolve_full(input: &str) -> Result<Hir> {
-    crate::resolve(
-        Parser::new(input, TEST_HANDLER).parse().unwrap(),
-        TEST_HANDLER,
-    )
-}
 
 #[test]
 fn lambda() {
@@ -37,12 +12,15 @@ fn lambda() {
     fn(c) -> a + b + c
     a = 6
 }";
-    assert_matches!(test_resolve_expr(input), Ok(_));
+    assert_matches!(crate::test_resolve_expr(input), Ok(_));
 }
 
 #[test]
 fn for_() {
-    assert_matches!(test_resolve_expr("for x in [1, 2, 3] { x + 5 }"), Ok(_));
+    assert_matches!(
+        crate::test_resolve_expr("for x in [1, 2, 3] { x + 5 }"),
+        Ok(_)
+    );
 }
 
 #[test]
@@ -53,7 +31,7 @@ fn shadowing() {
     {let a = true}
     a
 }"#;
-    assert_matches!(test_resolve_expr(input), Ok(_));
+    assert_matches!(crate::test_resolve_expr(input), Ok(_));
 }
 
 #[test]
@@ -62,12 +40,12 @@ fn fib() {
     fn fib(n: UInt): UInt =
         if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }         
 ";
-    assert_matches!(test_resolve_full(input), Ok(_));
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
 }
 
 #[test]
 fn unbound_var() {
-    assert!(test_resolve_expr("a + 5").is_err(),);
+    assert_matches!(crate::test_resolve_expr("a + 5"), Err(_));
 }
 
 #[test]
@@ -79,7 +57,7 @@ fn unique_places() {
         let g = fn(mut a) -> f(mut a, b)
     }
 ";
-    assert_matches!(test_resolve_full(input), Ok(_));
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
 
     let input = "
     record Box(v: Int)
@@ -88,7 +66,7 @@ fn unique_places() {
         let g = fn(mut a) -> f(mut a.v, a)
     }
 ";
-    assert_matches!(test_resolve_full(input), Err(_));
+    assert_matches!(crate::test_resolve_ast(input), Err(_));
 
     let input = "
     fn main(): () = {
@@ -97,7 +75,7 @@ fn unique_places() {
     }
     fn swap(mut a: Int, mut b: Int): () = {}
 ";
-    assert_matches!(test_resolve_full(input), Err(_));
+    assert_matches!(crate::test_resolve_ast(input), Err(_));
 
     let input = "
     fn main(): () = {
@@ -106,7 +84,7 @@ fn unique_places() {
     }
     fn swap(mut a: Int, mut b: Int): () = {}
 ";
-    assert_matches!(test_resolve_full(input), Err(_));
+    assert_matches!(crate::test_resolve_ast(input), Err(_));
 
     let input = "
     fn main(): () = {
@@ -115,7 +93,7 @@ fn unique_places() {
     }
     fn swap(mut a: Int, mut b: Int): () = {}
 ";
-    assert_matches!(test_resolve_full(input), Ok(_));
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
 }
 
 #[test]
@@ -124,7 +102,7 @@ fn consts() {
     const B: UInt = A * 2
     const A: UInt = 5
 ";
-    assert_matches!(test_resolve_full(input), Ok(_));
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
 }
 
 #[test]
@@ -136,13 +114,13 @@ fn list() {
 
     fn cons(list: List, elem: Int): List = "todo"
 "#;
-    assert_matches!(test_resolve_full(input), Ok(_));
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
 }
 
 #[test]
 fn unknown_type() {
     assert_matches!(
-        test_resolve_expr(r#"{let x: Foo = "Hello, World!"}"#),
+        crate::test_resolve_expr(r#"{let x: Foo = "Hello, World!"}"#),
         Err(_)
     );
 }
@@ -153,11 +131,33 @@ fn rebinding() {
     const A: UInt = 5
     const A: UInt = 6
 ";
-    assert!(test_resolve_full(input).is_err(),);
+    assert_matches!(crate::test_resolve_ast(input), Err(_));
 
     let input = "
     record Foo()
     record Foo(val: UInt)
 ";
-    assert!(test_resolve_full(input).is_err(),);
+    assert_matches!(crate::test_resolve_ast(input), Err(_));
+}
+
+#[test]
+#[allow(clippy::unwrap_used, reason = "test function")]
+fn modules() {
+    let root_ast = Parser::new("fn main(): () = print foo::sum(1, 1)", ErrorHandler::TEST)
+        .parse()
+        .unwrap();
+    let foo_ast = Parser::new("fn sum(a: Int, b: Int): Int = a + b", ErrorHandler::TEST)
+        .parse()
+        .unwrap();
+
+    let tree = ModuleTree {
+        name: String::from("main"),
+        contents: root_ast,
+        children: vec![ModuleTree {
+            name: String::from("foo"),
+            contents: foo_ast,
+            children: vec![],
+        }],
+    };
+    assert_matches!(crate::resolve(tree.into(), ErrorHandler::TEST), Ok(_));
 }

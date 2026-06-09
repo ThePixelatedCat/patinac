@@ -51,12 +51,6 @@ impl Path {
         }
     }
 
-    /// Add to the end of the path.
-    pub fn push(&mut self, ident: Ident) {
-        self.head.push(self.tail);
-        self.tail = ident;
-    }
-
     /// Attempts to create a path, returning None if the provided `Vec` is empty.
     pub fn new(mut path: Vec<Ident>) -> Option<Self> {
         let tail = path.pop()?;
@@ -75,6 +69,36 @@ impl Path {
         Self {
             head: SmallVec::from_slice(&path[0..N - 1]),
             tail: path[N - 1],
+        }
+    }
+
+    /// Add to the end of the path.
+    pub fn push(&mut self, ident: Ident) {
+        self.head.push(self.tail);
+        self.tail = ident;
+    }
+
+    /// Returns the first identifier of the path.
+    pub fn start(&self) -> Ident {
+        if self.head.is_empty() {
+            self.tail
+        } else {
+            self.head[0]
+        }
+    }
+
+    /// Returns true if the path is made up of a single identifier.
+    pub fn is_single_ident(&self) -> bool {
+        self.head.is_empty()
+    }
+
+    /// Returns the first identifier of the path, and the rest of the path if it had more than 1 segment.
+    pub fn split(mut self) -> (Ident, Option<Self>) {
+        if self.head.is_empty() {
+            (self.tail, None)
+        } else {
+            let start = self.head.remove(0);
+            (start, Some(self))
         }
     }
 }

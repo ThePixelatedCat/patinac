@@ -13,9 +13,7 @@ use hir::{
         Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp, LitExpr,
         PrefixOp as HirPrefixOp, Stmt as HirStmt,
     },
-    items::TyId,
 };
-use ident::Ident;
 
 use crate::{ErrorKind, Scope};
 
@@ -24,29 +22,24 @@ use crate::{ErrorKind, Scope};
     reason = "Any given arm is readable on it's own"
 )]
 pub fn resolve_expr(
-    ty_scope: &Scope<TyId>,
-    var_scope: &Scope<VarId>,
+    scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     expr: AstExpr,
 ) -> Result<ExprId> {
     let new_expr = match expr.kind {
-        ExprKind::Var(path) => match var_scope.get(&ident) {
-            Some(&id) => HirExpr::Ident(id),
+        ExprKind::Var(path) => match scope.resolve_var(path) {
+            Some(id) => HirExpr::Ident(id),
             None => {
                 return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span)));
             }
         },
         ExprKind::Lit(lit) => HirExpr::Lit(crate::convert_lit(lit)),
-        ExprKind::Array(exprs) => {
-            HirExpr::Array(resolve_exprs(ty_scope, var_scope, hir, handler, exprs)?)
-        }
-        ExprKind::Tuple(exprs) => {
-            HirExpr::Tuple(resolve_exprs(ty_scope, var_scope, hir, handler, exprs)?)
-        }
+        ExprKind::Array(exprs) => HirExpr::Array(resolve_exprs(scope, hir, handler, exprs)?),
+        ExprKind::Tuple(exprs) => HirExpr::Tuple(resolve_exprs(scope, hir, handler, exprs)?),
         ExprKind::Infix { op, lhs, rhs } => {
-            let rhs = resolve_expr(ty_scope, var_scope, hir, handler, *rhs);
-            let lhs = resolve_expr(ty_scope, var_scope, hir, handler, *lhs)?;
+            let rhs = resolve_expr(scope, hir, handler, *rhs);
+            let lhs = resolve_expr(scope, hir, handler, *lhs)?;
             let op = convert_infix_op(op);
             if op == HirInfixOp::Assign {
                 check_is_place(hir, handler, lhs)?;
@@ -55,26 +48,26 @@ pub fn resolve_expr(
         }
         ExprKind::Prefix { op, expr } => HirExpr::Prefix {
             op: convert_prefix_op(op),
-            expr: resolve_expr(ty_scope, var_scope, hir, handler, *expr)?,
+            expr: resolve_expr(scope, hir, handler, *expr)?,
         },
         ExprKind::Field { base, field } => HirExpr::Field {
-            base: resolve_expr(ty_scope, var_scope, hir, handler, *base)?,
+            base: resolve_expr(scope, hir, handler, *base)?,
             field,
         },
         ExprKind::Index { arr, idx } => {
-            let arr = resolve_expr(ty_scope, var_scope, hir, handler, *arr);
-            let idx = resolve_expr(ty_scope, var_scope, hir, handler, *idx);
+            let arr = resolve_expr(scope, hir, handler, *arr);
+            let idx = resolve_expr(scope, hir, handler, *idx);
             HirExpr::Index {
                 arr: arr?,
                 idx: idx?,
             }
         }
         ExprKind::Call { func, args } => {
-            let func = resolve_expr(ty_scope, var_scope, hir, handler, *func);
+            let func = resolve_expr(scope, hir, handler, *func);
             let args: Vec<Arg> = args
                 .into_iter()
                 .map(|arg| {
-                    let val = resolve_expr(ty_scope, var_scope, hir, handler, arg.val)?;
+                    let val = resolve_expr(scope, hir, handler, arg.val)?;
                     if arg.mutable {
                         check_is_place(hir, handler, val)?;
                     }
@@ -103,41 +96,36 @@ pub fn resolve_expr(
             HirExpr::Call { func: func?, args }
         }
         ExprKind::Lambda { params, body } => {
-            let mut var_scope = Scope::clone(var_scope);
+            let mut scope = Scope::clone(scope);
 
-            // Rebind all mutable captures as immutable within the lambda body
+            // Rebind all mutable captures as immutable within the lambda body.
             let mut captures = HashSet::default();
-            collect_captures(&mut captures, &body);
-            // Remove unbound variables. This filters out the parameters (which are bound a few lines later)
-            captures.retain(|ident| var_scope.contains_key(ident));
+            collect_captures(&scope, &mut captures, &body);
             for capture in &captures {
-                let info = hir.var_info(var_scope[capture]);
+                let info = hir.var_info(*capture);
                 if info.mutable {
                     let id = hir.add_var(info.ident, false, info.span);
-                    var_scope.insert(*capture, id);
+                    scope.add_var(info.ident, id);
                 }
             }
 
             let params = params
                 .into_iter()
-                .map(|param| crate::resolve_binding(ty_scope, &mut var_scope, hir, handler, param))
+                .map(|param| crate::resolve_binding(&mut scope, hir, handler, param))
                 .try_collect_eager();
-            let body = resolve_expr(ty_scope, &var_scope, hir, handler, *body);
+            let body = resolve_expr(&scope, hir, handler, *body);
 
             HirExpr::Lambda {
                 params: params?,
                 body: body?,
-                captures: captures
-                    .into_iter()
-                    .map(|ident| var_scope[&ident])
-                    .collect(),
+                captures: captures.into_iter().collect(),
             }
         }
         ExprKind::If { cond, th, el } => {
-            let cond = resolve_expr(ty_scope, var_scope, hir, handler, *cond);
-            let th = resolve_block_expr(ty_scope, var_scope, hir, handler, th);
+            let cond = resolve_expr(scope, hir, handler, *cond);
+            let th = resolve_block_expr(scope, hir, handler, th);
             let el = el
-                .map(|el| resolve_block_expr(ty_scope, var_scope, hir, handler, el))
+                .map(|el| resolve_block_expr(scope, hir, handler, el))
                 .transpose();
             HirExpr::If {
                 cond: cond?,
@@ -147,73 +135,61 @@ pub fn resolve_expr(
         }
         ExprKind::Match { .. } => todo!("Pattern Matching"),
         ExprKind::For { pat, iter, body } => {
-            let iter = resolve_expr(ty_scope, var_scope, hir, handler, *iter);
-            let mut var_scope = Scope::clone(var_scope);
-            let id = crate::resolve_pat(&mut var_scope, hir, pat, false, None);
-            let body = resolve_block_expr(ty_scope, &var_scope, hir, handler, body);
+            let iter = resolve_expr(scope, hir, handler, *iter);
+            let mut scope = Scope::clone(scope);
+            let id = crate::resolve_pat(&mut scope, hir, pat, false, None);
+            let body = resolve_block_expr(&scope, hir, handler, body);
             HirExpr::For {
                 id,
                 iter: iter?,
                 body: body?,
             }
         }
-        ExprKind::Loop(body) => {
-            HirExpr::Loop(resolve_block_expr(ty_scope, var_scope, hir, handler, body)?)
-        }
+        ExprKind::Loop(body) => HirExpr::Loop(resolve_block_expr(scope, hir, handler, body)?),
         ExprKind::Break => HirExpr::Break,
         ExprKind::Continue => HirExpr::Continue,
-        ExprKind::Return(expr) => {
-            HirExpr::Return(resolve_expr(ty_scope, var_scope, hir, handler, *expr)?)
-        }
-        ExprKind::Block(stmts) => HirExpr::Block(resolve_block_expr(
-            ty_scope, var_scope, hir, handler, stmts,
-        )?),
-        ExprKind::Print(expr) => {
-            HirExpr::Print(resolve_expr(ty_scope, var_scope, hir, handler, *expr)?)
-        }
+        ExprKind::Return(expr) => HirExpr::Return(resolve_expr(scope, hir, handler, *expr)?),
+        ExprKind::Block(stmts) => HirExpr::Block(resolve_block_expr(scope, hir, handler, stmts)?),
+        ExprKind::Print(expr) => HirExpr::Print(resolve_expr(scope, hir, handler, *expr)?),
     };
 
     Ok(hir.add_expr(new_expr, expr.span))
 }
 
 fn resolve_exprs(
-    ty_scope: &Scope<TyId>,
-    var_scope: &Scope<VarId>,
+    scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     exprs: Vec<AstExpr>,
 ) -> Result<SmallVec<[ExprId; 3]>> {
     exprs
         .into_iter()
-        .map(|expr| resolve_expr(ty_scope, var_scope, hir, handler, expr))
+        .map(|expr| resolve_expr(scope, hir, handler, expr))
         .try_collect_eager()
 }
 
 fn resolve_block_expr(
-    ty_scope: &Scope<TyId>,
-    var_scope: &Scope<VarId>,
+    scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     block_expr: AstBlockExpr,
 ) -> Result<HirBlockExpr> {
-    let mut var_scope = Scope::clone(var_scope);
+    let mut scope = Scope::clone(scope);
     let stmts = block_expr
         .stmts
         .into_iter()
         .map(|stmt| match stmt {
             AstStmt::Decl { binding, val, span } => {
                 // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
-                let val = resolve_expr(ty_scope, &var_scope, hir, handler, val);
-                let id = crate::resolve_binding(ty_scope, &mut var_scope, hir, handler, binding);
+                let val = resolve_expr(&scope, hir, handler, val);
+                let id = crate::resolve_binding(&mut scope, hir, handler, binding);
                 Ok(HirStmt::Decl {
                     id: id?,
                     val: val?,
                     span,
                 })
             }
-            AstStmt::Expr(expr) => {
-                resolve_expr(ty_scope, &var_scope, hir, handler, expr).map(HirStmt::Expr)
-            }
+            AstStmt::Expr(expr) => resolve_expr(&scope, hir, handler, expr).map(HirStmt::Expr),
         })
         .try_collect_eager()?;
     Ok(HirBlockExpr {
@@ -279,60 +255,68 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
     }
 }
 
-fn collect_captures(captures: &mut HashSet<Ident>, expr: &AstExpr) {
+fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &AstExpr) {
     match &expr.kind {
         ExprKind::Var(path) => {
-            captures.insert(*ident);
+            // Only add capture if it's a single identifier, meaning it's a local variable, and it's bound.
+            // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
+            if path.is_single_ident()
+                && let Some(id) = scope.get_var(path.start())
+            {
+                captures.insert(id);
+            }
         }
         ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
         ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
             for e in exprs {
-                collect_captures(captures, e);
+                collect_captures(scope, captures, e);
             }
         }
         ExprKind::Lambda { body: e, .. }
         | ExprKind::Field { base: e, .. }
         | ExprKind::Prefix { expr: e, .. }
         | ExprKind::Print(e)
-        | ExprKind::Return(e) => collect_captures(captures, e),
+        | ExprKind::Return(e) => collect_captures(scope, captures, e),
         ExprKind::Infix {
             lhs: e1, rhs: e2, ..
         }
         | ExprKind::Index { arr: e1, idx: e2 } => {
-            collect_captures(captures, e1);
-            collect_captures(captures, e2);
+            collect_captures(scope, captures, e1);
+            collect_captures(scope, captures, e2);
         }
         ExprKind::Call { func, args } => {
-            collect_captures(captures, func);
+            collect_captures(scope, captures, func);
             for a in args {
-                collect_captures(captures, &a.val);
+                collect_captures(scope, captures, &a.val);
             }
         }
         ExprKind::Match { scrutinee, arms } => {
-            collect_captures(captures, scrutinee);
+            collect_captures(scope, captures, scrutinee);
             for a in arms {
-                collect_captures(captures, &a.body);
+                collect_captures(scope, captures, &a.body);
             }
         }
         ExprKind::If { cond, th, el } => {
-            collect_captures(captures, cond);
-            collect_block_captures(captures, th);
+            collect_captures(scope, captures, cond);
+            collect_block_captures(scope, captures, th);
             el.as_ref()
-                .inspect(|el| collect_block_captures(captures, el));
+                .inspect(|el| collect_block_captures(scope, captures, el));
         }
         ExprKind::For { iter, body, .. } => {
-            collect_captures(captures, iter);
-            collect_block_captures(captures, body);
+            collect_captures(scope, captures, iter);
+            collect_block_captures(scope, captures, body);
         }
-        ExprKind::Loop(stmts) | ExprKind::Block(stmts) => collect_block_captures(captures, stmts),
+        ExprKind::Loop(stmts) | ExprKind::Block(stmts) => {
+            collect_block_captures(scope, captures, stmts);
+        }
     }
 }
 
-fn collect_block_captures(captures: &mut HashSet<Ident>, block: &AstBlockExpr) {
+fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &AstBlockExpr) {
     for s in &block.stmts {
         match s {
-            AstStmt::Decl { val, .. } => collect_captures(captures, val),
-            AstStmt::Expr(expr) => collect_captures(captures, expr),
+            AstStmt::Decl { val, .. } => collect_captures(scope, captures, val),
+            AstStmt::Expr(expr) => collect_captures(scope, captures, expr),
         }
     }
 }
