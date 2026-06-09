@@ -11,7 +11,7 @@ use ast::{
     Arg, Binding, BlockExpr, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, ParamTy, PatKind,
     Path, Return, Stmt, TyItem, TyItemKind, TyKind,
 };
-use errors::{DUMMY_HANDLER, TEST_HANDLER};
+use errors::ErrorHandler;
 use ident::Ident;
 use std::range::Range;
 
@@ -36,7 +36,7 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) ->  () = {
 record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
 ";
 
-    let items = Parser::new(input, TEST_HANDLER).parse().unwrap();
+    let items = Parser::new(input, ErrorHandler::TEST).parse().unwrap();
 
     assert_eq!(
         items.execs[0],
@@ -235,6 +235,6 @@ proptest! {
     #[test]
     fn doesnt_crash(toks in vec(TokKind::arbitrary(), 8..=512)) {
         let raw = toks.iter().map(|t| t.reverse()).join(" ");
-        let _ = Parser::new(&raw, DUMMY_HANDLER).parse();
+        let _ = Parser::new(&raw, ErrorHandler::DUMMY).parse();
     }
 }

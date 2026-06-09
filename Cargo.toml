@@ -4,7 +4,7 @@ members = [
     "compile",
     "ident",
     "errors",
-    "module",
+    "package",
     "parse",
     "ast",
     "nameres",

@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 # Internal
 errors.path = "../errors"
-module.path = "../module"
+package.path = "../package"
 ast.path = "../ast"
 parse.path = "../parse"
 nameres.path = "../nameres"

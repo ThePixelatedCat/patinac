@@ -1,6 +1,6 @@
 //! The driver for the compiler. Handles command-line arguments and stitches together the compilation phases.
 
-use std::{fs, path::PathBuf, process::ExitCode, range::Range, time::Instant};
+use std::{fs, io::Read, path::PathBuf, process::ExitCode, range::Range, time::Instant};
 
 use argh::{FromArgs, from_env};
 use yansi::Paint as _;
@@ -39,26 +39,39 @@ fn main() -> ExitCode {
         &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
     let handler = ErrorHandler::new(handler_inner);
 
-    eprintln!("Traversing...");
-    let modules = module::gather_modules(&args.src_path);
-
-    eprintln!("Parsing...");
-    let src = match fs::read_to_string(&args.src_path) {
-        Ok(src) => src,
+    let modules = match package::gather_modules(&args.src_path) {
+        Ok(modules) => modules,
         Err(err) => {
             eprintln!(
-                "{error} {reading} {msg}",
-                error = "error".bright_red().bold(),
-                reading = "reading source file:".white().bold(),
-                msg = err.white().bold()
+                "{} {} {}",
+                "error".bright_red().bold(),
+                "gathering package modules:".white().bold(),
+                err.white().bold()
             );
             return ExitCode::FAILURE;
         }
     };
 
-    let Ok(ast) = Parser::new(&src, handler.clone()).parse() else {
-        return ExitCode::FAILURE;
-    };
+    eprintln!("Parsing...");
+    let modules = modules.map(|name, file| {
+        let mut src = String::new();
+        match file.read_to_string(&mut src) {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!(
+                    "{error} {reading} {name}{} {msg}",
+                    error = "error".bright_red().bold(),
+                    reading = "reading module".white().bold(),
+                    ":".white().bold(),
+                    msg = err.white().bold()
+                );
+                return Err(ExitCode::FAILURE);
+            }
+        };
+        Parser::new(&src, handler.clone())
+            .parse()
+            .map_err(|_| ExitCode::FAILURE)
+    });
 
     eprintln!("Resolving...");
     let Ok(mut hir) = nameres::resolve(ast, handler.clone()) else {

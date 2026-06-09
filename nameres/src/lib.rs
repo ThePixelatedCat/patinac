@@ -8,7 +8,8 @@ use itertools::Itertools as _;
 
 use ast::{
     Ast, Binding, ExecItem as AstExecItem, ExecKind as AstExecKind, Expr as AstExpr,
-    LitExpr as AstLitExpr, Pat, PatKind, Ty as AstTy, TyItem, TyItemKind, TyKind as AstTyKind,
+    LitExpr as AstLitExpr, Pat, PatKind, Path, Ty as AstTy, TyItem, TyItemKind,
+    TyKind as AstTyKind,
 };
 use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
 use hir::{
@@ -18,20 +19,22 @@ use hir::{
     types::{Param as ParamTy, Ty as HirTy},
 };
 use ident::Ident;
+use package::Package;
 
 use crate::error::ErrorKind;
 
 type Scope<Id> = im_rc::HashMap<Ident, Id, RandomState>;
 
-/// Resolves and lowers the provided [`Asts`][Ast] into a single [`Hir`].
+/// Resolves and lowers the provided [`Package`] into a single [`Hir`].
 ///
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name.
-pub fn resolve(mut modules: Vec<Ast>, mut handler: ErrorHandler) -> Result<Hir> {
+pub fn resolve(mut package: Package<Ast>, mut handler: ErrorHandler) -> Result<Hir> {
     let mut hir = Hir::default();
 
     let mut ty_scope = Scope::default();
     let mut var_scope = Scope::default();
+    let mut mod_scope = Scope::default();
 
     for ty in &ast.tys {
         match ty_scope.get(&ty.ident.ident) {
@@ -249,6 +252,8 @@ fn resolve_binding(
     ))
 }
 
+// fn resolve_path(ty_scope: &Scope<TyId>, var_scope: &Scope<VarId>, mod_scope: &Scope<>, path: &Path) ->
+
 fn resolve_ty(ty_scope: &Scope<TyId>, handler: &mut ErrorHandler, ty: AstTy) -> Result<HirTy> {
     match ty.kind {
         AstTyKind::Int => Ok(HirTy::Int),
@@ -277,7 +282,7 @@ fn resolve_ty(ty_scope: &Scope<TyId>, handler: &mut ErrorHandler, ty: AstTy) -> 
             let ret = Box::new(resolve_ty(ty_scope, handler, *ret.ty)?);
             Ok(HirTy::Fn(params?, ret))
         }
-        AstTyKind::Named(ident, args) => {
+        AstTyKind::Named(path, args) => {
             if !args.is_empty() {
                 todo!("Generics")
             }
@@ -333,7 +338,7 @@ fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
 #[cfg(any(test, feature = "test"))]
 pub fn test_resolve_expr(expr: AstExpr) -> Result<(ExprId, Hir)> {
     let mut hir = Hir::default();
-    let mut handler = errors::TEST_HANDLER;
+    let mut handler = ErrorHandler::TEST;
     let expr = exprs::resolve_expr(
         &Scope::default(),
         &Scope::default(),

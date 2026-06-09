@@ -152,8 +152,8 @@ dependencies = [
  "ast",
  "codegen_llvm",
  "errors",
- "module",
  "nameres",
+ "package",
  "parse",
  "typecheck",
  "yansi",
@@ -506,13 +506,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
-name = "module"
-version = "0.1.0"
-dependencies = [
- "derive_more",
-]
-
-[[package]]
 name = "nameres"
 version = "0.1.0"
 dependencies = [
@@ -524,6 +517,7 @@ dependencies = [
  "ident",
  "im-rc",
  "itertools",
+ "package",
  "parse",
  "smallvec",
 ]
@@ -542,6 +536,13 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "package"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+]
 
 [[package]]
 name = "parse"

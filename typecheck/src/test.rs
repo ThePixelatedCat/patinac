@@ -1,6 +1,6 @@
 use std::assert_matches;
 
-use errors::{Result, TEST_HANDLER};
+use errors::{ErrorHandler, Result};
 use hir::types::{Param, Ty};
 use parse::Parser;
 use std::range::Range;
@@ -12,7 +12,7 @@ fn check_expr(input: &str) -> Result<Ty> {
     let expr = Parser::parse_expr(input).unwrap();
     let (expr, mut hir) = nameres::test_resolve_expr(expr).unwrap();
 
-    let mut checker = TypeChecker::new(TEST_HANDLER);
+    let mut checker = TypeChecker::new(ErrorHandler::TEST);
     checker.build_context(&hir);
     checker.infer_expr(&hir, expr);
     checker.unify(&hir);
@@ -22,9 +22,9 @@ fn check_expr(input: &str) -> Result<Ty> {
 
 #[allow(clippy::unwrap_used, reason = "Test utility")]
 fn check_full(input: &str) -> Result<()> {
-    let ast = Parser::new(input, TEST_HANDLER).parse().unwrap();
-    let mut hir = nameres::resolve(ast, TEST_HANDLER).unwrap();
-    TypeChecker::new(TEST_HANDLER).type_program(&mut hir)?;
+    let ast = Parser::new(input, ErrorHandler::TEST).parse().unwrap();
+    let mut hir = nameres::resolve(ast, ErrorHandler::TEST).unwrap();
+    TypeChecker::new(ErrorHandler::TEST).type_program(&mut hir)?;
     Ok(())
 }
 

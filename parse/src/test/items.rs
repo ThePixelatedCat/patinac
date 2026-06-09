@@ -5,7 +5,7 @@ use ast::{
     ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
     Variant,
 };
-use errors::TEST_HANDLER;
+use errors::ErrorHandler;
 use ident::Ident;
 use std::range::Range;
 
@@ -16,7 +16,7 @@ fn const_items() {
     assert_eq!(
         Parser::new(
             r#"const hello_world: String = "Hello, World!""#,
-            TEST_HANDLER
+            ErrorHandler::TEST
         )
         .item(),
         Ok(Item::ExecItem(ExecItem {
@@ -32,7 +32,7 @@ fn const_items() {
 #[test]
 fn record_items() {
     assert_eq!(
-        Parser::new("record Point(x: Int, y: Int)", TEST_HANDLER).item(),
+        Parser::new("record Point(x: Int, y: Int)", ErrorHandler::TEST).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Point").span(7..12),
             generics: smallvec![],
@@ -55,7 +55,7 @@ record Foo[T, U](
     bar: Bar[Baz[T]]
     )";
     assert_eq!(
-        Parser::new(input, TEST_HANDLER).item(),
+        Parser::new(input, ErrorHandler::TEST).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(8..11),
             generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
@@ -94,7 +94,7 @@ enum Foo {
 ";
 
     assert_eq!(
-        Parser::new(input, TEST_HANDLER).item(),
+        Parser::new(input, ErrorHandler::TEST).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(6..9),
             generics: smallvec![],
@@ -131,7 +131,11 @@ enum Foo {
 #[test]
 fn function_items() {
     assert_eq!(
-        Parser::new("fn sum(mut a: Byte, b: Byte): () = a = a + b", TEST_HANDLER).item(),
+        Parser::new(
+            "fn sum(mut a: Byte, b: Byte): () = a = a + b",
+            ErrorHandler::TEST
+        )
+        .item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
@@ -172,17 +176,17 @@ fn function_items() {
 #[test]
 fn malformed_items() {
     assert!(
-        Parser::new("const fn: Int = 5", TEST_HANDLER)
+        Parser::new("const fn: Int = 5", ErrorHandler::TEST)
             .item()
             .is_err(),
     );
     assert!(
-        Parser::new("const NO_DICTS: [String: Int] = 5", TEST_HANDLER)
+        Parser::new("const NO_DICTS: [String: Int] = 5", ErrorHandler::TEST)
             .item()
             .is_err(),
     );
     assert!(
-        Parser::new("let global = false", TEST_HANDLER)
+        Parser::new("let global = false", ErrorHandler::TEST)
             .item()
             .is_err(),
     );

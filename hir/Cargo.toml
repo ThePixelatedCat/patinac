@@ -11,7 +11,7 @@ derive_more = { version = "2.1.1", features = [
     "display",
     "from",
     "into_iterator",
-], default-features = false }
+] }
 slotmap = "1.1.1"
 foldhash = "0.2.0"
 smallvec = { version = "1.15.1", features = [

@@ -65,7 +65,7 @@ impl<'src> Parser<'src> {
     /// If the lexer produces an error.
     #[cfg(any(test, feature = "test"))]
     pub fn parse_expr(src: &'src str) -> Result<Expr> {
-        Self::new(src, errors::TEST_HANDLER).expr()
+        Self::new(src, ErrorHandler::TEST).expr()
     }
 
     fn src_of(&self, tok: Tok) -> &'src str {
