@@ -1,16 +1,17 @@
 [workspace]
 resolver = "3"
 members = [
-    "compile",
-    "ident",
-    "errors",
-    "package",
-    "parse",
-    "ast",
-    "nameres",
-    "hir",
-    "typecheck",
-    "codegen_llvm",
+    "src/*",
+    # "compile",
+    # "ident",
+    # "errors",
+    # "package",
+    # "parse",
+    # "ast",
+    # "nameres",
+    # "hir",
+    # "typecheck",
+    # "codegen_llvm",
     # "codegen_cl",
 ]
 
