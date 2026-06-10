@@ -22,6 +22,11 @@ jobs:
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
         sudo ./llvm.sh 22 all
+    - name: Set up Rust version
+      run: |
+        rustup update
+        rustup override set stable
+        rustup --version
     - name: Build
       run: cargo build --verbose
     - name: Run tests
