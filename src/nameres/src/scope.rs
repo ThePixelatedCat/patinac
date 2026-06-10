@@ -3,18 +3,33 @@ use foldhash::fast::RandomState;
 use ast::Path;
 use hir::{TyId, VarId};
 use ident::Ident;
+use package::ModuleId;
 
 type ImFoldHashMap<K, V> = im_rc::HashMap<K, V, RandomState>;
 
-#[derive(Default, Clone)]
-pub struct Scope {
-    mods: ImFoldHashMap<String, Self>,
+#[derive(Clone)]
+pub struct Scope<'pkg> {
+    module: ModuleId,
+    mods: ImFoldHashMap<&'pkg str, Self>,
     tys: ImFoldHashMap<Ident, TyId>,
     vars: ImFoldHashMap<Ident, VarId>,
 }
 
-impl Scope {
-    pub fn add_module(&mut self, name: String, scope: Self) {
+impl<'pkg> Scope<'pkg> {
+    pub fn new(module: ModuleId) -> Self {
+        Self {
+            module,
+            mods: ImFoldHashMap::default(),
+            tys: ImFoldHashMap::default(),
+            vars: ImFoldHashMap::default(),
+        }
+    }
+
+    pub const fn module(&self) -> ModuleId {
+        self.module
+    }
+
+    pub fn add_module(&mut self, name: &'pkg str, scope: Self) {
         self.mods.insert(name, scope);
     }
 

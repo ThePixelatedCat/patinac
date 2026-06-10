@@ -5,6 +5,7 @@ mod exprs;
 use std::range::Range;
 
 use derive_more::{From, IntoIterator};
+use package::ModuleId;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::{Ident, SpanIdent};
@@ -96,11 +97,18 @@ impl Hir {
 
 // Var-related functions
 impl Hir {
-    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Range<u32>) -> VarId {
+    pub fn add_var(
+        &mut self,
+        ident: Ident,
+        mutable: bool,
+        span: Range<u32>,
+        module: ModuleId,
+    ) -> VarId {
         self.vars.insert(VarInfo {
             ident,
             mutable,
             span,
+            module,
         })
     }
 
@@ -165,6 +173,7 @@ impl Fields {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExecItem {
+    pub module: ModuleId,
     pub id: VarId,
     pub kind: ExecKind,
 }
@@ -186,6 +195,7 @@ pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
     pub span: Range<u32>,
+    pub module: ModuleId,
 }
 
 /// The kinds of types

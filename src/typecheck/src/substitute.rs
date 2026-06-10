@@ -2,7 +2,7 @@ use std::mem;
 
 use itertools::Itertools as _;
 
-use errors::{Result, TryCollectEager as _};
+use errors::{Result, SpanError as _, TryCollectEager as _};
 use hir::{ExprId, Hir, Param, Ty};
 use slotmap::SecondaryMap;
 
@@ -15,11 +15,11 @@ impl TypeChecker<'_> {
 
         let expr_map = mem::take(&mut self.substitution)
             .iter()
-            .map(|(expr, ty)| match sub_ty(&mut self.table, ty) {
+            .map(|(expr, (ty, module))| match sub_ty(&mut self.table, ty) {
                 Ok(ty) => Ok((expr, ty)),
                 Err(()) => Err(self
                     .handler
-                    .err(ErrorKind::UninferredExprType.span(hir.expr_span(expr)))),
+                    .err(ErrorKind::UninferredExprType.span(hir.expr_span(expr), *module))),
             })
             .try_collect_eager();
 
@@ -30,13 +30,16 @@ impl TypeChecker<'_> {
                     hir.add_var_ty(var, ty);
                     Ok(())
                 }
-                Err(()) => Err(self
-                    .handler
-                    .err(ErrorKind::UninferredVarType.span(hir.var_info(var).span))),
+                Err(()) => {
+                    let var_info = hir.var_info(var);
+                    Err(self
+                        .handler
+                        .err(ErrorKind::UninferredVarType.span(var_info.span, var_info.module)))
+                }
             })
             .try_collect_eager()?;
 
-        Ok(expr_map?)
+        expr_map
     }
 }
 

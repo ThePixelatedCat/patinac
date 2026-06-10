@@ -2,6 +2,8 @@ mod exprs;
 mod items;
 mod lex;
 
+use std::range::Range;
+
 use itertools::Itertools as _;
 use pretty_assertions::assert_eq;
 use proptest::{collection::vec, prelude::*};
@@ -13,7 +15,7 @@ use ast::{
 };
 use errors::ErrorHandler;
 use ident::Ident;
-use std::range::Range;
+use package::ModuleId;
 
 use crate::{Parser, TokKind};
 
@@ -36,10 +38,10 @@ fn testingfn(mut x: Bool, bar: Bar[Baz[T], U]): mut Fn(mut Int) ->  () = {
 record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
 ";
 
-    let items = Parser::new(input, ErrorHandler::TEST).parse().unwrap();
+    let ast = Parser::new_test(input).parse().unwrap();
 
     assert_eq!(
-        items.execs[0],
+        ast.execs[0],
         ExecItem {
             ident: Ident::new("testingfn").span(4..13),
             kind: ExecKind::Fn {
@@ -199,7 +201,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
     );
 
     assert_eq!(
-        items.tys[0],
+        ast.tys[0],
         TyItem {
             ident: Ident::new("Foo").span(238..241),
             generics: smallvec![
@@ -209,7 +211,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
             kind: TyItemKind::Record(vec![
                 Field {
                     ident: Ident::new("x").span(248..249),
-                    ty: TyKind::string().span(251..257),
+                    ty: TyKind::named("String").span(251..257),
                 },
                 Field {
                     ident: Ident::new("bar").span(259..262),
@@ -235,6 +237,6 @@ proptest! {
     #[test]
     fn doesnt_crash(toks in vec(TokKind::arbitrary(), 8..=512)) {
         let raw = toks.iter().map(|t| t.reverse()).join(" ");
-        let _ = Parser::new(&raw, ErrorHandler::DUMMY).parse();
+        let _ = Parser::new(ModuleId::default(), &raw, ErrorHandler::DUMMY).parse();
     }
 }

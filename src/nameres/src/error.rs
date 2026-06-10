@@ -1,8 +1,8 @@
-use std::{error, range::Range};
+use std::range::Range;
 
 use derive_more::Display;
 
-use errors::Error;
+use errors::SpanError;
 use ident::Ident;
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
@@ -27,10 +27,4 @@ pub enum ErrorKind {
     InvalidMain,
 }
 
-impl error::Error for ErrorKind {}
-
-impl ErrorKind {
-    pub fn span(self, span: impl Into<Range<u32>>) -> Error<Self> {
-        Error::new(self, span)
-    }
-}
+impl SpanError for ErrorKind {}

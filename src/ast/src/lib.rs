@@ -8,9 +8,32 @@ use std::{
 
 use derive_more::Display;
 use itertools::Itertools as _;
+use package::ModuleId;
+use slotmap::SecondaryMap;
 use smallvec::SmallVec;
 
 use ident::{Ident, SpanIdent};
+
+/// The [`Asts`][Ast] for an entire package.
+pub struct PackageAsts(SecondaryMap<ModuleId, Ast>);
+
+impl PackageAsts {
+    /// Returns a reference to the [`Ast`] for the provided module.
+    pub fn get(&self, id: ModuleId) -> &Ast {
+        &self.0[id]
+    }
+
+    /// Removes and returns the [`Ast`] for the provided module.
+    pub fn take(&mut self, id: ModuleId) -> Ast {
+        self.0.remove(id).expect("id is valid for this map")
+    }
+}
+
+impl FromIterator<(ModuleId, Ast)> for PackageAsts {
+    fn from_iter<T: IntoIterator<Item = (ModuleId, Ast)>>(iter: T) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
 
 /// The top-level representation of a single module, containing all of the module's items.
 ///
@@ -245,15 +268,15 @@ impl Expr {
 #[derive(Debug, Clone, PartialEq)]
 /// The kinds of expressions.
 pub enum ExprKind {
-    /// A variable name, such as `foo`.
+    /// A reference to a named value..
     Var(Path),
-    /// A basic literal value, such as `1.2` or `"Hello, World"`. The specific kinds of literals are represented by [`LitExpr`].
+    /// A scalar literal value. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
-    /// An array literal, such as `[1, 2, 3]`.
+    /// An array literal.
     Array(Vec<Expr>),
-    /// A tuple literal, such as `(1, 2.0, "3")`.
+    /// A tuple literal.
     Tuple(Vec<Expr>),
-    /// An infix operation, such as `1 + 2`. This includes assignment.
+    /// An infix operation. This includes assignment.
     Infix {
         /// The infix operator used.
         op: InfixOp,
@@ -262,42 +285,42 @@ pub enum ExprKind {
         /// The right-hand side of the operation.
         rhs: Box<Expr>,
     },
-    /// A prefix operation, such as `!true`.
+    /// A prefix operation.
     Prefix {
         /// The prefix operator used.
         op: PrefixOp,
         /// The base expression the operator is attached to.
         expr: Box<Expr>,
     },
-    /// Record field access, such as `foo.bar`.
+    /// Record field access.
     Field {
         /// The base expression from which the field is being accessed.
         base: Box<Expr>,
         /// The name of the field.
         field: SpanIdent,
     },
-    /// Array indexing, such as `foo.[0]`.
+    /// Array indexing.
     Index {
         /// The base expression being indexed into.
         arr: Box<Expr>,
         /// The index to access.
         idx: Box<Expr>,
     },
-    /// A function call, such as `sin(90.0)`.
+    /// A function call.
     Call {
         /// The function being called.
         func: Box<Expr>,
         /// The list of arguments being applied.
         args: Vec<Arg>,
     },
-    /// A lambda expression, such as `fn(x) -> x * 2`.
+    /// A capturing lambda.
     Lambda {
         /// The parameters of the function.
         params: Vec<Binding>,
         /// The body of the function.
         body: Box<Expr>,
     },
-    /// An if expression, such as `if foo { 1.0 } else { 2.0 }`.
+    /// An if-then, with an optional else branch.
     If {
         /// The condition of the if.
         cond: Box<Expr>,
@@ -306,29 +329,40 @@ pub enum ExprKind {
         /// The "else" block, if there is one.
         el: Option<BlockExpr>,
     },
-    /// A match expression, such as `foo.match { Some(x) -> x, None -> panic() }`.
+    /// A match.
     Match {
         /// The value being matched against.
         scrutinee: Box<Expr>,
         /// The match arms.
         arms: Vec<MatchArm>,
     },
-    /// A for-loop expression, such as `for x in [1, 2, 3] { println(x) }`.
+    /// A loop over the elements of an iterator.
     For {
+        /// The pattern to bind each element against.
         pat: Pat,
+        /// The iterator to be iterated over.
         iter: Box<Expr>,
+        /// The body to execute for each element.
         body: BlockExpr,
     },
+    /// An infinite loop.
     Loop(BlockExpr),
+    /// Break, which terminates the enclosing [`loop`][Self::Loop] or [`for loop`][Self::For] early.
     Break,
+    /// Continue, which skips to the next iteration of the enclosing [`loop`][Self::Loop] or [`for loop`][Self::For].
     Continue,
+    /// Return, which returns early from the enclosing function.
     Return(Box<Expr>),
+    /// A block, which executes each contained statement sequentially.
+    /// Blocks evaluates the value of the last statement, or unit if the last statement is not an expression.
     Block(BlockExpr),
 
+    /// TEMPORARY, until we have stdlib + FFI
     Print(Box<Expr>),
 }
 
 impl ExprKind {
+    /// Constructs an [`Expr`] wrapping `self` with the provided span.
     pub fn span(self, span: impl Into<Range<u32>>) -> Expr {
         Expr {
             kind: self,
@@ -336,90 +370,139 @@ impl ExprKind {
         }
     }
 
+    /// Constructs a single-segment [`var`][Self::Var] expression from the given string.
     pub fn ident(string: &str) -> Self {
         Self::Var(Path::single(Ident::new(string)))
     }
 
+    /// Constructs an integer literal.
     pub const fn int(i: u64) -> Self {
         Self::Lit(LitExpr::Int(i))
     }
 
+    /// Constructs a float literal.
     pub const fn float(f: f64) -> Self {
         Self::Lit(LitExpr::Float(f))
     }
 
+    /// Constructs a character literal.
     pub const fn char(c: char) -> Self {
         Self::Lit(LitExpr::Char(c))
     }
 
+    /// Constructs a string literal.
     pub fn string(s: &str) -> Self {
         Self::Lit(LitExpr::String(String::from(s)))
     }
 
+    /// Constructs a boolean literal.
     pub const fn bool(b: bool) -> Self {
         Self::Lit(LitExpr::Bool(b))
     }
 }
 
+/// The kinds of [literal expressions][ExprKind::Lit].
 #[derive(Debug, Clone, PartialEq)]
 pub enum LitExpr {
+    /// An integer, of any of the [three][TyKind::Int] [integer][TyKind::UInt] [types][TyKind::Byte]. Sign is not part of the literal.
     Int(u64),
+    /// A float. Can include sign and exponent.
     Float(f64),
+    /// A character. May be removed.
     Char(char),
+    /// A string. Common escape sequences and raw strings are supported.
     String(String),
+    /// A boolean.
     Bool(bool),
 }
 
+/// A variable binding, combining mutability, pattern, and optional type annotation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Binding {
+    /// Whether this variable is mutable.
     pub mutable: bool,
+    /// The pattern to bind the variable against.
     pub pat: Pat,
+    /// An optional type annotation for the variable.
     pub ty: Option<Ty>,
 }
 
+/// An argument in a [ function call][ExprKind::Call], consisting of an expression that may have a mutability annotation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Arg {
+    /// The value of the function argument.
     pub val: Expr,
+    /// Whether this argument is mutable. If it is, the value must be a place expression.
     pub mutable: bool,
+    /// The total span of the argument.
+    /// If `mutable` is false, this should be identical to the span of `val`.
+    /// Otherwise, it should include the span of the `mut` keyword.
     pub span: Range<u32>,
 }
 
+/// A single arm of a [match][ExprKind::Match] expression
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatchArm {
+    /// The pattern to attempt to match the scrutinee against.
     pub pat: Pat,
+    /// The expression to run if the match succeeds.
     pub body: Expr,
 }
 
+/// A block of statements. Used by [`ExprKind::Block`], [`ExprKind::If`], [`ExprKind::For`], and [`ExprKind::Loop`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockExpr {
+    /// The statements within the block.
     pub stmts: Vec<Stmt>,
+    /// The total span of the block, from opening to closing brace.
     pub span: Range<u32>,
 }
 
+/// An infix operator. Includes assignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
+    /// `=`.
     Assign,
+    /// `+`.
     Add,
+    /// TEMPORARY, until we have traits. `+.`.
     AddF,
+    /// `-`.
     Sub,
+    /// TEMPORARY, until we have traits. `-.`.
     SubF,
+    /// `*`.
     Mul,
+    /// TEMPORARY, until we have traits. `*.`.
     MulF,
+    /// `/`.
     Div,
+    /// TEMPORARY, until we have traits. `/.`.
     DivF,
+    /// `**`.
     Exp,
+    /// `&&`
     And,
+    /// `||`
     Or,
+    /// `^`
     Xor,
+    /// `==`
     Eqq,
+    /// `!=`
     Neq,
+    /// `>`
     Gt,
+    /// `<`
     Lt,
+    /// `>=`
     Geq,
+    /// `<=`
     Leq,
 }
 
 impl InfixOp {
+    /// Returns the left and right binding powers of this operator, for Pratt Parsing.
     pub const fn binding_power(self) -> (u8, u8) {
         match self {
             Self::Assign => (1, 0),
@@ -435,47 +518,65 @@ impl InfixOp {
     }
 }
 
+/// A prefix operator
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixOp {
+    /// `!`. Logical negation.
     Not,
+    /// `-`. Numeric negation.
     Neg,
 }
 
 impl PrefixOp {
+    /// Returns the right binding power of this operator, for Pratt Parsing.
     pub const fn binding_power(self) -> u8 {
         match self {
-            Self::Neg | Self::Not => 51,
+            Self::Neg | Self::Not => 50,
         }
     }
 }
 
+/// A spanned [type][TyKind].
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 #[display("{kind}")]
 pub struct Ty {
+    /// The kind of the type.
     pub kind: TyKind,
+    /// The span of the type.
     pub span: Range<u32>,
 }
 
 /// The kinds of types.
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 pub enum TyKind {
+    /// 64-bit signed integer.
     Int,
+    /// 64-bit unsigned integer.
     UInt,
+    /// 8-bit unsigned integer.
     Byte,
+    /// Double-precision floating point number (binary64).
     Float,
+    /// TODO
     Char,
+    /// Truth value (`true`/`false``).
     Bool,
+    /// A dynamic homogenous array.
     #[display("[{_0}]")]
     Array(Box<Ty>),
+    /// A heterogenous tuple (compile-time length).
     #[display("{{{}}}", _0.iter().join(", "))]
     Tuple(Vec<Ty>),
+    /// A first-class function value, implemented as a closure.
     #[display("fn({}) -> {_1}", _0.iter().join(", "))]
     Fn(Vec<ParamTy>, Return),
+    /// A user-defined type, such as a `record` or `enum`.
     #[display("{_0}[{}]", _1.iter().join(", "))]
     Named(Path, Vec<Ty>),
 }
 
 impl TyKind {
+    /// Constructs an [`Ty`] wrapping `self` with the provided span.
     pub fn span(self, span: impl Into<Range<u32>>) -> Ty {
         Ty {
             kind: self,
@@ -483,18 +584,14 @@ impl TyKind {
         }
     }
 
-    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type.
+    /// Constructs an empty [`TyKind::Tuple`] for representing the Unit type.
     pub const fn unit() -> Self {
         Self::Tuple(vec![])
     }
 
+    /// Constructs a single-segment [`named`][Self::Named] type from the given string.
     pub fn named(name: &str) -> Self {
         Self::Named(Path::single(Ident::new(name)), vec![])
-    }
-
-    /// Helper to create a new [`TyKind::Named`] for a `String`.
-    pub fn string() -> Self {
-        Self::named("String")
     }
 }
 

@@ -3,6 +3,7 @@
 use std::{range::Range, result};
 
 use derive_more::{Display, Error};
+use package::ModuleId;
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 
@@ -23,10 +24,11 @@ pub struct Error<E>(Box<ErrorInner<E>>);
 
 impl<E> Error<E> {
     /// Constructs a new error with the provided kind and span, and no context information.
-    pub fn new(err: E, span: impl Into<Range<u32>>) -> Self {
+    pub fn new(kind: E, span: impl Into<Range<u32>>, module: ModuleId) -> Self {
         Self(Box::new(ErrorInner {
-            kind: err,
+            kind,
             span: span.into(),
+            module,
             ctx: SmallVec::new(),
         }))
     }
@@ -59,6 +61,11 @@ impl<E> Error<E> {
         self.0.span
     }
 
+    /// Returns the module this error occured in.
+    pub fn module(&self) -> ModuleId {
+        self.0.module
+    }
+
     /// Returns any provided context information for the error.
     pub fn ctx(&self) -> &[SmolStr] {
         &self.0.ctx
@@ -76,8 +83,23 @@ impl<E: ToString> Error<E> {
 struct ErrorInner<E> {
     kind: E,
     span: Range<u32>,
+    module: ModuleId,
     ctx: SmallVec<[SmolStr; 1]>,
 }
+
+/// Extension trait to provide an easy method to construct an [`Error`].
+pub trait SpanError {
+    /// Constructs an [`Error`] wrapping `self` with the provided location information.
+    fn span(self, span: impl Into<Range<u32>>, module: ModuleId) -> Error<Self>
+    where
+        Self: Sized,
+    {
+        Error::new(self, span, module)
+    }
+}
+
+/// The type of the callback functions wrapped by [`ErrorHandler`].
+pub type HandlerCallback<'cb> = &'cb dyn Fn(&str, Range<u32>, ModuleId, DiagnosticKind);
 
 /// A utility type to handle configurable, recoverable diagnostic reporting.
 ///
@@ -86,14 +108,14 @@ struct ErrorInner<E> {
 ///
 /// Cloning this type is cheap, and it could implement `Copy` but doesn't for similar reasons to iterators.
 #[derive(Clone)]
-pub struct ErrorHandler<'callback> {
-    f: &'callback dyn Fn(&str, Range<u32>, DiagnosticKind),
+pub struct ErrorHandler<'cb> {
+    f: HandlerCallback<'cb>,
     has_err: bool,
 }
 
 impl<'callback> ErrorHandler<'callback> {
     /// Constructs a new `ErrorHandler` with the provided reporting callback.
-    pub const fn new(f: &'callback dyn Fn(&str, Range<u32>, DiagnosticKind)) -> Self {
+    pub const fn new(f: HandlerCallback<'callback>) -> Self {
         Self { f, has_err: false }
     }
 
@@ -104,13 +126,18 @@ impl<'callback> ErrorHandler<'callback> {
     )]
     pub fn err<E: ToString>(&mut self, error: Error<E>) -> HandledError {
         self.has_err = true;
-        (self.f)(&error.msg(), error.span(), DiagnosticKind::Error);
+        (self.f)(
+            &error.msg(),
+            error.span(),
+            error.module(),
+            DiagnosticKind::Error,
+        );
         HandledError
     }
 
     /// Reports a warning.
-    pub fn warn(&self, msg: &str, span: Range<u32>) {
-        (self.f)(msg, span, DiagnosticKind::Warning);
+    pub fn warn(&self, msg: &str, span: Range<u32>, module: ModuleId) {
+        (self.f)(msg, span, module, DiagnosticKind::Warning);
     }
 
     /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors.
@@ -130,10 +157,11 @@ impl<'callback> ErrorHandler<'callback> {
         clippy::use_debug,
         reason = "This handler is for use in tests, where debug output is desirable"
     )]
-    pub const TEST: Self =
-        ErrorHandler::new(&|str, span, kind| eprintln!("{kind:?}: {str} ({span:?})"));
+    pub const TEST: Self = ErrorHandler::new(&|str, span, module, kind| {
+        eprintln!("{kind:?}: {str} (mod: {module:?}, span: {span:?})")
+    });
     /// An error handler that discards the errors. Primarily for tests intended to produce errors, to avoid clogging the terminal.
-    pub const DUMMY: Self = ErrorHandler::new(&|_, _, _| {});
+    pub const DUMMY: Self = ErrorHandler::new(&|_, _, _, _| {});
 }
 
 /// Signals the kind of diagnostic being reported.

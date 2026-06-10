@@ -52,7 +52,9 @@ dependencies = [
  "derive_more",
  "ident",
  "itertools",
+ "package",
  "parse",
+ "slotmap",
  "smallvec",
 ]
 
@@ -155,6 +157,7 @@ dependencies = [
  "nameres",
  "package",
  "parse",
+ "slotmap",
  "typecheck",
  "yansi",
 ]
@@ -198,17 +201,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
-name = "displaydoc"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ac70aa55017e108007fbaf5aa0f54b021c98f92ff8af59d42eda9da96e3dd4f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -244,6 +236,7 @@ name = "errors"
 version = "0.1.0"
 dependencies = [
  "derive_more",
+ "package",
  "smallvec",
  "smol_str",
 ]
@@ -339,6 +332,7 @@ version = "0.1.0"
 dependencies = [
  "derive_more",
  "ident",
+ "package",
  "slotmap",
  "smallvec",
 ]
@@ -550,16 +544,15 @@ version = "0.1.0"
 dependencies = [
  "ast",
  "derive_more",
- "displaydoc",
  "errors",
  "ident",
  "itertools",
  "logos",
+ "package",
  "pretty_assertions",
  "proptest",
  "proptest-derive",
  "smallvec",
- "smol_str",
 ]
 
 [[package]]
@@ -921,6 +914,7 @@ dependencies = [
  "ident",
  "itertools",
  "nameres",
+ "package",
  "slotmap",
 ]
 

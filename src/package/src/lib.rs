@@ -1,159 +1,100 @@
 //! Provides types for handling [packages][Package] and [modules][Module], and a [function][gather_modules] to find all the modules of a package.
 
 use std::{
-    fs::{self, DirEntry, File},
+    fs::{self, DirEntry},
     io,
     path::{Path, PathBuf},
 };
 
-use derive_more::{Display, Error, From};
+use derive_more::{Display, Error, From, IntoIterator};
 use slotmap::{SlotMap, new_key_type};
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
-pub struct Package<T> {
-    modules: SlotMap<ModuleKey, Module<T>>,
-    root_key: ModuleKey,
+#[derive(IntoIterator)]
+pub struct Package {
+    #[into_iterator(ref)]
+    modules: SlotMap<ModuleId, Module>,
+    root_key: ModuleId,
 }
 
-impl<T> Package<T> {
-    /// Removes and returns the root module of this package.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "implementation detail, should never happen"
-    )]
-    pub fn take_root(&mut self) -> Module<T> {
-        self.modules
-            .remove(self.root_key)
-            .expect("key was gotten from this slotmap")
+impl Package {
+    /// Returns the id for the root module.
+    pub fn root(&self) -> ModuleId {
+        self.root_key
     }
 
-    /// Removes and returns all children of the provided module.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "implementation detail, should never happen"
-    )]
-    pub fn take_children_of(&mut self, module: &Module<T>) -> Vec<Module<T>> {
-        module
-            .children
-            .iter()
-            .map(|m| {
-                self.modules
-                    .remove(*m)
-                    .expect("key was gotten from this slotmap")
-            })
-            .collect()
+    /// Returns the module associated with the given id.
+    pub fn get(&self, id: ModuleId) -> &Module {
+        &self.modules[id]
     }
 
-    /// Applies a fallible mapping function to the contents of each module, producing a new package.
-    ///
-    /// # Errors
-    /// Returns the first error produced by the mapping function.
-    #[allow(
-        clippy::missing_panics_doc,
-        reason = "implementation detail, should never happen"
-    )]
-    pub fn map<U, E, F: FnMut(&str, T) -> Result<U, E>>(
-        mut self,
-        mut f: F,
-    ) -> Result<Package<U>, E> {
-        let mut modules = SlotMap::default();
-        let root_key = self
-            .modules
-            .remove(self.root_key)
-            .expect("key was gotten from this slotmap")
-            .map(&mut f, &mut self, &mut modules, None)?;
-        Ok(Package { modules, root_key })
+    /// Returns a by-reference iterator over the modules of this package.
+    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
+        self.into_iter()
     }
 
-    fn new(root: Module<T>) -> Self {
+    fn new(root: Module) -> Self {
         let mut modules = SlotMap::default();
         let root_key = modules.insert(root);
         Self { modules, root_key }
     }
 
-    fn insert(&mut self, module: Module<T>) -> ModuleKey {
+    fn insert(&mut self, module: Module) -> ModuleId {
         self.modules.insert(module)
     }
 }
 
-impl<T> From<ModuleTree<T>> for Package<T> {
-    fn from(value: ModuleTree<T>) -> Self {
-        let mut modules = SlotMap::default();
-        let root_key = from_tree_helper(value, &mut modules, None);
-        Self { modules, root_key }
-    }
-}
+// impl<T> From<ModuleTree<T>> for Package<T> {
+//     fn from(value: ModuleTree<T>) -> Self {
+//         let mut modules = SlotMap::default();
+//         let root_key = from_tree_helper(value, &mut modules, None);
+//         Self { modules, root_key }
+//     }
+// }
 
-fn from_tree_helper<T>(
-    tree: ModuleTree<T>,
-    modules: &mut SlotMap<ModuleKey, Module<T>>,
-    parent: Option<ModuleKey>,
-) -> ModuleKey {
-    let key = modules.insert(Module {
-        parent,
-        name: tree.name,
-        contents: tree.contents,
-        children: Vec::new(),
-    });
-    modules[key].children = tree
-        .children
-        .into_iter()
-        .map(|m| from_tree_helper(m, modules, Some(key)))
-        .collect();
-    key
-}
+// fn from_tree_helper(
+//     tree: ModuleTree<T>,
+//     modules: &mut SlotMap<ModuleKey, Module>,
+//     parent: Option<ModuleKey>,
+// ) -> ModuleKey {
+//     let key = modules.insert(Module {
+//         parent,
+//         name: tree.name,
+//         contents: tree.contents,
+//         children: Vec::new(),
+//     });
+//     modules[key].children = tree
+//         .children
+//         .into_iter()
+//         .map(|m| from_tree_helper(m, modules, Some(key)))
+//         .collect();
+//     key
+// }
 
-new_key_type! { pub struct ModuleKey; }
+new_key_type! {
+    /// An ID for a module.
+    pub struct ModuleId;
+}
 
 /// A module, generic over it's contents.
-pub struct Module<T> {
-    parent: Option<ModuleKey>,
+pub struct Module {
+    /// The parent module of this module, unless this is the root module.
+    pub parent: Option<ModuleId>,
     /// The name of this module, determined by it's filename.
     pub name: String,
-    /// The generic contents of this module.
-    pub contents: T,
-    children: Vec<ModuleKey>,
+    /// The filepath of this module.
+    pub path: PathBuf,
+    /// Any child modules of this module.
+    pub children: Vec<ModuleId>,
 }
 
-impl<T> Module<T> {
-    fn map<U, E, F: FnMut(&str, T) -> Result<U, E>>(
-        self,
-        f: &mut F,
-        old_package: &mut Package<T>,
-        new_modules: &mut SlotMap<ModuleKey, Module<U>>,
-        parent: Option<ModuleKey>,
-    ) -> Result<ModuleKey, E> {
-        let contents = f(&self.name, self.contents)?;
-        let key = new_modules.insert(Module {
-            parent,
-            name: self.name,
-            contents,
-            children: Vec::new(),
-        });
-        new_modules[key].children = self
-            .children
-            .into_iter()
-            .map(|m| {
-                old_package
-                    .modules
-                    .remove(m)
-                    .expect("key was gotten from this slotmap")
-                    .map(f, old_package, new_modules, Some(key))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(key)
-    }
-}
-
-/// A naive tree representation of a module structure. Used for constructing [`Packages`][Package] for tests.
-pub struct ModuleTree<T> {
-    /// The name of this module.
-    pub name: String,
-    /// The generic contents of this module.
-    pub contents: T,
-    /// The children of this module.
-    pub children: Vec<Self>,
-}
+// /// A naive tree representation of a module structure. Used for constructing [`Packages`][Package] for tests.
+// pub struct ModuleTree {
+//     /// The name of this module.
+//     pub name: String,
+//     /// The children of this module.
+//     pub children: Vec<Self>,
+// }
 
 /// Errors that can arise from [`gather_modules()`].
 #[derive(Debug, Display, Error, From)]
@@ -183,7 +124,7 @@ pub enum Error {
     IO(io::Error),
 }
 
-/// Finds modules starting from a root path and gathers them into a [`Package`] of [`Files`][File].
+/// Finds modules starting from a root path and gathers them into a [`Package`].
 ///
 /// The root path should either be a directory containing a `main.ptn` file, or a standalone file with the `ptn` extension.
 ///
@@ -199,7 +140,7 @@ pub enum Error {
     clippy::missing_panics_doc,
     reason = "implementation detail, should never happen"
 )]
-pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
+pub fn gather_modules(root_path: &Path) -> Result<Package, Error> {
     let is_dir = match fs::metadata(root_path) {
         Ok(md) => md.is_dir(),
         Err(err) => {
@@ -211,21 +152,21 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
         }
     };
     if is_dir {
-        let root = match File::open(root_path.join("main.ptn")) {
-            Ok(file) => file,
-            Err(err) => {
-                let err = match err.kind() {
-                    io::ErrorKind::NotFound => Error::NoMain(root_path.to_path_buf()),
-                    _ => Error::IO(err),
-                };
-                return Err(err);
-            }
-        };
+        // let root = match File::open(root_path.join("main.ptn")) {
+        //     Ok(file) => file,
+        //     Err(err) => {
+        //         let err = match err.kind() {
+        //             io::ErrorKind::NotFound => Error::NoMain(root_path.to_path_buf()),
+        //             _ => Error::IO(err),
+        //         };
+        //         return Err(err);
+        //     }
+        // };
 
         let mut package = Package::new(Module {
             parent: None,
             name: String::from("main"),
-            contents: root,
+            path: root_path.join("main.ptn"),
             children: Vec::new(),
         });
         let root_key = package.root_key;
@@ -249,7 +190,7 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
         Ok(Package::new(Module {
             parent: None,
             name,
-            contents: File::open(root_path).expect("path is known to be valid"),
+            path: root_path.to_path_buf(),
             children: Vec::new(),
         }))
     }
@@ -259,9 +200,9 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
 /// Panics if the provided path does not exist or ends in `..`.
 fn gather_module(
     path: PathBuf,
-    package: &mut Package<File>,
-    parent: Option<ModuleKey>,
-) -> Result<ModuleKey, Error> {
+    package: &mut Package,
+    parent: Option<ModuleId>,
+) -> Result<ModuleId, Error> {
     let name = match path
         .file_prefix()
         .expect("provided path shouldn't end in `..`")
@@ -275,25 +216,27 @@ fn gather_module(
         .expect("provided path should exist")
         .is_dir()
     {
-        let root = {
-            let mut root_path = path.join(&name);
-            root_path.set_extension("ptn");
-            match File::open(&root_path) {
-                Ok(file) => file,
-                Err(err) => {
-                    let err = match err.kind() {
-                        io::ErrorKind::NotFound => Error::NoRoot(root_path),
-                        _ => Error::IO(err),
-                    };
-                    return Err(err);
-                }
-            }
-        };
+        // let root = {
+        //     let mut root_path = path.join(&name);
+        //     root_path.set_extension("ptn");
+        //     match File::open(&root_path) {
+        //         Ok(file) => file,
+        //         Err(err) => {
+        //             let err = match err.kind() {
+        //                 io::ErrorKind::NotFound => Error::NoRoot(root_path),
+        //                 _ => Error::IO(err),
+        //             };
+        //             return Err(err);
+        //         }
+        //     }
+        // };
+        let mut root_path = path.join(&name);
+        root_path.set_extension("ptn");
 
         let index = package.insert(Module {
             parent,
             name,
-            contents: root,
+            path: root_path,
             children: Vec::new(),
         });
 
@@ -312,7 +255,7 @@ fn gather_module(
         Ok(package.insert(Module {
             parent,
             name,
-            contents: File::open(path).expect("provided path should exist"),
+            path,
             children: Vec::new(),
         }))
     }

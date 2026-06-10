@@ -1,8 +1,6 @@
-use std::range::Range;
-
 use derive_more::Display;
 
-use errors::Error;
+use errors::SpanError;
 
 use crate::TokKind;
 
@@ -18,8 +16,4 @@ pub enum ErrorKind {
     Unexpected(TokKind),
 }
 
-impl ErrorKind {
-    pub fn span(self, span: impl Into<Range<u32>>) -> Error<Self> {
-        Error::new(self, span)
-    }
-}
+impl SpanError for ErrorKind {}

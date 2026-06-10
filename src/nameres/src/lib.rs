@@ -6,14 +6,12 @@ mod scope;
 #[cfg(test)]
 mod test;
 
-use std::mem;
-
 use itertools::Itertools as _;
 
-use ast::{Ast, Binding, Pat, PatKind, TyItem, TyItemKind, TyKind};
-use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
+use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind};
+use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
 use hir::{ExprId, Hir, Param, TyInfo, VarId};
-use package::{Module, Package};
+use package::{ModuleId, Package};
 
 use crate::{error::ErrorKind, scope::Scope};
 
@@ -21,45 +19,30 @@ use crate::{error::ErrorKind, scope::Scope};
 ///
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name.
-pub fn resolve(mut package: Package<Ast>, mut handler: ErrorHandler) -> Result<Hir> {
+pub fn resolve(package: &Package, mut asts: PackageAsts, mut handler: ErrorHandler) -> Result<Hir> {
     let mut hir = Hir::default();
-    let root = package.take_root();
-    resolve_module(&mut package, root, &mut hir, &mut handler, true);
+    let root = package.root();
+    resolve_module(package, &mut asts, root, &mut hir, &mut handler, true);
     handler.checked(hir)
 }
 
-fn resolve_module(
-    package: &mut Package<Ast>,
-    module: Module<Ast>,
+fn resolve_module<'pkg>(
+    package: &'pkg Package,
+    asts: &mut PackageAsts,
+    module: ModuleId,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     is_root: bool,
-) -> Scope {
-    let mut scope = Scope::default();
-    for mut child in package.take_children_of(&module) {
+) -> Scope<'pkg> {
+    let mut scope = Scope::new(module);
+    for &child in &package.get(module).children {
         scope.add_module(
-            mem::take(&mut child.name),
-            resolve_module(package, child, hir, handler, false),
+            &package.get(child).name,
+            resolve_module(package, asts, child, hir, handler, false),
         );
     }
-    resolve_ast(&mut scope, module.contents, hir, handler, is_root);
+    resolve_ast(&mut scope, asts.take(module), hir, handler, is_root);
     scope
-}
-
-fn find_main(error_handler: &mut ErrorHandler, execs: &[ast::ExecItem]) -> Result<Option<usize>> {
-    for (idx, item) in execs.iter().enumerate() {
-        if let ast::ExecKind::Fn { params, ret_ty, .. } = &item.kind
-            && item.ident.ident == "main"
-        {
-            return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
-                Ok(Some(idx))
-            } else {
-                Err(error_handler.err(ErrorKind::InvalidMain.span(item.ident.span)))
-            };
-        }
-    }
-
-    Ok(None)
 }
 
 fn resolve_ast(
@@ -73,7 +56,8 @@ fn resolve_ast(
         match scope.get_ty(ty.ident.ident) {
             Some(id) => {
                 handler.err(
-                    ErrorKind::DupItem(ty.ident.ident, hir.ty_ident(id).span).span(ty.ident.span),
+                    ErrorKind::DupItem(ty.ident.ident, hir.ty_ident(id).span)
+                        .span(ty.ident.span, scope.module()),
                 );
             }
             None => {
@@ -91,17 +75,17 @@ fn resolve_ast(
             Some(id) => {
                 handler.err(
                     ErrorKind::DupItem(exec.ident.ident, hir.var_info(id).span)
-                        .span(exec.ident.span),
+                        .span(exec.ident.span, scope.module()),
                 );
             }
             None => {
-                let id = hir.add_var(exec.ident.ident, false, exec.ident.span);
+                let id = hir.add_var(exec.ident.ident, false, exec.ident.span, scope.module());
                 scope.add_var(exec.ident.ident, id);
             }
         }
     }
     if is_root
-        && let Ok(Some(idx)) = find_main(handler, &ast.execs)
+        && let Ok(Some(idx)) = find_main(scope.module(), handler, &ast.execs)
         && let Ok(main) = resolve_exec_item(scope, hir, handler, ast.execs.remove(idx))
     {
         hir.set_main(main);
@@ -112,6 +96,26 @@ fn resolve_ast(
         .flat_map(|exec| resolve_exec_item(scope, hir, handler, exec))
         .collect();
     hir.add_execs(execs);
+}
+
+fn find_main(
+    module: ModuleId,
+    error_handler: &mut ErrorHandler,
+    execs: &[ast::ExecItem],
+) -> Result<Option<usize>> {
+    for (idx, item) in execs.iter().enumerate() {
+        if let ast::ExecKind::Fn { params, ret_ty, .. } = &item.kind
+            && item.ident.ident == "main"
+        {
+            return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
+                Ok(Some(idx))
+            } else {
+                Err(error_handler.err(ErrorKind::InvalidMain.span(item.ident.span, module)))
+            };
+        }
+    }
+
+    Ok(None)
 }
 
 fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler, item: TyItem) {
@@ -133,7 +137,7 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 .collect();
 
             if let Some((dup, _)) = fields.iter().duplicates_by(|(id, _)| id).next() {
-                handler.err(ErrorKind::DupFields(dup.ident).span(item.ident.span));
+                handler.err(ErrorKind::DupFields(dup.ident).span(item.ident.span, scope.module()));
                 return;
             }
 
@@ -148,7 +152,8 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                     .collect(),
                 Box::new(hir::Ty::Named(id)),
             );
-            let constructor_id = hir.add_var(item.ident.ident, false, item.ident.span);
+            let constructor_id =
+                hir.add_var(item.ident.ident, false, item.ident.span, scope.module());
             hir.add_var_ty(constructor_id, constructor_ty);
             scope.add_var(item.ident.ident, constructor_id);
 
@@ -182,6 +187,7 @@ fn resolve_exec_item(
             hir.add_var_ty(id, resolve_ty(scope, handler, ty)?);
 
             Ok(hir::ExecItem {
+                module: scope.module(),
                 id,
                 kind: hir::ExecKind::Const { val: val? },
             })
@@ -225,6 +231,7 @@ fn resolve_exec_item(
             hir.add_var_ty(id, hir::Ty::Fn(param_tys, Box::new(ret_ty)));
 
             Ok(hir::ExecItem {
+                module: scope.module(),
                 id,
                 kind: hir::ExecKind::Fn {
                     params,
@@ -283,7 +290,7 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
 
             match scope.resolve_ty(path) {
                 Some(id) => Ok(hir::Ty::Named(id)),
-                None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
+                None => Err(handler.err(ErrorKind::UnknownType.span(ty.span, scope.module()))),
             }
         }
     }
@@ -308,7 +315,7 @@ fn resolve_pat(
 ) -> VarId {
     match pat.kind {
         PatKind::Ident(ident) => {
-            let id = hir.add_var(ident, mutable, pat.span);
+            let id = hir.add_var(ident, mutable, pat.span, scope.module());
             if let Some(ty) = ty {
                 hir.add_var_ty(id, ty);
             }
@@ -335,19 +342,23 @@ pub fn test_resolve_expr(input: &str) -> Result<(ExprId, Hir)> {
     let expr = parse::Parser::parse_expr(input).unwrap();
     let mut hir = Hir::default();
     let mut handler = ErrorHandler::TEST;
-    let expr = exprs::resolve_expr(&Scope::default(), &mut hir, &mut handler, expr)?;
+    let expr = exprs::resolve_expr(
+        &Scope::new(ModuleId::default()),
+        &mut hir,
+        &mut handler,
+        expr,
+    )?;
     Ok((expr, hir))
 }
 
 #[cfg(any(test, feature = "test"))]
 #[allow(clippy::unwrap_used, reason = "test utility")]
 pub fn test_resolve_ast(src: &str) -> Result<Hir> {
-    let mut scope = Scope::default();
     let mut hir = Hir::default();
     let mut handler = ErrorHandler::TEST;
     resolve_ast(
-        &mut scope,
-        parse::Parser::new(src, ErrorHandler::TEST).parse().unwrap(),
+        &mut Scope::new(ModuleId::default()),
+        parse::Parser::new_test(src).parse().unwrap(),
         &mut hir,
         &mut handler,
         true,

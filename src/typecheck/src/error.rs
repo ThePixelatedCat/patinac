@@ -1,8 +1,6 @@
-use std::range::Range;
-
 use derive_more::Display;
 
-use errors::Error;
+use errors::SpanError;
 use ident::Ident;
 
 use crate::types::{Param, PartialTy};
@@ -27,8 +25,4 @@ pub enum ErrorKind {
     ParamMutability(Param, Param),
 }
 
-impl ErrorKind {
-    pub fn span(self, span: impl Into<Range<u32>>) -> Error<Self> {
-        Error::new(self, span)
-    }
-}
+impl SpanError for ErrorKind {}

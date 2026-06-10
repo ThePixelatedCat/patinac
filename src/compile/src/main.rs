@@ -1,12 +1,14 @@
 //! The driver for the compiler. Handles command-line arguments and stitches together the compilation phases.
 
-use std::{io::Read, path::PathBuf, process::ExitCode, range::Range, time::Instant};
+use std::{fs, path::PathBuf, process::ExitCode, range::Range, time::Instant};
 
 use argh::{FromArgs, from_env};
+use package::ModuleId;
+use slotmap::SecondaryMap;
 use yansi::Paint as _;
 
 use codegen_llvm::{Codegen, CodegenMode, OptLevel};
-use errors::{DiagnosticKind, ErrorHandler};
+use errors::{DiagnosticKind, ErrorHandler, HandlerCallback};
 use parse::Parser;
 
 #[derive(FromArgs)]
@@ -33,10 +35,7 @@ fn main() -> ExitCode {
 
     let start = Instant::now();
 
-    let handler_inner: &dyn Fn(&str, Range<u32>, DiagnosticKind) =
-        &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
-    let handler = ErrorHandler::new(handler_inner);
-
+    eprintln!("Reading Files...");
     let modules = match package::gather_modules(&args.src_path) {
         Ok(modules) => modules,
         Err(err) => {
@@ -50,49 +49,46 @@ fn main() -> ExitCode {
         }
     };
 
-    let Ok(sources) = modules.map(|name, file| {
-        let mut src = String::new();
-        match file.read_to_string(&mut src) {
-            Ok(_) => {}
-            Err(err) => {
-                eprintln!(
-                    "{error} {reading} {name}{colon} {msg}",
-                    error = "error".bright_red().bold(),
-                    reading = "reading module".white().bold(),
-                    colon = ":".white().bold(),
-                    msg = err.white().bold()
-                );
-                return Err(());
-            }
-        };
-        Ok(src)
-    }) else {
-        return ExitCode::FAILURE;
+    let sources: SecondaryMap<ModuleId, String> = match modules
+        .iter()
+        .map(|(id, module)| {
+            let src = fs::read_to_string(&module.path).map_err(|error| (error, &module.name))?;
+            Ok((id, src))
+        })
+        .collect()
+    {
+        Ok(sources) => sources,
+        Err((err, name)) => {
+            eprintln!(
+                "{error} {reading} {name}{colon} {msg}",
+                error = "error".bright_red().bold(),
+                reading = "reading module".white().bold(),
+                colon = ":".white().bold(),
+                msg = err.white().bold()
+            );
+            return ExitCode::FAILURE;
+        }
     };
 
+    let handler_inner: HandlerCallback =
+        &|msg, span, module, kind| print_diagnostic(msg, span, kind, &sources[module]);
+    let handler = ErrorHandler::new(handler_inner);
+
     eprintln!("Parsing...");
-    let Ok(package) = modules.map(|name, file| {
-        let mut src = String::new();
-        match file.read_to_string(&mut src) {
-            Ok(_) => {}
-            Err(err) => {
-                eprintln!(
-                    "{error} {reading} {name}{colon} {msg}",
-                    error = "error".bright_red().bold(),
-                    reading = "reading module".white().bold(),
-                    colon = ":".white().bold(),
-                    msg = err.white().bold()
-                );
-                return Err(());
-            }
-        };
-        Parser::new(&src, handler.clone()).parse().map_err(|_| ())
-    }) else {
+    let Ok(asts) = sources
+        .iter()
+        .map(|(id, src)| {
+            Parser::new(id, src, handler.clone())
+                .parse()
+                .map(|ast| (id, ast))
+        })
+        .collect()
+    else {
         return ExitCode::FAILURE;
     };
 
     eprintln!("Resolving...");
-    let Ok(mut hir) = nameres::resolve(package, handler.clone()) else {
+    let Ok(mut hir) = nameres::resolve(&modules, asts, handler.clone()) else {
         return ExitCode::FAILURE;
     };
 

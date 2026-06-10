@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 # Internal
 ident.path = "../ident"
+package.path = "../package"
 # External
 derive_more = { version = "2.1.1", features = ["display"] }
 itertools = "0.14.0"
@@ -14,6 +15,7 @@ smallvec = { version = "1.15.1", features = [
     "const_generics",
     "const_new",
 ] }
+slotmap = "1.1.1"
 
 [dev-dependencies]
 # Internal

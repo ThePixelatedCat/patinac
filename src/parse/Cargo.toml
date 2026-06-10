@@ -5,9 +5,9 @@ edition = "2024"
 
 [dependencies]
 # Internal
-
 ident.path = "../ident"
 errors.path = "../errors"
+package.path = "../package"
 ast.path = "../ast"
 # External
 itertools = "0.14.0"
@@ -17,8 +17,6 @@ smallvec = { version = "1.15.1", features = [
     "const_generics",
     "const_new",
 ] }
-smol_str = "0.3.6"
-displaydoc = "0.2.5"
 logos = "0.16.1"
 
 [dev-dependencies]

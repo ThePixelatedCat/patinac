@@ -4,7 +4,6 @@
 
 mod error;
 mod exprs;
-mod helpers;
 mod items;
 mod lex;
 mod patterns;
@@ -12,9 +11,15 @@ mod patterns;
 mod test;
 mod types;
 
-use ast::{Ast, Expr};
-use errors::{ErrorHandler, Result};
+use std::range::Range;
+
+use itertools::Itertools as _;
+
+use ast::{Ast, Binding, Path, Ty};
+use errors::{ErrorHandler, HandledError, Result, SpanError as _};
+use ident::{Ident, SpanIdent};
 use lex::{Lexer, Tok, TokKind};
+use package::ModuleId;
 
 use crate::{error::ErrorKind, items::Item};
 
@@ -22,6 +27,7 @@ use crate::{error::ErrorKind, items::Item};
 ///
 /// Construct with [`Parser::new()`], then produce an [`Ast`] (or errors) with [`Parser::parse()`].
 pub struct Parser<'src> {
+    module: ModuleId,
     src: &'src str,
     toks: Lexer<'src>,
     handler: ErrorHandler<'src>,
@@ -29,8 +35,9 @@ pub struct Parser<'src> {
 
 impl<'src> Parser<'src> {
     /// Constructs a [`Parser`] for `src`, reporting errors through `handler`.
-    pub fn new(src: &'src str, handler: ErrorHandler<'src>) -> Self {
+    pub fn new(module: ModuleId, src: &'src str, handler: ErrorHandler<'src>) -> Self {
         Self {
+            module,
             src,
             toks: lex::lex(src),
             handler,
@@ -56,18 +63,26 @@ impl<'src> Parser<'src> {
         self.handler.checked(ast)
     }
 
+    /// Constructs a [`Parser`] for `src`, using testing-suitable defaults for the [`ModuleId`] and [`ErrorHandler`].
+    #[cfg(any(test, feature = "test"))]
+    pub fn new_test(src: &'src str) -> Self {
+        Self::new(ModuleId::default(), src, ErrorHandler::TEST)
+    }
+
     /// Lexes the source and parses an expression in one function call, to simplify tests.
     /// # Errors
     /// If the source cannot be parsed as an expression.
     /// # Panics
     /// If the lexer produces an error.
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<Expr> {
-        Self::new(src, ErrorHandler::TEST).expr()
+    pub fn parse_expr(src: &'src str) -> Result<ast::Expr> {
+        Self::new_test(src).expr()
     }
 
     fn src_of(&self, tok: Tok) -> &'src str {
-        &self.src[tok.span.start as usize..tok.span.end as usize]
+        let start = usize::try_from(tok.span.start).expect("why are you on 16bit");
+        let end = usize::try_from(tok.span.end).expect("why are you on 16bit");
+        &self.src[start..end]
     }
 
     /// Consumes the next token. Ignores whitespace.
@@ -78,7 +93,7 @@ impl<'src> Parser<'src> {
                 let src_len = u32::try_from(self.src.len()).expect("file too long");
                 Ok(TokKind::Eof.span(src_len..src_len))
             })
-            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
+            .map_err(|span| self.err(ErrorKind::BadToken, span))
             .and_then(|tok| match tok.kind {
                 TokKind::Whitespace => self.next(),
                 _ => Ok(tok),
@@ -92,7 +107,7 @@ impl<'src> Parser<'src> {
             .peek()
             .copied()
             .transpose()
-            .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))?
+            .map_err(|span| self.err(ErrorKind::BadToken, span))?
             .map_or(TokKind::Eof, |tok| tok.kind);
         match tok {
             TokKind::Whitespace => {
@@ -118,7 +133,7 @@ impl<'src> Parser<'src> {
             .map(|opt_tok| opt_tok.map_or(TokKind::Eof, |tok| tok.kind))
             .map_or_else(
                 |span| {
-                    self.handler.err(ErrorKind::BadToken.span(span));
+                    self.err(ErrorKind::BadToken, span);
                     false
                 },
                 |t| t == tok,
@@ -131,12 +146,12 @@ impl<'src> Parser<'src> {
             if next.kind == expected {
                 Ok(next)
             } else {
-                Err(self.handler.err(
+                Err(self.err(
                     ErrorKind::Mismatched {
                         expected,
                         found: next.kind,
-                    }
-                    .span(next.span),
+                    },
+                    next.span,
                 ))
             }
         })
@@ -145,5 +160,90 @@ impl<'src> Parser<'src> {
     fn consume_at(&mut self, token: TokKind) -> Option<Tok> {
         self.at(token)
             .then(|| self.next().expect("known to be at a valid token"))
+    }
+
+    fn err(&mut self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {
+        self.handler.err(error.span(span, self.module))
+    }
+
+    fn err_ctx(
+        &mut self,
+        error: ErrorKind,
+        span: impl Into<Range<u32>>,
+        ctx: &[&'static str],
+    ) -> HandledError {
+        let mut error = error.span(span, self.module);
+        for ctx in ctx {
+            error = error.with_static_ctx(ctx);
+        }
+        self.handler.err(error)
+    }
+
+    fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind, ctx: &[&'static str]) -> HandledError {
+        let token = match self.next() {
+            Ok(t) => t,
+            Err(e) => return e,
+        };
+        self.err_ctx(f(token.kind), token.span, ctx)
+    }
+
+    fn ty_annot(&mut self) -> Result<Option<Ty>> {
+        self.consume_at(TokKind::Colon)
+            .map(|_| self.ty())
+            .transpose()
+    }
+
+    fn binding(&mut self) -> Result<Binding> {
+        Ok(Binding {
+            mutable: self.consume_at(TokKind::Mut).is_some(),
+            pat: self.pattern()?,
+            ty: self.ty_annot()?,
+        })
+    }
+
+    fn ident(&mut self) -> Result<SpanIdent> {
+        self.consume(TokKind::Ident)
+            .map(|tok| Ident::new(self.src_of(tok)).span(tok.span))
+    }
+
+    fn path(&mut self) -> Result<(Path, Range<u32>)> {
+        let ident = self.ident()?;
+        let start = ident.span.start;
+
+        let mut path = Path::single(ident.ident);
+        let mut end = ident.span.end;
+
+        while self.consume_at(TokKind::PathSep).is_some() {
+            let ident = self.ident()?;
+            end = ident.span.end;
+            path.push(ident.ident);
+        }
+
+        Ok((path, Range::from(start..end)))
+    }
+
+    fn delimited_list<T, F>(
+        &mut self,
+        mut f: F,
+        start: TokKind,
+        end: TokKind,
+    ) -> Result<(Vec<T>, Range<u32>)>
+    where
+        F: FnMut(&mut Self) -> Result<T>,
+    {
+        let start = self.consume(start)?.span.start;
+
+        let mut items = Vec::new();
+        while !self.at(end) {
+            items.push(f(self));
+
+            if self.consume_at(TokKind::Comma).is_none() {
+                break;
+            }
+        }
+
+        let end = self.consume(end)?.span.end;
+
+        Ok((items.into_iter().try_collect()?, Range::from(start..end)))
     }
 }

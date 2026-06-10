@@ -15,6 +15,7 @@ codegen_llvm.path = "../codegen_llvm"
 # External
 yansi = "1.0.1"
 argh = { version = "0.1.19", features = ["help"], default-features = false }
+slotmap = "1.1.1"
 
 [lints]
 workspace = true

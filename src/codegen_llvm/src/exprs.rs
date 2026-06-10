@@ -188,10 +188,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 Ty::Int => {
                     let max = u64::try_from(i64::MAX).expect("known in-bounds value");
                     let clamped_val = if *val > max {
-                        self.handler.warn(
-                            &format!("int literal {val} overflowed and was clamped to {max}"),
-                            self.hir.expr_span(expr),
-                        );
+                        // self.handler.warn(
+                        //     &format!("int literal {val} overflowed and was clamped to {max}"),
+                        //     self.hir.expr_span(expr),
+                        // );
                         max
                     } else {
                         *val
@@ -202,10 +202,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 Ty::Byte => {
                     let max = u64::from(u8::MAX);
                     let clamped_val = if *val > max {
-                        self.handler.warn(
-                            &format!("byte literal {val} overflowed and was clamped to {max}"),
-                            self.hir.expr_span(expr),
-                        );
+                        // self.handler.warn(
+                        //     &format!("byte literal {val} overflowed and was clamped to {max}"),
+                        //     self.hir.expr_span(expr),
+                        // );
                         max
                     } else {
                         *val

@@ -1,6 +1,6 @@
 use std::{iter::Peekable, range::Range};
 
-use displaydoc::Display;
+use derive_more::Display;
 use logos::Logos;
 
 pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Range<u32>>> + 'src>>;
@@ -25,7 +25,6 @@ pub struct Tok {
     pub span: Range<u32>,
 }
 
-#[allow(clippy::doc_paragraphs_missing_punctuation, reason = "displaydoc")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[derive(Logos, PartialEq, Eq, Debug, Display, Clone, Copy)]
 #[logos(skip(r"//.*", allow_greedy = true))]
@@ -33,207 +32,264 @@ pub struct Tok {
 #[logos(subpattern escape = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
 pub enum TokKind {
     /* LITERALS */
-    /// integer literal
+    /// integer literal.
     #[regex("(?&dec_int)|(0b[0-1][0-1_]*)|(0o[0-7][0-7_]*)|(0x[0-9a-fA-F][0-9a-fA-F_]*)")]
     IntLit,
-    /// float literal
+    /// float literal.
     #[regex(r"(?&dec_int)\.(?&dec_int)([Ee]-?(?&dec_int))?")]
     FloatLit,
-    /// string literal
+    /// string literal.
     #[regex(r##"("([^"\\]|(?&escape))*")|((?s)#".*"#)"##, allow_greedy = true)]
     StringLit,
-    /// character literal
+    /// character literal.
     #[regex(r"'([^\t\n\r'\\]|(?&escape))'")]
     CharLit,
 
     /* DELIMITERS */
-    /// `(`
+    /// `(`.
+    #[display("(")]
     #[token("(")]
     LParen,
-    /// `)`
+    /// `)`.
+    #[display(")")]
     #[token(")")]
     RParen,
-    /// `{{`
+    /// `{`.
+    #[display("{{")]
     #[token("{")]
     LBrace,
-    /// `}}`
+    /// `}`.
+    #[display("}}")]
     #[token("}")]
     RBrace,
-    /// `[`
+    /// `[`.
+    #[display("[")]
     #[token("[")]
     LBracket,
-    /// `]`
+    /// `]`.
+    #[display("]")]
     #[token("]")]
     RBracket,
 
     /* SYMBOLS */
-    /// `=`
+    /// `=`.
+    #[display("=")]
     #[token("=")]
     Eq,
-    /// `.`
+    /// `.`.
+    #[display(".")]
     #[token(".")]
     Dot,
-    /// `,`
+    /// `,`.
+    #[display(",")]
     #[token(",")]
     Comma,
-    /// `:`
+    /// `:`.
+    #[display(":")]
     #[token(":")]
     Colon,
-    /// `_`
+    /// `_`.
+    #[display("_")]
     #[token("_")]
     Underscore,
-    /// `->`
+    /// `->`.
+    #[display("->")]
     #[token("->")]
     Arrow,
-    /// `::`
+    /// `::`.
+    #[display("::")]
     #[token("::")]
     PathSep,
 
     /* OPERATORS */
-    /// `+`
+    /// `+`.
+    #[display("+")]
     #[token("+")]
     Plus,
-    /// `+.`
+    /// `+.`.
+    #[display("+.")]
     #[token("+.")]
     PlusF,
-    /// `-`
+    /// `-`.
+    #[display("-")]
     #[token("-")]
     Minus,
-    /// `-.`
+    /// `-.`.
+    #[display("-.")]
     #[token("-.")]
     MinusF,
-    /// `*`
+    /// `*`.
+    #[display("*")]
     #[token("*")]
     Times,
-    /// `*.`
+    /// `*.`.
+    #[display("*.")]
     #[token("*.")]
     TimesF,
-    /// `/`
+    /// `/`.
+    #[display("/")]
     #[token("/")]
     Divide,
-    /// `/.`
+    /// `/.`.
+    #[display("/.")]
     #[token("/.")]
     DivideF,
-    /// `**`
+    /// `**`.
+    #[display("**")]
     #[token("**")]
     Exponent,
-    /// `&&`
+    /// `&&`.
+    #[display("&&")]
     #[token("&&")]
     And,
-    /// `||`
+    /// `||`.
+    #[display("||")]
     #[token("||")]
     Or,
-    /// `^`
+    /// `^`.
+    #[display("^")]
     #[token("^")]
     Xor,
-    /// `!`
+    /// `!`.
+    #[display("!")]
     #[token("!")]
     Bang,
-    /// `==`
+    /// `==`.
+    #[display("==")]
     #[token("==")]
     Eqq,
-    /// `!=`
+    /// `!=`.
+    #[display("!=")]
     #[token("!=")]
     Neq,
-    /// `<`
+    /// `<`.
+    #[display("<")]
     #[token("<")]
     Lt,
-    /// `>`
+    /// `>`.
+    #[display(">")]
     #[token(">")]
     Gt,
-    /// `<=`
+    /// `<=`.
+    #[display("<=")]
     #[token("<=")]
     Leq,
-    /// `>=`
+    /// `>=`.
+    #[display(">=")]
     #[token(">=")]
     Geq,
 
     /* KEYWORDS */
-    /// `Int`
+    /// `Int`.
+    #[display("Int")]
     #[token("Int")]
     Int,
-    /// `UInt`
+    /// `UInt`.
+    #[display("UInt")]
     #[token("UInt")]
     UInt,
-    /// `Byte`
+    /// `Byte`.
+    #[display("Byte")]
     #[token("Byte")]
     Byte,
-    /// `Float`
+    /// `Float`.
+    #[display("Float")]
     #[token("Float")]
     Float,
-    /// `Bool`
+    /// `Bool`.
+    #[display("Bool")]
     #[token("Bool")]
     Bool,
-    /// `Char`
+    /// `Char`.
+    #[display("Char")]
     #[token("Char")]
     Char,
-    /// `Fn`
+    /// `Fn`.
+    #[display("Fn")]
     #[token("Fn")]
     FnTy,
-    /// `let`
+    /// `let`.
+    #[display("let")]
     #[token("let")]
     Let,
-    /// `mut`
+    /// `mut`.
+    #[display("mut")]
     #[token("mut")]
     Mut,
-    /// `const`
+    /// `const`.
+    #[display("const")]
     #[token("const")]
     Const,
-    /// `fn`
+    /// `fn`.
+    #[display("fn")]
     #[token("fn")]
     Fn,
-    /// `record`
+    /// `record`.
+    #[display("record")]
     #[token("record")]
     Record,
-    /// `enum`
+    /// `enum`.
+    #[display("enum")]
     #[token("enum")]
     Enum,
-    /// `if`
+    /// `if`.
+    #[display("if")]
     #[token("if")]
     If,
-    /// `else`
+    /// `else`.
+    #[display("else")]
     #[token("else")]
     Else,
-    /// `match`
+    /// `match`.
+    #[display("match")]
     #[token("match")]
     Match,
-    /// `for`
+    /// `for`.
+    #[display("for")]
     #[token("for")]
     For,
-    /// `in`
+    /// `in`.
+    #[display("in")]
     #[token("in")]
     In,
-    /// `loop`
+    /// `loop`.
+    #[display("loop")]
     #[token("loop")]
     Loop,
-    /// `return`
+    /// `return`.
+    #[display("return")]
     #[token("return")]
     Return,
-    /// `break`
+    /// `break`.
+    #[display("break")]
     #[token("break")]
     Break,
-    /// `continue`
+    /// `continue`.
+    #[display("continue")]
     #[token("continue")]
     Continue,
-    /// `true`
+    /// `true`.
+    #[display("true")]
     #[token("true")]
     True,
-    /// `false`
+    /// `false`.
+    #[display("false")]
     #[token("false")]
     False,
 
-    /// `print`
+    /// `print`.
+    #[display("print")]
     #[token("print")]
     Print,
 
     /* MISC */
-    /// identifier
+    /// identifier.
     #[regex(r"\p{XID_Start}\p{XID_Continue}*")]
     Ident,
-    /// whitespace
+    /// whitespace.
     #[regex(r"\p{Pattern_White_Space}+")]
     Whitespace,
-    /// end-of-file
+    /// end-of-file.
     #[cfg_attr(test, proptest(skip))]
     Eof,
 }

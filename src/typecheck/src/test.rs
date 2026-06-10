@@ -1,10 +1,11 @@
-use std::assert_matches;
+use std::{assert_matches, range::Range};
 
 use ena::unify::UnificationTable;
+use slotmap::SecondaryMap;
+
 use errors::{ErrorHandler, Result};
 use hir::{Param, Ty};
-use slotmap::SecondaryMap;
-use std::range::Range;
+use package::ModuleId;
 
 use crate::TypeChecker;
 
@@ -19,7 +20,7 @@ fn check_expr(src: &str) -> Result<Ty> {
         ctx: SecondaryMap::new(),
         handler: ErrorHandler::TEST,
     };
-    checker.infer_expr(&hir, expr);
+    checker.infer_expr(&hir, ModuleId::default(), expr);
     checker.unify(&hir);
 
     Ok(checker.sub_all(&mut hir)?.remove(expr).unwrap())

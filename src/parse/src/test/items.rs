@@ -1,3 +1,5 @@
+use std::range::Range;
+
 use pretty_assertions::assert_eq;
 use smallvec::smallvec;
 
@@ -5,24 +7,18 @@ use ast::{
     ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
     Variant,
 };
-use errors::ErrorHandler;
 use ident::Ident;
-use std::range::Range;
 
 use crate::{Parser, items::Item};
 
 #[test]
 fn const_items() {
     assert_eq!(
-        Parser::new(
-            r#"const hello_world: String = "Hello, World!""#,
-            ErrorHandler::TEST
-        )
-        .item(),
+        Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("hello_world").span(6..17),
             kind: ExecKind::Const {
-                ty: TyKind::string().span(19..25),
+                ty: TyKind::named("String").span(19..25),
                 val: ExprKind::string("Hello, World!").span(28..43)
             },
         }))
@@ -32,7 +28,7 @@ fn const_items() {
 #[test]
 fn record_items() {
     assert_eq!(
-        Parser::new("record Point(x: Int, y: Int)", ErrorHandler::TEST).item(),
+        Parser::new_test("record Point(x: Int, y: Int)",).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Point").span(7..12),
             generics: smallvec![],
@@ -55,7 +51,7 @@ record Foo[T, U](
     bar: Bar[Baz[T]]
     )";
     assert_eq!(
-        Parser::new(input, ErrorHandler::TEST).item(),
+        Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(8..11),
             generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
@@ -94,7 +90,7 @@ enum Foo {
 ";
 
     assert_eq!(
-        Parser::new(input, ErrorHandler::TEST).item(),
+        Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(6..9),
             generics: smallvec![],
@@ -131,11 +127,7 @@ enum Foo {
 #[test]
 fn function_items() {
     assert_eq!(
-        Parser::new(
-            "fn sum(mut a: Byte, b: Byte): () = a = a + b",
-            ErrorHandler::TEST
-        )
-        .item(),
+        Parser::new_test("fn sum(mut a: Byte, b: Byte): () = a = a + b").item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
@@ -175,19 +167,11 @@ fn function_items() {
 
 #[test]
 fn malformed_items() {
+    assert!(Parser::new_test("const fn: Int = 5").item().is_err(),);
     assert!(
-        Parser::new("const fn: Int = 5", ErrorHandler::TEST)
+        Parser::new_test("const NO_DICTS: [String: Int] = 5")
             .item()
             .is_err(),
     );
-    assert!(
-        Parser::new("const NO_DICTS: [String: Int] = 5", ErrorHandler::TEST)
-            .item()
-            .is_err(),
-    );
-    assert!(
-        Parser::new("let global = false", ErrorHandler::TEST)
-            .item()
-            .is_err(),
-    );
+    assert!(Parser::new_test("let global = false").item().is_err(),);
 }

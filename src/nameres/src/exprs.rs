@@ -1,9 +1,10 @@
 use foldhash::HashSet;
 use itertools::Itertools as _;
+use package::ModuleId;
 use smallvec::SmallVec;
 
 use ast::ExprKind;
-use errors::{ErrorHandler, Result, TryCollectEager as _};
+use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
 use hir::{Arg, ExprId, Hir, LitExpr, VarId};
 
 use crate::{ErrorKind, Scope};
@@ -22,7 +23,7 @@ pub fn resolve_expr(
         ExprKind::Var(path) => match scope.resolve_var(path) {
             Some(id) => hir::Expr::Ident(id),
             None => {
-                return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span)));
+                return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span, scope.module())));
             }
         },
         ExprKind::Lit(lit) => hir::Expr::Lit(crate::convert_lit(lit)),
@@ -33,7 +34,7 @@ pub fn resolve_expr(
             let lhs = resolve_expr(scope, hir, handler, *lhs)?;
             let op = convert_infix_op(op);
             if op == hir::InfixOp::Assign {
-                check_is_place(hir, handler, lhs)?;
+                check_is_place(hir, scope.module(), handler, lhs)?;
             }
             hir::Expr::Infix { op, lhs, rhs: rhs? }
         }
@@ -60,7 +61,7 @@ pub fn resolve_expr(
                 .map(|arg| {
                     let val = resolve_expr(scope, hir, handler, arg.val)?;
                     if arg.mutable {
-                        check_is_place(hir, handler, val)?;
+                        check_is_place(hir, scope.module(), handler, val)?;
                     }
                     Ok(Arg {
                         val,
@@ -78,7 +79,8 @@ pub fn resolve_expr(
                 .filter(|(a, b)| a.mutable || b.mutable)
                 .try_for_each(|(a, b)| {
                     if overlaps(hir, a.val, b.val) {
-                        Err(handler.err(ErrorKind::OverlappingPlace(b.span).span(a.span)))
+                        Err(handler
+                            .err(ErrorKind::OverlappingPlace(b.span).span(a.span, scope.module())))
                     } else {
                         Ok(())
                     }
@@ -95,7 +97,7 @@ pub fn resolve_expr(
             for capture in &captures {
                 let info = hir.var_info(*capture);
                 if info.mutable {
-                    let id = hir.add_var(info.ident, false, info.span);
+                    let id = hir.add_var(info.ident, false, info.span, scope.module());
                     scope.add_var(info.ident, id);
                 }
             }
@@ -189,20 +191,25 @@ fn resolve_block_expr(
     })
 }
 
-fn check_is_place(hir: &Hir, handler: &mut ErrorHandler, place: ExprId) -> Result<()> {
+fn check_is_place(
+    hir: &Hir,
+    module: ModuleId,
+    handler: &mut ErrorHandler,
+    place: ExprId,
+) -> Result<()> {
     match hir.expr_info(place) {
         hir::Expr::Ident(id) => {
             if hir.var_info(*id).mutable {
                 Ok(())
             } else {
-                Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place))))
+                Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place), module)))
             }
         }
         hir::Expr::Field { base, .. } | hir::Expr::Index { arr: base, .. } => {
-            check_is_place(hir, handler, *base)
+            check_is_place(hir, module, handler, *base)
         }
         hir::Expr::Call { .. } => todo!("Projections"),
-        _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)))),
+        _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place), module))),
     }
 }
 

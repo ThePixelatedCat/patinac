@@ -209,8 +209,10 @@ impl Parser<'_> {
 
         let end_offset = u32::try_from(end_offset).expect("file too long");
         char::from_u32(value).ok_or_else(|| {
-            self.handler
-                .err(ErrorKind::BadUnicodeEscape.span(start + start_offset..start + end_offset + 1))
+            self.err(
+                ErrorKind::BadUnicodeEscape,
+                start + start_offset..start + end_offset + 1,
+            )
         })
     }
 
@@ -249,10 +251,10 @@ impl Parser<'_> {
             TokKind::True => LitExpr::Bool(true),
             TokKind::False => LitExpr::Bool(false),
             _ => {
-                return Err(self.handler.err(
-                    ErrorKind::Unexpected(tok.kind)
-                        .span(tok.span)
-                        .with_static_ctx("Expected a literal"),
+                return Err(self.err_ctx(
+                    ErrorKind::Unexpected(tok.kind),
+                    tok.span,
+                    &["Expected a literal"],
                 ));
             }
         };
