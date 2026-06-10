@@ -5,14 +5,14 @@ use derive_more::Display;
 use errors::Error;
 use ident::Ident;
 
-use crate::types::{Param, PartialTy, TyVar};
+use crate::types::{Param, PartialTy};
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
     #[display("expected `{_1}`, found `{_0}`")]
     TypesNotEqual(PartialTy, PartialTy),
     #[display("infinite (TEMP)")]
-    Infinite(TyVar, PartialTy),
+    Infinite,
     #[display("could not infer a concrete type for this expression")]
     UninferredExprType,
     #[display("could not infer a concrete type for this variable")]

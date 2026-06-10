@@ -1,3 +1,5 @@
+//! Performs typechecking on the [`Hir`], producing a mapping of expressions to their types, and filling in the Hir's mapping of variables to types.
+
 mod error;
 mod infer;
 mod substitute;
@@ -17,96 +19,86 @@ use ident::SpanIdent;
 
 use crate::types::{PartialTy, TyVar};
 
-#[derive(Debug)]
-enum Constraint {
-    Eq(PartialTy, PartialTy, Range<usize>),
-    HasField(PartialTy, Range<usize>, PartialTy, SpanIdent),
-}
+type Table = InPlaceUnificationTable<TyVar>;
 
-pub struct TypeChecker<'err> {
-    table: InPlaceUnificationTable<TyVar>,
+struct TypeChecker<'handler> {
+    table: Table,
     constraints: Vec<Constraint>,
     substitution: SecondaryMap<ExprId, PartialTy>,
     ctx: SecondaryMap<VarId, PartialTy>,
-    handler: ErrorHandler<'err>,
+    handler: ErrorHandler<'handler>,
 }
 
-impl<'err> TypeChecker<'err> {
-    pub fn new(handler: ErrorHandler<'err>) -> Self {
-        Self {
-            table: UnificationTable::new(),
-            constraints: Vec::new(),
-            substitution: SecondaryMap::new(),
-            ctx: SecondaryMap::new(),
-            handler,
+#[derive(Debug)]
+enum Constraint {
+    Eq(PartialTy, PartialTy, Range<usize>),
+    Field(PartialTy, Range<usize>, PartialTy, SpanIdent),
+}
+
+/// Runs typechecking on the provided [`Hir`], reporting errors through the provided [`ErrorHandler`].
+pub fn type_hir<'handler>(
+    hir: &mut Hir,
+    handler: ErrorHandler<'handler>,
+) -> Result<SecondaryMap<ExprId, Ty>> {
+    let mut checker = TypeChecker {
+        table: UnificationTable::new(),
+        constraints: Vec::new(),
+        substitution: SecondaryMap::new(),
+        ctx: SecondaryMap::new(),
+        handler,
+    };
+
+    for exec in hir.execs() {
+        match &exec.kind {
+            ExecKind::Const { val, .. } => {
+                let val_ty = checker.infer_expr(hir, *val);
+                let var_ty = checker.var_ty(hir, exec.id).clone();
+                checker.constrain_eq(val_ty, var_ty, hir.expr_span(*val));
+            }
+            ExecKind::Fn { body, .. } => {
+                let body_ty = checker.infer_expr(hir, *body);
+                let PartialTy::Fn(_, ret_ty) = checker.var_ty(hir, exec.id) else {
+                    unreachable!("function was given non-function type during nameres")
+                };
+                let ret_ty = *ret_ty.clone();
+                checker.constrain_eq(body_ty, ret_ty, hir.expr_span(*body));
+            }
         }
     }
+    if let Some(main) = hir.main() {
+        let ExecKind::Fn { body, .. } = &main.kind else {
+            unreachable!("ICE")
+        };
+        let body_ty = checker.infer_expr(hir, *body);
+        checker.constrain_eq(body_ty, PartialTy::unit(), hir.expr_span(*body));
+    }
+
+    checker.unify(hir);
+
+    checker.sub_all(hir)
 }
 
 impl TypeChecker<'_> {
-    pub fn type_program(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
-        self.build_context(hir);
-
-        for exec in hir.execs() {
-            match &exec.kind {
-                ExecKind::Const { val, .. } => {
-                    let val_ty = self.infer_expr(hir, *val);
-                    self.constrain_eq(val_ty, self.ctx[exec.id].clone(), hir.expr_span(*val));
-                }
-                ExecKind::Fn { body, .. } => {
-                    let body_ty = self.infer_expr(hir, *body);
-                    let PartialTy::Fn(_, ret_ty) = &self.ctx[exec.id] else {
-                        unreachable!("ICE: Function was given non-function type during nameres")
-                    };
-                    self.constrain_eq(body_ty, *ret_ty.clone(), hir.expr_span(*body));
-                }
-            }
-        }
-        if let Some(main) = hir.main() {
-            let ExecKind::Fn { body, .. } = &main.kind else {
-                unreachable!("ICE")
-            };
-            let body_ty = self.infer_expr(hir, *body);
-            self.constrain_eq(body_ty, PartialTy::unit(), hir.expr_span(*body));
-        }
-
-        self.unify(hir);
-
-        self.sub_all(hir)
-    }
-
-    fn build_context(&mut self, hir: &Hir) {
-        self.ctx = hir
-            .var_tys()
-            .map(|(var, ty)| (var, self.convert(ty)))
-            .collect::<SecondaryMap<_, _>>();
-    }
-
-    fn fresh_var(&mut self) -> PartialTy {
-        PartialTy::Var(self.table.new_key(None))
-    }
-
-    fn fresh_int_var(&mut self) -> PartialTy {
-        PartialTy::IntVar(self.table.new_key(None))
+    fn var_ty(&mut self, hir: &Hir, var: VarId) -> &PartialTy {
+        let table = &mut self.table;
+        self.ctx
+            .entry(var)
+            .unwrap()
+            .or_insert_with(|| types::convert(table, hir.try_var_ty(var)))
     }
 
     fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Range<usize>) {
         self.constraints.push(Constraint::Eq(ty_a, ty_b, span));
     }
 
-    fn constrain_has_field(
+    fn constrain_field(
         &mut self,
         base_ty: PartialTy,
         base_span: Range<usize>,
         field_ty: PartialTy,
         field_name: SpanIdent,
     ) {
-        self.constraints.push(Constraint::HasField(
-            base_ty, base_span, field_ty, field_name,
-        ));
-    }
-
-    fn convert(&mut self, ast_ty: Option<&Ty>) -> PartialTy {
-        ast_ty.map_or_else(|| self.fresh_var(), PartialTy::from)
+        self.constraints
+            .push(Constraint::Field(base_ty, base_span, field_ty, field_name));
     }
 }

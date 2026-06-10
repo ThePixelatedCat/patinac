@@ -1,7 +1,9 @@
 use std::assert_matches;
 
+use ena::unify::UnificationTable;
 use errors::{ErrorHandler, Result};
 use hir::{Param, Ty};
+use slotmap::SecondaryMap;
 use std::range::Range;
 
 use crate::TypeChecker;
@@ -10,8 +12,13 @@ use crate::TypeChecker;
 fn check_expr(src: &str) -> Result<Ty> {
     let (expr, mut hir) = nameres::test_resolve_expr(src).unwrap();
 
-    let mut checker = TypeChecker::new(ErrorHandler::TEST);
-    checker.build_context(&hir);
+    let mut checker = TypeChecker {
+        table: UnificationTable::new(),
+        constraints: Vec::new(),
+        substitution: SecondaryMap::new(),
+        ctx: SecondaryMap::new(),
+        handler: ErrorHandler::TEST,
+    };
     checker.infer_expr(&hir, expr);
     checker.unify(&hir);
 
@@ -21,9 +28,7 @@ fn check_expr(src: &str) -> Result<Ty> {
 #[allow(clippy::unwrap_used, reason = "test utility")]
 fn check_full(src: &str) -> Result<()> {
     let mut hir = nameres::test_resolve_ast(src).unwrap();
-    TypeChecker::new(ErrorHandler::TEST)
-        .type_program(&mut hir)
-        .map(|_| ())
+    crate::type_hir(&mut hir, ErrorHandler::TEST).map(|_| ())
 }
 
 #[test]

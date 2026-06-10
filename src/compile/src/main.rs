@@ -9,8 +9,6 @@ use codegen_llvm::{Codegen, CodegenMode, OptLevel};
 use errors::{DiagnosticKind, ErrorHandler};
 use parse::Parser;
 
-use typecheck::TypeChecker;
-
 #[derive(FromArgs)]
 #[argh(description = "The compiler for Patina")]
 #[allow(
@@ -79,7 +77,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!("Typechecking...");
-    let Ok(ty_map) = TypeChecker::new(handler.clone()).type_program(&mut hir) else {
+    let Ok(ty_map) = typecheck::type_hir(&mut hir, handler.clone()) else {
         return ExitCode::FAILURE;
     };
 

@@ -163,14 +163,14 @@ impl<T, I: Iterator<Item = Result<T>>> TryCollectEager<T, HandledError> for I {
     }
 }
 
-impl<T, I: Iterator<Item = Result<T>>> TryCollectEager<T, ()> for I {
+impl<T, I: Iterator<Item = Result<T, ()>>> TryCollectEager<T, ()> for I {
     fn try_collect_eager<U: FromIterator<T>>(self) -> Result<U, ()> {
         try_collect_eager_helper(self, ())
     }
 }
 
 fn try_collect_eager_helper<T, U: FromIterator<T>, E>(
-    iter: impl Iterator<Item = Result<T>>,
+    iter: impl Iterator<Item = Result<T, E>>,
     err: E,
 ) -> Result<U, E> {
     let mut has_err = false;

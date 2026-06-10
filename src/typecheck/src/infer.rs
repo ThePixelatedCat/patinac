@@ -12,16 +12,16 @@ impl TypeChecker<'_> {
     )]
     pub(super) fn infer_expr(&mut self, hir: &Hir, expr: ExprId) -> PartialTy {
         let ty = match hir.expr_info(expr) {
-            Expr::Ident(id) => self.ctx[*id].clone(),
+            Expr::Ident(id) => self.var_ty(hir, *id).clone(),
             Expr::Lit(lit) => match lit {
-                LitExpr::Int(_) => self.fresh_int_var(),
+                LitExpr::Int(_) => PartialTy::int_var(&mut self.table),
                 LitExpr::Float(_) => PartialTy::Float,
                 LitExpr::String(_) => todo!("String type"),
                 LitExpr::Char(_) => PartialTy::Char,
                 LitExpr::Bool(_) => PartialTy::Bool,
             },
             Expr::Array(exprs) => {
-                let inner_ty = self.fresh_var();
+                let inner_ty = PartialTy::var(&mut self.table);
                 for expr in exprs {
                     let ty = self.infer_expr(hir, *expr);
                     self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(*expr));
@@ -39,7 +39,7 @@ impl TypeChecker<'_> {
                         span: arg.span,
                     })
                     .collect();
-                let ret_ty = self.fresh_var();
+                let ret_ty = PartialTy::var(&mut self.table);
                 self.constrain_eq(
                     func_ty,
                     PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
@@ -56,7 +56,7 @@ impl TypeChecker<'_> {
                         PartialTy::unit()
                     }
                     InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div => {
-                        let int_var = self.fresh_int_var();
+                        let int_var = PartialTy::int_var(&mut self.table);
                         self.constrain_eq(lhs_ty, int_var.clone(), hir.expr_span(lhs));
                         self.constrain_eq(rhs_ty, int_var.clone(), hir.expr_span(rhs));
                         int_var
@@ -68,7 +68,7 @@ impl TypeChecker<'_> {
                     }
                     InfixOp::Exp => {
                         self.constrain_eq(lhs_ty, PartialTy::Float, hir.expr_span(lhs));
-                        let int_var = self.fresh_int_var();
+                        let int_var = PartialTy::int_var(&mut self.table);
                         self.constrain_eq(rhs_ty, int_var, hir.expr_span(rhs));
                         PartialTy::Float
                     }
@@ -105,7 +105,7 @@ impl TypeChecker<'_> {
                 let idx_ty = self.infer_expr(hir, idx);
                 self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx));
                 let arr_ty = self.infer_expr(hir, arr);
-                let inner_ty = self.fresh_var();
+                let inner_ty = PartialTy::var(&mut self.table);
                 self.constrain_eq(
                     arr_ty,
                     PartialTy::Array(Box::new(inner_ty.clone())),
@@ -115,8 +115,8 @@ impl TypeChecker<'_> {
             }
             &Expr::Field { base, field } => {
                 let base_ty = self.infer_expr(hir, base);
-                let field_ty = self.fresh_var();
-                self.constrain_has_field(base_ty, hir.expr_span(base), field_ty.clone(), field);
+                let field_ty = PartialTy::var(&mut self.table);
+                self.constrain_field(base_ty, hir.expr_span(base), field_ty.clone(), field);
                 field_ty
             }
             Expr::Lambda { params, body, .. } => {
@@ -125,7 +125,7 @@ impl TypeChecker<'_> {
                     .map(|id| {
                         let info = hir.var_info(*id);
                         Param {
-                            ty: self.ctx[*id].clone(),
+                            ty: self.var_ty(hir, *id).clone(),
                             mutable: info.mutable,
                             span: info.span,
                         }
@@ -149,7 +149,8 @@ impl TypeChecker<'_> {
             }
             Expr::For { id, iter, body } => {
                 let iter_ty = self.infer_expr(hir, *iter);
-                self.constrain_eq(self.ctx[*id].clone(), iter_ty, hir.expr_span(*iter));
+                let var_ty = self.var_ty(hir, *id).clone();
+                self.constrain_eq(var_ty, iter_ty, hir.expr_span(*iter));
                 self.infer_block_expr(hir, body);
                 PartialTy::unit()
             }
@@ -182,7 +183,8 @@ impl TypeChecker<'_> {
             .map(|stmt| match stmt {
                 Stmt::Decl { id, val, .. } => {
                     let val_ty = self.infer_expr(hir, *val);
-                    self.constrain_eq(val_ty, self.ctx[*id].clone(), hir.expr_span(*val));
+                    let var_ty = self.var_ty(hir, *id).clone();
+                    self.constrain_eq(val_ty, var_ty, hir.expr_span(*val));
                     PartialTy::unit()
                 }
                 Stmt::Expr(expr) => self.infer_expr(hir, *expr),

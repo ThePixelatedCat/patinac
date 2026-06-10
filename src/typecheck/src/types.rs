@@ -7,6 +7,8 @@ use ena::unify::{EqUnifyValue, UnifyKey};
 
 use hir::{Ty, TyId};
 
+use crate::Table;
+
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);
 
@@ -40,6 +42,20 @@ pub enum PartialTy {
     Named(TyId),
     Var(TyVar),
     IntVar(TyVar),
+}
+
+impl PartialTy {
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
+    }
+
+    pub fn var(table: &mut Table) -> Self {
+        Self::Var(table.new_key(None))
+    }
+
+    pub fn int_var(table: &mut Table) -> Self {
+        Self::IntVar(table.new_key(None))
+    }
 }
 
 impl EqUnifyValue for PartialTy {}
@@ -101,12 +117,6 @@ impl Display for PartialTy {
     }
 }
 
-impl PartialTy {
-    pub const fn unit() -> Self {
-        Self::Tuple(vec![])
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Param {
     pub ty: PartialTy,
@@ -121,4 +131,8 @@ impl Display for Param {
         }
         self.ty.fmt(f)
     }
+}
+
+pub fn convert(table: &mut Table, ast_ty: Option<&Ty>) -> PartialTy {
+    ast_ty.map_or_else(|| PartialTy::var(table), PartialTy::from)
 }

@@ -116,6 +116,10 @@ impl Hir {
         &self.var_tys[id]
     }
 
+    pub fn try_var_ty(&self, id: VarId) -> Option<&Ty> {
+        self.var_tys.get(id)
+    }
+
     pub fn var_tys(&self) -> impl Iterator<Item = (VarId, Option<&Ty>)> {
         self.vars.iter().map(|(id, _)| (id, self.var_tys.get(id)))
     }

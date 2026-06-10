@@ -1,13 +1,10 @@
 use errors::ErrorHandler;
-use typecheck::TypeChecker;
 
 use crate::{Codegen, CodegenMode, OptLevel};
 
 fn check(src: &str, opt_level: OptLevel) {
     let mut hir = nameres::test_resolve_ast(src).unwrap();
-    let ty_map = TypeChecker::new(ErrorHandler::TEST)
-        .type_program(&mut hir)
-        .unwrap();
+    let ty_map = typecheck::type_hir(&mut hir, ErrorHandler::TEST).unwrap();
     let ctx = crate::create_ctx();
     Codegen::new(&hir, &ty_map, ErrorHandler::TEST, &ctx, "test")
         .codegen(opt_level, CodegenMode::Silent);
