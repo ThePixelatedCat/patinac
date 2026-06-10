@@ -9,6 +9,7 @@
 )]
 
 mod exprs;
+mod layout;
 mod runtime;
 #[cfg(test)]
 mod test;
@@ -18,10 +19,10 @@ use std::{cmp::Reverse, fmt::Write as _, fs, iter, path::PathBuf, str::FromStr};
 
 use cranelift::{
     codegen::{
-        Context,
         ir::{FuncRef, Inst, StackSlot},
         isa::CallConv,
         settings::Flags,
+        Context,
     },
     module::{DataDescription, DataId, FuncId, FuncOrDataId, Linkage, Module},
     native,
@@ -32,10 +33,10 @@ use slotmap::SecondaryMap;
 
 use errors::ErrorHandler;
 use hir::{
-    Hir, TyMap, VarId,
     exprs::ExprId,
     items::{ExecKind, TyId},
     types::{Param, Ty},
+    Hir, VarId,
 };
 
 /// What to produce, if anything.
@@ -94,7 +95,7 @@ impl OptLevel {
 
 pub struct Codegen<'hir, 'handler> {
     hir: &'hir Hir,
-    ty_map: &'hir TyMap,
+    ty_map: &'hir SecondaryMap<ExprId, Ty>,
     handler: ErrorHandler<'handler>,
     module: ObjectModule,
     funcs: SecondaryMap<VarId, FuncId>,
@@ -126,7 +127,7 @@ impl<'hir, 'handler> Codegen<'hir, 'handler> {
     /// Panics if there is an issue initialising the target.
     pub fn new(
         hir: &'hir Hir,
-        ty_map: &'hir TyMap,
+        ty_map: &'hir SecondaryMap<ExprId, Ty>,
         handler: ErrorHandler<'handler>,
         package_name: &str,
     ) -> Self {

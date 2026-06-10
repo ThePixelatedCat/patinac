@@ -1,9 +1,9 @@
 use std::range::Range;
 
 use slotmap::new_key_type;
+use smallvec::SmallVec;
 
 use ident::SpanIdent;
-use smallvec::SmallVec;
 
 use crate::VarId;
 

@@ -5,7 +5,7 @@ use std::{
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
-use hir::{items::TyId, types::Ty};
+use hir::{Ty, TyId};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TyVar(u32);

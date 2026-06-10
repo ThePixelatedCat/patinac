@@ -6,7 +6,7 @@ use inkwell::{
     values::{BasicValue as _, FunctionValue},
 };
 
-use hir::{VarId, items::TyId, types::Ty};
+use hir::{Ty, TyId, VarId};
 
 use crate::Codegen;
 

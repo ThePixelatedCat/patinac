@@ -1,19 +1,16 @@
+//! The high-level intermediate representation of Patina. Produced after name resolution, and used for typechecking.
+
+mod exprs;
+
 use std::range::Range;
 
-use derive_more::From;
+use derive_more::{From, IntoIterator};
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::{Ident, SpanIdent};
 
-use crate::{
-    exprs::{Expr, ExprId},
-    items::{ExecItem, TyId, TyInfo},
-    types::Ty,
-};
-
-pub mod exprs;
-pub mod items;
-pub mod types;
+pub use exprs::*;
+use smallvec::SmallVec;
 
 #[derive(Debug, Default)]
 pub struct Hir {
@@ -82,6 +79,12 @@ impl Hir {
         id
     }
 
+    pub fn take_expr(&mut self, id: ExprId) -> Expr {
+        self.exprs
+            .remove(id)
+            .expect("id was gotten from this slotmap")
+    }
+
     pub fn expr_info(&self, id: ExprId) -> &Expr {
         &self.exprs[id]
     }
@@ -118,19 +121,95 @@ impl Hir {
     }
 }
 
-#[derive(From)]
-pub struct TyMap(SecondaryMap<ExprId, Ty>);
+new_key_type! { pub struct TyId; }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TyInfo {
+    pub fields: Fields,
+    pub constructor_id: VarId,
+}
 
-impl TyMap {
-    pub fn ty(&self, expr: ExprId) -> &Ty {
-        &self.0[expr]
+#[derive(From, Debug, Clone, PartialEq, Eq, IntoIterator)]
+#[into_iterator(ref, ref_mut, owned)]
+pub struct Fields(Vec<(SpanIdent, Ty)>);
+impl Fields {
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
+
+    pub fn get_ty(&self, ident: Ident) -> Option<&Ty> {
+        self.0
+            .iter()
+            .find(|(id, _)| id.ident == ident)
+            .map(|(_, ty)| ty)
+    }
+
+    /// # Panics
+    /// Panics if there is no field with the given name
+    pub fn get_ty_idx(&self, ident: Ident) -> (u32, &Ty) {
+        self.0
+            .iter()
+            .enumerate()
+            .find(|(_, (id, _))| id.ident == ident)
+            .map(|(idx, (_, ty))| (u32::try_from(idx).unwrap(), ty))
+            .unwrap()
+    }
+
+    pub fn tys(&self) -> impl Iterator<Item = &Ty> {
+        self.0.iter().map(|(_, ty)| ty)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExecItem {
+    pub id: VarId,
+    pub kind: ExecKind,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ExecKind {
+    Const {
+        val: ExprId,
+    },
+    Fn {
+        params: SmallVec<[VarId; 3]>,
+        body: ExprId,
+    },
 }
 
 new_key_type! { pub struct VarId; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VarInfo {
     pub ident: Ident,
+    pub mutable: bool,
+    pub span: Range<usize>,
+}
+
+/// The kinds of types
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Ty {
+    Int,
+    UInt,
+    Byte,
+    Float,
+    Char,
+    Bool,
+    Tuple(Vec<Self>),
+    Array(Box<Self>),
+    Fn(Vec<Param>, Box<Self>),
+    Named(TyId),
+}
+
+impl Ty {
+    /// Helper to create a new empty [`TyKind::Tuple`] for representing the Unit type
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
+    }
+}
+
+/// A parameter of a function type
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Param {
+    pub ty: Ty,
     pub mutable: bool,
     pub span: Range<usize>,
 }

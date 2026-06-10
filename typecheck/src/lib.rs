@@ -12,7 +12,7 @@ use ena::unify::{InPlaceUnificationTable, UnificationTable};
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
-use hir::{Hir, TyMap, VarId, exprs::ExprId, items::ExecKind, types::Ty};
+use hir::{ExecKind, ExprId, Hir, Ty, VarId};
 use ident::SpanIdent;
 
 use crate::types::{PartialTy, TyVar};
@@ -44,7 +44,7 @@ impl<'err> TypeChecker<'err> {
 }
 
 impl TypeChecker<'_> {
-    pub fn type_program(&mut self, hir: &mut Hir) -> Result<TyMap> {
+    pub fn type_program(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
         self.build_context(hir);
 
         for exec in hir.execs() {

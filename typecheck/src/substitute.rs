@@ -3,10 +3,7 @@ use std::mem;
 use itertools::Itertools as _;
 
 use errors::{Result, TryCollectEager as _};
-use hir::{
-    Hir, TyMap,
-    types::{Param, Ty},
-};
+use hir::{ExprId, Hir, Param, Ty};
 use slotmap::SecondaryMap;
 
 use crate::{TypeChecker, error::ErrorKind, types::PartialTy};
@@ -52,11 +49,11 @@ impl TypeChecker<'_> {
         tys.iter().map(|ty| self.sub_ty(ty)).try_collect()
     }
 
-    pub(super) fn sub_all(&mut self, hir: &mut Hir) -> Result<TyMap> {
+    pub(super) fn sub_all(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
         // Don't even try if we have outstanding errors
         let () = self.handler.checked(())?;
 
-        let expr_map: Result<SecondaryMap<_, _>> = mem::take(&mut self.substitution)
+        let expr_map = mem::take(&mut self.substitution)
             .iter()
             .map(|(expr, ty)| match self.sub_ty(ty) {
                 Ok(ty) => Ok((expr, ty)),
@@ -79,6 +76,6 @@ impl TypeChecker<'_> {
             })
             .try_collect_eager()?;
 
-        Ok(expr_map?.into())
+        Ok(expr_map?)
     }
 }

@@ -2,18 +2,9 @@ use foldhash::HashSet;
 use itertools::Itertools as _;
 use smallvec::SmallVec;
 
-use ast::{
-    BlockExpr as AstBlockExpr, Expr as AstExpr, ExprKind, InfixOp as AstInfixOp,
-    PrefixOp as AstPrefixOp, Stmt as AstStmt,
-};
+use ast::ExprKind;
 use errors::{ErrorHandler, Result, TryCollectEager as _};
-use hir::{
-    Hir, VarId,
-    exprs::{
-        Arg, BlockExpr as HirBlockExpr, Expr as HirExpr, ExprId, InfixOp as HirInfixOp, LitExpr,
-        PrefixOp as HirPrefixOp, Stmt as HirStmt,
-    },
-};
+use hir::{Arg, ExprId, Hir, LitExpr, VarId};
 
 use crate::{ErrorKind, Scope};
 
@@ -25,39 +16,39 @@ pub fn resolve_expr(
     scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
-    expr: AstExpr,
+    expr: ast::Expr,
 ) -> Result<ExprId> {
     let new_expr = match expr.kind {
         ExprKind::Var(path) => match scope.resolve_var(path) {
-            Some(id) => HirExpr::Ident(id),
+            Some(id) => hir::Expr::Ident(id),
             None => {
                 return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span)));
             }
         },
-        ExprKind::Lit(lit) => HirExpr::Lit(crate::convert_lit(lit)),
-        ExprKind::Array(exprs) => HirExpr::Array(resolve_exprs(scope, hir, handler, exprs)?),
-        ExprKind::Tuple(exprs) => HirExpr::Tuple(resolve_exprs(scope, hir, handler, exprs)?),
+        ExprKind::Lit(lit) => hir::Expr::Lit(crate::convert_lit(lit)),
+        ExprKind::Array(exprs) => hir::Expr::Array(resolve_exprs(scope, hir, handler, exprs)?),
+        ExprKind::Tuple(exprs) => hir::Expr::Tuple(resolve_exprs(scope, hir, handler, exprs)?),
         ExprKind::Infix { op, lhs, rhs } => {
             let rhs = resolve_expr(scope, hir, handler, *rhs);
             let lhs = resolve_expr(scope, hir, handler, *lhs)?;
             let op = convert_infix_op(op);
-            if op == HirInfixOp::Assign {
+            if op == hir::InfixOp::Assign {
                 check_is_place(hir, handler, lhs)?;
             }
-            HirExpr::Infix { op, lhs, rhs: rhs? }
+            hir::Expr::Infix { op, lhs, rhs: rhs? }
         }
-        ExprKind::Prefix { op, expr } => HirExpr::Prefix {
+        ExprKind::Prefix { op, expr } => hir::Expr::Prefix {
             op: convert_prefix_op(op),
             expr: resolve_expr(scope, hir, handler, *expr)?,
         },
-        ExprKind::Field { base, field } => HirExpr::Field {
+        ExprKind::Field { base, field } => hir::Expr::Field {
             base: resolve_expr(scope, hir, handler, *base)?,
             field,
         },
         ExprKind::Index { arr, idx } => {
             let arr = resolve_expr(scope, hir, handler, *arr);
             let idx = resolve_expr(scope, hir, handler, *idx);
-            HirExpr::Index {
+            hir::Expr::Index {
                 arr: arr?,
                 idx: idx?,
             }
@@ -93,7 +84,7 @@ pub fn resolve_expr(
                     }
                 })?;
 
-            HirExpr::Call { func: func?, args }
+            hir::Expr::Call { func: func?, args }
         }
         ExprKind::Lambda { params, body } => {
             let mut scope = Scope::clone(scope);
@@ -115,7 +106,7 @@ pub fn resolve_expr(
                 .try_collect_eager();
             let body = resolve_expr(&scope, hir, handler, *body);
 
-            HirExpr::Lambda {
+            hir::Expr::Lambda {
                 params: params?,
                 body: body?,
                 captures: captures.into_iter().collect(),
@@ -127,7 +118,7 @@ pub fn resolve_expr(
             let el = el
                 .map(|el| resolve_block_expr(scope, hir, handler, el))
                 .transpose();
-            HirExpr::If {
+            hir::Expr::If {
                 cond: cond?,
                 th: th?,
                 el: el?,
@@ -139,18 +130,18 @@ pub fn resolve_expr(
             let mut scope = Scope::clone(scope);
             let id = crate::resolve_pat(&mut scope, hir, pat, false, None);
             let body = resolve_block_expr(&scope, hir, handler, body);
-            HirExpr::For {
+            hir::Expr::For {
                 id,
                 iter: iter?,
                 body: body?,
             }
         }
-        ExprKind::Loop(body) => HirExpr::Loop(resolve_block_expr(scope, hir, handler, body)?),
-        ExprKind::Break => HirExpr::Break,
-        ExprKind::Continue => HirExpr::Continue,
-        ExprKind::Return(expr) => HirExpr::Return(resolve_expr(scope, hir, handler, *expr)?),
-        ExprKind::Block(stmts) => HirExpr::Block(resolve_block_expr(scope, hir, handler, stmts)?),
-        ExprKind::Print(expr) => HirExpr::Print(resolve_expr(scope, hir, handler, *expr)?),
+        ExprKind::Loop(body) => hir::Expr::Loop(resolve_block_expr(scope, hir, handler, body)?),
+        ExprKind::Break => hir::Expr::Break,
+        ExprKind::Continue => hir::Expr::Continue,
+        ExprKind::Return(expr) => hir::Expr::Return(resolve_expr(scope, hir, handler, *expr)?),
+        ExprKind::Block(stmts) => hir::Expr::Block(resolve_block_expr(scope, hir, handler, stmts)?),
+        ExprKind::Print(expr) => hir::Expr::Print(resolve_expr(scope, hir, handler, *expr)?),
     };
 
     Ok(hir.add_expr(new_expr, expr.span))
@@ -160,7 +151,7 @@ fn resolve_exprs(
     scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
-    exprs: Vec<AstExpr>,
+    exprs: Vec<ast::Expr>,
 ) -> Result<SmallVec<[ExprId; 3]>> {
     exprs
         .into_iter()
@@ -172,27 +163,27 @@ fn resolve_block_expr(
     scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
-    block_expr: AstBlockExpr,
-) -> Result<HirBlockExpr> {
+    block_expr: ast::BlockExpr,
+) -> Result<hir::BlockExpr> {
     let mut scope = Scope::clone(scope);
     let stmts = block_expr
         .stmts
         .into_iter()
         .map(|stmt| match stmt {
-            AstStmt::Decl { binding, val, span } => {
+            ast::Stmt::Decl { binding, val, span } => {
                 // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
                 let val = resolve_expr(&scope, hir, handler, val);
                 let id = crate::resolve_binding(&mut scope, hir, handler, binding);
-                Ok(HirStmt::Decl {
+                Ok(hir::Stmt::Decl {
                     id: id?,
                     val: val?,
                     span,
                 })
             }
-            AstStmt::Expr(expr) => resolve_expr(&scope, hir, handler, expr).map(HirStmt::Expr),
+            ast::Stmt::Expr(expr) => resolve_expr(&scope, hir, handler, expr).map(hir::Stmt::Expr),
         })
         .try_collect_eager()?;
-    Ok(HirBlockExpr {
+    Ok(hir::BlockExpr {
         stmts,
         span: block_expr.span,
     })
@@ -200,38 +191,38 @@ fn resolve_block_expr(
 
 fn check_is_place(hir: &Hir, handler: &mut ErrorHandler, place: ExprId) -> Result<()> {
     match hir.expr_info(place) {
-        HirExpr::Ident(id) => {
+        hir::Expr::Ident(id) => {
             if hir.var_info(*id).mutable {
                 Ok(())
             } else {
                 Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place))))
             }
         }
-        HirExpr::Field { base, .. } | HirExpr::Index { arr: base, .. } => {
+        hir::Expr::Field { base, .. } | hir::Expr::Index { arr: base, .. } => {
             check_is_place(hir, handler, *base)
         }
-        HirExpr::Call { .. } => todo!("Projections"),
+        hir::Expr::Call { .. } => todo!("Projections"),
         _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place)))),
     }
 }
 
 fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
     match (hir.expr_info(a), hir.expr_info(b)) {
-        (HirExpr::Ident(a), HirExpr::Ident(b)) => a == b,
-        (HirExpr::Ident(_), HirExpr::Index { arr, .. }) => overlaps(hir, a, *arr),
-        (HirExpr::Ident(_), HirExpr::Field { base, .. }) => overlaps(hir, a, *base),
+        (hir::Expr::Ident(a), hir::Expr::Ident(b)) => a == b,
+        (hir::Expr::Ident(_), hir::Expr::Index { arr, .. }) => overlaps(hir, a, *arr),
+        (hir::Expr::Ident(_), hir::Expr::Field { base, .. }) => overlaps(hir, a, *base),
         (
-            HirExpr::Index {
+            hir::Expr::Index {
                 arr: arr_a,
                 idx: idx_a,
             },
-            HirExpr::Index {
+            hir::Expr::Index {
                 arr: arr_b,
                 idx: idx_b,
             },
         ) => {
-            if let HirExpr::Lit(LitExpr::Int(idx_a)) = hir.expr_info(*idx_a)
-                && let HirExpr::Lit(LitExpr::Int(idx_b)) = hir.expr_info(*idx_b)
+            if let hir::Expr::Lit(LitExpr::Int(idx_a)) = hir.expr_info(*idx_a)
+                && let hir::Expr::Lit(LitExpr::Int(idx_b)) = hir.expr_info(*idx_b)
             {
                 idx_a == idx_b
             } else {
@@ -239,23 +230,23 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
             }
         }
         (
-            HirExpr::Field {
+            hir::Expr::Field {
                 base: base_a,
                 field: field_a,
             },
-            HirExpr::Field {
+            hir::Expr::Field {
                 base: base_b,
                 field: field_b,
             },
         ) => (field_a.ident == field_b.ident) && overlaps(hir, *base_a, *base_b),
-        (HirExpr::Index { arr, .. }, HirExpr::Field { base, .. }) => {
+        (hir::Expr::Index { arr, .. }, hir::Expr::Field { base, .. }) => {
             overlaps(hir, *arr, b) || overlaps(hir, a, *base)
         }
         _ => false,
     }
 }
 
-fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &AstExpr) {
+fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &ast::Expr) {
     match &expr.kind {
         ExprKind::Var(path) => {
             // Only add capture if it's a single identifier, meaning it's a local variable, and it's bound.
@@ -312,11 +303,11 @@ fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &AstExpr
     }
 }
 
-fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &AstBlockExpr) {
+fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &ast::BlockExpr) {
     for s in &block.stmts {
         match s {
-            AstStmt::Decl { val, .. } => collect_captures(scope, captures, val),
-            AstStmt::Expr(expr) => collect_captures(scope, captures, expr),
+            ast::Stmt::Decl { val, .. } => collect_captures(scope, captures, val),
+            ast::Stmt::Expr(expr) => collect_captures(scope, captures, expr),
         }
     }
 }
@@ -324,16 +315,16 @@ fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &
 macro_rules! convert_op {
     ($op:ident, $enum_name:ident, $($variant:ident),*) => {
         match $op {
-            $(ast::$enum_name::$variant => hir::exprs::$enum_name::$variant),*
+            $(ast::$enum_name::$variant => hir::$enum_name::$variant),*
         }
     };
 }
 
-const fn convert_prefix_op(op: AstPrefixOp) -> HirPrefixOp {
+const fn convert_prefix_op(op: ast::PrefixOp) -> hir::PrefixOp {
     convert_op!(op, PrefixOp, Not, Neg)
 }
 
-const fn convert_infix_op(op: AstInfixOp) -> HirInfixOp {
+const fn convert_infix_op(op: ast::InfixOp) -> hir::InfixOp {
     convert_op!(
         op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Xor, Eqq,
         Neq, Gt, Lt, Geq, Leq

@@ -10,17 +10,9 @@ use std::mem;
 
 use itertools::Itertools as _;
 
-use ast::{
-    Ast, Binding, ExecItem as AstExecItem, ExecKind as AstExecKind, Expr as AstExpr,
-    LitExpr as AstLitExpr, Pat, PatKind, Ty as AstTy, TyItem, TyItemKind, TyKind as AstTyKind,
-};
+use ast::{Ast, Binding, Pat, PatKind, TyItem, TyItemKind, TyKind};
 use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
-use hir::{
-    Hir, VarId,
-    exprs::{ExprId, LitExpr as HirLitExpr},
-    items::{ExecItem as HirExecItem, ExecKind as HirExecKind, TyInfo},
-    types::{Param as ParamTy, Ty as HirTy},
-};
+use hir::{ExprId, Hir, Param, TyInfo, VarId};
 use package::{Module, Package};
 
 use crate::{error::ErrorKind, scope::Scope};
@@ -54,12 +46,12 @@ fn resolve_module(
     scope
 }
 
-fn find_main(error_handler: &mut ErrorHandler, execs: &[AstExecItem]) -> Result<Option<usize>> {
+fn find_main(error_handler: &mut ErrorHandler, execs: &[ast::ExecItem]) -> Result<Option<usize>> {
     for (idx, item) in execs.iter().enumerate() {
-        if let AstExecKind::Fn { params, ret_ty, .. } = &item.kind
+        if let ast::ExecKind::Fn { params, ret_ty, .. } = &item.kind
             && item.ident.ident == "main"
         {
-            return if params.is_empty() && ret_ty.kind == AstTyKind::unit() {
+            return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
                 Ok(Some(idx))
             } else {
                 Err(error_handler.err(ErrorKind::InvalidMain.span(item.ident.span)))
@@ -145,16 +137,16 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 return;
             }
 
-            let constructor_ty = HirTy::Fn(
+            let constructor_ty = hir::Ty::Fn(
                 fields
                     .iter()
-                    .map(|(ident, ty)| ParamTy {
+                    .map(|(ident, ty)| Param {
                         ty: ty.clone(),
                         mutable: false,
                         span: ident.span,
                     })
                     .collect(),
-                Box::new(HirTy::Named(id)),
+                Box::new(hir::Ty::Named(id)),
             );
             let constructor_id = hir.add_var(item.ident.ident, false, item.ident.span);
             hir.add_var_ty(constructor_id, constructor_ty);
@@ -178,23 +170,23 @@ fn resolve_exec_item(
     scope: &Scope,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
-    item: AstExecItem,
-) -> Result<HirExecItem> {
+    item: ast::ExecItem,
+) -> Result<hir::ExecItem> {
     let id = scope.get_var(item.ident.ident).expect(
         "all exec item idents, including this one, should have already been inserted into the scope",
     );
 
     match item.kind {
-        AstExecKind::Const { ty, val } => {
+        ast::ExecKind::Const { ty, val } => {
             let val = exprs::resolve_expr(scope, hir, handler, val);
             hir.add_var_ty(id, resolve_ty(scope, handler, ty)?);
 
-            Ok(HirExecItem {
+            Ok(hir::ExecItem {
                 id,
-                kind: HirExecKind::Const { val: val? },
+                kind: hir::ExecKind::Const { val: val? },
             })
         }
-        AstExecKind::Fn {
+        ast::ExecKind::Fn {
             generics,
             params,
             ret_mut,
@@ -218,7 +210,7 @@ fn resolve_exec_item(
                     let id = resolve_pat(&mut scope, hir, p.pat, p.mutable, Some(ty.clone()));
                     Ok((
                         id,
-                        ParamTy {
+                        Param {
                             ty,
                             mutable: p.mutable,
                             span: p.span,
@@ -230,11 +222,11 @@ fn resolve_exec_item(
             let ret_ty = resolve_ty(&scope, handler, ret_ty)?;
             let (params, param_tys) = params?;
 
-            hir.add_var_ty(id, HirTy::Fn(param_tys, Box::new(ret_ty)));
+            hir.add_var_ty(id, hir::Ty::Fn(param_tys, Box::new(ret_ty)));
 
-            Ok(HirExecItem {
+            Ok(hir::ExecItem {
                 id,
-                kind: HirExecKind::Fn {
+                kind: hir::ExecKind::Fn {
                     params,
                     body: body?,
                 },
@@ -256,17 +248,17 @@ fn resolve_binding(
     Ok(resolve_pat(scope, hir, binding.pat, binding.mutable, ty))
 }
 
-fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: AstTy) -> Result<HirTy> {
+fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<hir::Ty> {
     match ty.kind {
-        AstTyKind::Int => Ok(HirTy::Int),
-        AstTyKind::UInt => Ok(HirTy::UInt),
-        AstTyKind::Byte => Ok(HirTy::Byte),
-        AstTyKind::Float => Ok(HirTy::Float),
-        AstTyKind::Char => Ok(HirTy::Char),
-        AstTyKind::Bool => Ok(HirTy::Bool),
-        AstTyKind::Array(ty) => Ok(HirTy::Array(Box::new(resolve_ty(scope, handler, *ty)?))),
-        AstTyKind::Tuple(tys) => Ok(HirTy::Tuple(resolve_tys(scope, handler, tys)?)),
-        AstTyKind::Fn(params, ret) => {
+        TyKind::Int => Ok(hir::Ty::Int),
+        TyKind::UInt => Ok(hir::Ty::UInt),
+        TyKind::Byte => Ok(hir::Ty::Byte),
+        TyKind::Float => Ok(hir::Ty::Float),
+        TyKind::Char => Ok(hir::Ty::Char),
+        TyKind::Bool => Ok(hir::Ty::Bool),
+        TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(resolve_ty(scope, handler, *ty)?))),
+        TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(resolve_tys(scope, handler, tys)?)),
+        TyKind::Fn(params, ret) => {
             if ret.mutable {
                 todo!("Projections")
             }
@@ -274,7 +266,7 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: AstTy) -> Result<Hi
             let params = params
                 .into_iter()
                 .map(|param| {
-                    Ok(ParamTy {
+                    Ok(Param {
                         ty: resolve_ty(scope, handler, param.ty)?,
                         mutable: param.mutable,
                         span: param.span,
@@ -282,22 +274,26 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: AstTy) -> Result<Hi
                 })
                 .try_collect_eager();
             let ret = Box::new(resolve_ty(scope, handler, *ret.ty)?);
-            Ok(HirTy::Fn(params?, ret))
+            Ok(hir::Ty::Fn(params?, ret))
         }
-        AstTyKind::Named(path, args) => {
+        TyKind::Named(path, args) => {
             if !args.is_empty() {
                 todo!("Generics")
             }
 
             match scope.resolve_ty(path) {
-                Some(id) => Ok(HirTy::Named(id)),
+                Some(id) => Ok(hir::Ty::Named(id)),
                 None => Err(handler.err(ErrorKind::UnknownType.span(ty.span))),
             }
         }
     }
 }
 
-fn resolve_tys(scope: &Scope, handler: &mut ErrorHandler, tys: Vec<AstTy>) -> Result<Vec<HirTy>> {
+fn resolve_tys(
+    scope: &Scope,
+    handler: &mut ErrorHandler,
+    tys: Vec<ast::Ty>,
+) -> Result<Vec<hir::Ty>> {
     tys.into_iter()
         .map(|ty| resolve_ty(scope, handler, ty))
         .try_collect_eager()
@@ -308,7 +304,7 @@ fn resolve_pat(
     hir: &mut Hir,
     pat: Pat,
     mutable: bool,
-    ty: Option<HirTy>,
+    ty: Option<hir::Ty>,
 ) -> VarId {
     match pat.kind {
         PatKind::Ident(ident) => {
@@ -323,13 +319,13 @@ fn resolve_pat(
     }
 }
 
-fn convert_lit(lit: AstLitExpr) -> HirLitExpr {
+fn convert_lit(lit: ast::LitExpr) -> hir::LitExpr {
     match lit {
-        AstLitExpr::Int(i) => HirLitExpr::Int(i),
-        AstLitExpr::Float(f) => HirLitExpr::Float(f),
-        AstLitExpr::Char(c) => HirLitExpr::Char(c),
-        AstLitExpr::String(s) => HirLitExpr::String(s),
-        AstLitExpr::Bool(b) => HirLitExpr::Bool(b),
+        ast::LitExpr::Int(i) => hir::LitExpr::Int(i),
+        ast::LitExpr::Float(f) => hir::LitExpr::Float(f),
+        ast::LitExpr::Char(c) => hir::LitExpr::Char(c),
+        ast::LitExpr::String(s) => hir::LitExpr::String(s),
+        ast::LitExpr::Bool(b) => hir::LitExpr::Bool(b),
     }
 }
 

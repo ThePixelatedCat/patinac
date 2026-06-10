@@ -1,7 +1,7 @@
 use foldhash::fast::RandomState;
 
 use ast::Path;
-use hir::{VarId, items::TyId};
+use hir::{TyId, VarId};
 use ident::Ident;
 
 type ImFoldHashMap<K, V> = im_rc::HashMap<K, V, RandomState>;

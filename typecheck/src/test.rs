@@ -1,7 +1,7 @@
 use std::assert_matches;
 
 use errors::{ErrorHandler, Result};
-use hir::types::{Param, Ty};
+use hir::{Param, Ty};
 use std::range::Range;
 
 use crate::TypeChecker;
@@ -15,7 +15,7 @@ fn check_expr(src: &str) -> Result<Ty> {
     checker.infer_expr(&hir, expr);
     checker.unify(&hir);
 
-    Ok(checker.sub_all(&mut hir)?.ty(expr).clone())
+    Ok(checker.sub_all(&mut hir)?.remove(expr).unwrap())
 }
 
 #[allow(clippy::unwrap_used, reason = "test utility")]

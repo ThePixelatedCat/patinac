@@ -29,12 +29,7 @@ use inkwell::{
 use slotmap::SecondaryMap;
 
 use errors::ErrorHandler;
-use hir::{
-    Hir, TyMap, VarId,
-    exprs::ExprId,
-    items::{ExecKind, TyId},
-    types::{Param, Ty},
-};
+use hir::{ExecKind, ExprId, Hir, Param, Ty, TyId, VarId};
 
 /// What to produce, if anything.
 #[derive(PartialEq, Eq)]
@@ -92,7 +87,7 @@ impl OptLevel {
 
 pub struct Codegen<'hir, 'handler, 'ctx> {
     hir: &'hir Hir,
-    ty_map: &'hir TyMap,
+    ty_map: &'hir SecondaryMap<ExprId, Ty>,
     handler: ErrorHandler<'handler>,
     ctx: &'ctx Context,
     builder: Builder<'ctx>,
@@ -120,7 +115,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     /// Panics if there is an issue initialising the target.
     pub fn new(
         hir: &'hir Hir,
-        ty_map: &'hir TyMap,
+        ty_map: &'hir SecondaryMap<ExprId, Ty>,
         handler: ErrorHandler<'handler>,
         ctx: &'ctx Context,
         package_name: &str,

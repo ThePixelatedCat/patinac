@@ -1,7 +1,4 @@
-use hir::{
-    Hir,
-    exprs::{BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
-};
+use hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt};
 
 use crate::{
     TypeChecker,

@@ -1,15 +1,11 @@
 use std::iter;
 
-use hir::{
-    VarId,
-    exprs::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt},
-    types::Ty,
-};
+use hir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
 use ident::SpanIdent;
 use inkwell::{
     FloatPredicate,
     module::Linkage,
-    types::{BasicType as _, StructType},
+    types::StructType,
     values::{
         BasicMetadataValueEnum, BasicValue as _, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
@@ -23,18 +19,18 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
-            Expr::Array(exprs) => self.emit_array(self.ty_map.ty(expr), exprs),
-            Expr::Tuple(exprs) => self.emit_tuple(self.ty_map.ty(expr), exprs),
+            Expr::Array(exprs) => self.emit_array(&self.ty_map[expr], exprs),
+            Expr::Tuple(exprs) => self.emit_tuple(&self.ty_map[expr], exprs),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
             Expr::Index { arr, idx } => self.emit_index(*arr, *idx),
-            Expr::Call { func, args } => self.emit_call(*func, args, self.ty_map.ty(expr)),
+            Expr::Call { func, args } => self.emit_call(*func, args, &self.ty_map[expr]),
             Expr::Lambda {
                 params,
                 body,
                 captures,
-            } => self.emit_lambda(self.ty_map.ty(expr), params, *body, captures),
+            } => self.emit_lambda(&self.ty_map[expr], params, *body, captures),
             Expr::If { cond, th, el } => self.emit_if(*cond, th, el.as_ref()),
             Expr::For { .. } => todo!(),
             Expr::Loop(body) => self.emit_loop(body),
@@ -48,7 +44,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     fn emit_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
-        let format_string = match self.ty_map.ty(expr) {
+        let format_string = match &self.ty_map[expr] {
             Ty::Int => "%lld\n",
             Ty::UInt => "%llu\n",
             Ty::Byte => "%hhu\n",
@@ -79,7 +75,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
-                let Ty::Named(id) = self.ty_map.ty(*base) else {
+                let Ty::Named(id) = &self.ty_map[*base] else {
                     unreachable!("ICE")
                 };
                 let base = self.emit_place(*base);
@@ -89,7 +85,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .unwrap()
             }
             Expr::Index { arr, idx } => {
-                let Ty::Array(elem_ty) = self.ty_map.ty(*arr) else {
+                let Ty::Array(elem_ty) = &self.ty_map[*arr] else {
                     unreachable!("ICE")
                 };
                 let arr = self.emit_place(*arr);
@@ -117,7 +113,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.vars[*id],
             Expr::Field { base, field } => {
-                let Ty::Named(id) = self.ty_map.ty(*base) else {
+                let Ty::Named(id) = &self.ty_map[*base] else {
                     unreachable!("ICE")
                 };
                 let base = self.emit_unique_place(*base);
@@ -127,8 +123,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .unwrap()
             }
             Expr::Index { arr, idx } => {
-                let ty = self.ty_map.ty(*arr);
-                let elem_ty = self.ty_map.ty(expr);
+                let ty = &self.ty_map[*arr];
+                let elem_ty = &self.ty_map[expr];
                 let arr = self.emit_unique_place(*arr);
                 let idx = self.emit_expr(*idx);
                 self.builder
@@ -188,7 +184,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
     fn emit_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
         match lit {
-            LitExpr::Int(val) => match self.ty_map.ty(expr) {
+            LitExpr::Int(val) => match &self.ty_map[expr] {
                 Ty::Int => {
                     let max = u64::try_from(i64::MAX).expect("known in-bounds value");
                     let clamped_val = if *val > max {
@@ -293,13 +289,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .builder
                 .build_struct_gep(ty, out, u32::try_from(idx).unwrap(), &format!("field{idx}"))
                 .unwrap();
-            self.emit_move(self.ty_map.ty(*expr), tmp, ptr);
+            self.emit_move(&self.ty_map[*expr], tmp, ptr);
         }
         out.as_basic_value_enum()
     }
 
     fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
-        let ty = self.ty_map.ty(lhs);
+        let ty = &self.ty_map[lhs];
         match op {
             InfixOp::Assign => {
                 let dst = self.emit_unique_place(lhs);
@@ -455,7 +451,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     fn emit_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
-        let Ty::Named(id) = self.ty_map.ty(base) else {
+        let Ty::Named(id) = &self.ty_map[base] else {
             unreachable!("ICE")
         };
 
@@ -485,7 +481,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
     }
 
     fn emit_index(&mut self, arr: ExprId, idx: ExprId) -> BasicValueEnum<'ctx> {
-        let ty = self.ty_map.ty(arr);
+        let ty = &self.ty_map[arr];
         let Ty::Array(elem_ty) = ty else {
             unreachable!("ICE")
         };
@@ -524,7 +520,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let mut args: Vec<_> = args
             .iter()
             .map(|a| {
-                let arg_ty = self.ty_map.ty(a.val);
+                let arg_ty = &self.ty_map[a.val];
                 if let Expr::Ident(id) = self.hir.expr_info(a.val)
                     && !a.mutable
                     && Self::is_indirect(arg_ty)
@@ -587,7 +583,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             let env = self.builder.build_load(self.ptr_ty(), env, "env").unwrap();
             args.push(env.as_basic_value_enum().into());
 
-            let Ty::Fn(params, ret_ty) = self.ty_map.ty(func) else {
+            let Ty::Fn(params, ret_ty) = &self.ty_map[func] else {
                 unreachable!()
             };
             let func_ty = self.func_ty(params, ret_ty);
@@ -893,7 +889,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
                     (ty, ptr.as_basic_value_enum())
                 }
-                Stmt::Expr(expr) => (self.ty_map.ty(*expr), self.emit_expr(*expr)),
+                Stmt::Expr(expr) => (&self.ty_map[*expr], self.emit_expr(*expr)),
             })
             .collect();
         let result = tmps.pop().map_or_else(|| self.unit(), |v| v.1);
