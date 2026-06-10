@@ -21,7 +21,7 @@ jobs:
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 22.1
+        sudo ./llvm.sh 22
     - name: Build
       run: cargo build --verbose
     - name: Run tests

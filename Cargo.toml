@@ -1,19 +1,7 @@
 [workspace]
 resolver = "3"
-members = [
-    "src/*",
-    # "compile",
-    # "ident",
-    # "errors",
-    # "package",
-    # "parse",
-    # "ast",
-    # "nameres",
-    # "hir",
-    # "typecheck",
-    # "codegen_llvm",
-    # "codegen_cl",
-]
+members = ["src/*"]
+exclude = ["src/codegen_cl"]
 
 [workspace.lints.clippy]
 must_use_candidate = "allow"
