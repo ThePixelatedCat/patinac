@@ -123,7 +123,7 @@ impl Parser<'_> {
         })
     }
 
-    fn fields(&mut self) -> Result<(Vec<Field>, Range<usize>)> {
+    fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
         self.delimited_list(
             |this| {
                 let ident = this.ident()?;
@@ -137,7 +137,7 @@ impl Parser<'_> {
         )
     }
 
-    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Range<usize>>)> {
+    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Range<u32>>)> {
         if self.at(TokKind::LBracket) {
             let (idents, span) =
                 self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;

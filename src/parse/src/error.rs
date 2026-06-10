@@ -19,7 +19,7 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Error<Self> {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Error<Self> {
         Error::new(self, span)
     }
 }

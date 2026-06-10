@@ -41,7 +41,7 @@ fn unify_field_ty(
     table: &mut Table,
     hir: &Hir,
     base_ty: &PartialTy,
-    base_span: Range<usize>,
+    base_span: Range<u32>,
     field_ty: &PartialTy,
     field_name: SpanIdent,
 ) -> Result<(), Error<ErrorKind>> {
@@ -72,7 +72,7 @@ fn unify_field_ty(
 /// at which point we error.
 fn unify_ty_ty(
     table: &mut Table,
-    span: Range<usize>,
+    span: Range<u32>,
     unnorm_lhs: &PartialTy,
     unnorm_rhs: &PartialTy,
 ) -> Result<(), Error<ErrorKind>> {
@@ -142,7 +142,7 @@ fn unify_ty_ty(
 
 fn unify_var_value(
     table: &mut Table,
-    span: Range<usize>,
+    span: Range<u32>,
     var: TyVar,
     ty: PartialTy,
 ) -> Result<(), Error<ErrorKind>> {

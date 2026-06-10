@@ -3,13 +3,17 @@ use std::{iter::Peekable, range::Range};
 use displaydoc::Display;
 use logos::Logos;
 
-pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Range<usize>>> + 'src>>;
+pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Range<u32>>> + 'src>>;
 
 /// Produces an iterator over tokens extracted from the source.
 pub fn lex(src: &str) -> Lexer<'_> {
-    let iter = TokKind::lexer(src).spanned().map(|(tok, span)| match tok {
-        Ok(tok) => Ok(tok.span(span)),
-        Err(()) => Err(Range::from(span)),
+    let iter = TokKind::lexer(src).spanned().map(|(tok, span)| {
+        let span = u32::try_from(span.start).expect("file too long")
+            ..u32::try_from(span.end).expect("file too long");
+        match tok {
+            Ok(tok) => Ok(tok.span(span)),
+            Err(()) => Err(Range::from(span)),
+        }
     });
     let boxed_iter: Box<dyn Iterator<Item = _>> = Box::new(iter);
     boxed_iter.peekable()
@@ -18,7 +22,7 @@ pub fn lex(src: &str) -> Lexer<'_> {
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub struct Tok {
     pub kind: TokKind,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[allow(clippy::doc_paragraphs_missing_punctuation, reason = "displaydoc")]
@@ -235,7 +239,7 @@ pub enum TokKind {
 }
 
 impl TokKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Tok {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Tok {
         Tok {
             kind: self,
             span: span.into(),

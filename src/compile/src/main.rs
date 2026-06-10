@@ -33,7 +33,7 @@ fn main() -> ExitCode {
 
     let start = Instant::now();
 
-    let handler_inner: &dyn Fn(&str, Range<usize>, DiagnosticKind) =
+    let handler_inner: &dyn Fn(&str, Range<u32>, DiagnosticKind) =
         &|msg, span, kind| print_diagnostic(msg, span, kind, &src);
     let handler = ErrorHandler::new(handler_inner);
 
@@ -48,6 +48,26 @@ fn main() -> ExitCode {
             );
             return ExitCode::FAILURE;
         }
+    };
+
+    let Ok(sources) = modules.map(|name, file| {
+        let mut src = String::new();
+        match file.read_to_string(&mut src) {
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!(
+                    "{error} {reading} {name}{colon} {msg}",
+                    error = "error".bright_red().bold(),
+                    reading = "reading module".white().bold(),
+                    colon = ":".white().bold(),
+                    msg = err.white().bold()
+                );
+                return Err(());
+            }
+        };
+        Ok(src)
+    }) else {
+        return ExitCode::FAILURE;
     };
 
     eprintln!("Parsing...");
@@ -109,18 +129,20 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn print_diagnostic(msg: &str, span: Range<usize>, kind: DiagnosticKind, src: &str) {
-    let line_start = src[..=span.start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
-    let line_end = src[span.end..]
+fn print_diagnostic(msg: &str, span: Range<u32>, kind: DiagnosticKind, src: &str) {
+    let start = usize::try_from(span.start).expect("why are you on 16bit");
+    let end = usize::try_from(span.end).expect("why are you on 16bit");
+    let line_start = src[..=start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    let line_end = src[end..]
         .find(['\n', '\r'])
-        .map_or_else(|| src.len(), |pos| pos + span.end);
+        .map_or_else(|| src.len(), |pos| pos + end);
 
     let line = &src[line_start..line_end];
 
-    let span_start = span.start - line_start;
-    let span_end = span.end - line_start;
+    let span_start = start - line_start;
+    let span_end = end - line_start;
 
-    let line_num = src[..=span.start].matches("\r\n").count();
+    let line_num = src[..=start].matches("\r\n").count();
 
     let kind_msg = match kind {
         DiagnosticKind::Error => "error".bright_red(),

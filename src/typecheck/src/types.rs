@@ -121,7 +121,7 @@ impl Display for PartialTy {
 pub struct Param {
     pub ty: PartialTy,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 impl Display for Param {

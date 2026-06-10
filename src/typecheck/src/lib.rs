@@ -31,8 +31,8 @@ struct TypeChecker<'handler> {
 
 #[derive(Debug)]
 enum Constraint {
-    Eq(PartialTy, PartialTy, Range<usize>),
-    Field(PartialTy, Range<usize>, PartialTy, SpanIdent),
+    Eq(PartialTy, PartialTy, Range<u32>),
+    Field(PartialTy, Range<u32>, PartialTy, SpanIdent),
 }
 
 /// Runs typechecking on the provided [`Hir`], reporting errors through the provided [`ErrorHandler`].
@@ -87,14 +87,14 @@ impl TypeChecker<'_> {
             .or_insert_with(|| types::convert(table, hir.try_var_ty(var)))
     }
 
-    fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Range<usize>) {
+    fn constrain_eq(&mut self, ty_a: PartialTy, ty_b: PartialTy, span: Range<u32>) {
         self.constraints.push(Constraint::Eq(ty_a, ty_b, span));
     }
 
     fn constrain_field(
         &mut self,
         base_ty: PartialTy,
-        base_span: Range<usize>,
+        base_span: Range<u32>,
         field_ty: PartialTy,
         field_name: SpanIdent,
     ) {

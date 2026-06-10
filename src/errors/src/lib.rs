@@ -23,7 +23,7 @@ pub struct Error<E>(Box<ErrorInner<E>>);
 
 impl<E> Error<E> {
     /// Constructs a new error with the provided kind and span, and no context information.
-    pub fn new(err: E, span: impl Into<Range<usize>>) -> Self {
+    pub fn new(err: E, span: impl Into<Range<u32>>) -> Self {
         Self(Box::new(ErrorInner {
             kind: err,
             span: span.into(),
@@ -55,7 +55,7 @@ impl<E> Error<E> {
     }
 
     /// Returns the span of the error.
-    pub fn span(&self) -> Range<usize> {
+    pub fn span(&self) -> Range<u32> {
         self.0.span
     }
 
@@ -75,7 +75,7 @@ impl<E: ToString> Error<E> {
 #[derive(Debug, PartialEq, Eq)]
 struct ErrorInner<E> {
     kind: E,
-    span: Range<usize>,
+    span: Range<u32>,
     ctx: SmallVec<[SmolStr; 1]>,
 }
 
@@ -87,13 +87,13 @@ struct ErrorInner<E> {
 /// Cloning this type is cheap, and it could implement `Copy` but doesn't for similar reasons to iterators.
 #[derive(Clone)]
 pub struct ErrorHandler<'callback> {
-    f: &'callback dyn Fn(&str, Range<usize>, DiagnosticKind),
+    f: &'callback dyn Fn(&str, Range<u32>, DiagnosticKind),
     has_err: bool,
 }
 
 impl<'callback> ErrorHandler<'callback> {
     /// Constructs a new `ErrorHandler` with the provided reporting callback.
-    pub const fn new(f: &'callback dyn Fn(&str, Range<usize>, DiagnosticKind)) -> Self {
+    pub const fn new(f: &'callback dyn Fn(&str, Range<u32>, DiagnosticKind)) -> Self {
         Self { f, has_err: false }
     }
 
@@ -109,7 +109,7 @@ impl<'callback> ErrorHandler<'callback> {
     }
 
     /// Reports a warning.
-    pub fn warn(&self, msg: &str, span: Range<usize>) {
+    pub fn warn(&self, msg: &str, span: Range<u32>) {
         (self.f)(msg, span, DiagnosticKind::Warning);
     }
 

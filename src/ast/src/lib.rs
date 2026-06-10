@@ -185,7 +185,7 @@ pub struct Param {
     /// The type of the parameter.
     pub ty: Ty,
     /// The span of the parameter, from the `mut` keyword if present to the [`ty`][Param::ty].
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 /// A statement. Always contained within a [`BlockExpr`].
@@ -198,7 +198,7 @@ pub enum Stmt {
         /// The initial value for the variable.
         val: Expr,
         /// The span of the declaration, starting from the `let` and ending after the [`val`][`Stmt::Decl::val`].
-        span: Range<usize>,
+        span: Range<u32>,
     },
     /// An expression used as a statement. Evaluated purely for side-effects.
     Expr(Expr),
@@ -210,7 +210,7 @@ pub struct Expr {
     /// The kind of the expression.
     pub kind: ExprKind,
     /// The span of the expression.
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 impl Expr {
@@ -234,7 +234,7 @@ impl Expr {
     ///     }
     /// )
     /// ```
-    pub fn as_block(self, span: impl Into<Range<usize>>) -> BlockExpr {
+    pub fn as_block(self, span: impl Into<Range<u32>>) -> BlockExpr {
         BlockExpr {
             stmts: vec![Stmt::Expr(self)],
             span: span.into(),
@@ -329,7 +329,7 @@ pub enum ExprKind {
 }
 
 impl ExprKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Expr {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Expr {
         Expr {
             kind: self,
             span: span.into(),
@@ -381,7 +381,7 @@ pub struct Binding {
 pub struct Arg {
     pub val: Expr,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -393,7 +393,7 @@ pub struct MatchArm {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -453,7 +453,7 @@ impl PrefixOp {
 #[display("{kind}")]
 pub struct Ty {
     pub kind: TyKind,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 /// The kinds of types.
@@ -476,7 +476,7 @@ pub enum TyKind {
 }
 
 impl TyKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Ty {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Ty {
         Ty {
             kind: self,
             span: span.into(),
@@ -503,7 +503,7 @@ impl TyKind {
 pub struct ParamTy {
     pub ty: Ty,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 impl Display for ParamTy {
@@ -533,7 +533,7 @@ impl Display for Return {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Pat {
     pub kind: PatKind,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -546,7 +546,7 @@ pub enum PatKind {
 }
 
 impl PatKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Pat {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Pat {
         Pat {
             kind: self,
             span: span.into(),

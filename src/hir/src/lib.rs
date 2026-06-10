@@ -19,7 +19,7 @@ pub struct Hir {
     tys: SlotMap<TyId, SpanIdent>,
     ty_info: SecondaryMap<TyId, TyInfo>,
     exprs: SlotMap<ExprId, Expr>,
-    expr_spans: SecondaryMap<ExprId, Range<usize>>,
+    expr_spans: SecondaryMap<ExprId, Range<u32>>,
     vars: SlotMap<VarId, VarInfo>,
     var_tys: SecondaryMap<VarId, Ty>,
 }
@@ -73,7 +73,7 @@ impl Hir {
 
 // Expr-related functions
 impl Hir {
-    pub fn add_expr(&mut self, expr: Expr, span: impl Into<Range<usize>>) -> ExprId {
+    pub fn add_expr(&mut self, expr: Expr, span: impl Into<Range<u32>>) -> ExprId {
         let id = self.exprs.insert(expr);
         self.expr_spans.insert(id, span.into());
         id
@@ -89,14 +89,14 @@ impl Hir {
         &self.exprs[id]
     }
 
-    pub fn expr_span(&self, id: ExprId) -> Range<usize> {
+    pub fn expr_span(&self, id: ExprId) -> Range<u32> {
         self.expr_spans[id]
     }
 }
 
 // Var-related functions
 impl Hir {
-    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Range<usize>) -> VarId {
+    pub fn add_var(&mut self, ident: Ident, mutable: bool, span: Range<u32>) -> VarId {
         self.vars.insert(VarInfo {
             ident,
             mutable,
@@ -185,7 +185,7 @@ new_key_type! { pub struct VarId; }
 pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 /// The kinds of types
@@ -215,5 +215,5 @@ impl Ty {
 pub struct Param {
     pub ty: Ty,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }

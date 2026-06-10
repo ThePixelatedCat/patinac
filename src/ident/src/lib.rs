@@ -48,7 +48,7 @@ impl Ident {
         Self(interner().get_or_intern(string))
     }
 
-    pub fn span(self, span: impl Into<Range<usize>>) -> SpanIdent {
+    pub fn span(self, span: impl Into<Range<u32>>) -> SpanIdent {
         SpanIdent {
             ident: self,
             span: span.into(),
@@ -67,7 +67,7 @@ impl Ident {
 #[display("{ident}")]
 pub struct SpanIdent {
     pub ident: Ident,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 pub struct StrGuard<'guard> {

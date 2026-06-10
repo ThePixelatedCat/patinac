@@ -6,7 +6,7 @@ use proptest::prelude::*;
 
 use crate::{Tok, TokKind as T, lex};
 
-fn test_lex(src: &str) -> Result<Vec<Tok>, Vec<Range<usize>>> {
+fn test_lex(src: &str) -> Result<Vec<Tok>, Vec<Range<u32>>> {
     let (out, errs): (Vec<_>, Vec<_>) = lex::lex(src).partition_result();
     if errs.is_empty() { Ok(out) } else { Err(errs) }
 }

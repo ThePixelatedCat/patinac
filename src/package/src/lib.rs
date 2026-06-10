@@ -7,12 +7,12 @@ use std::{
 };
 
 use derive_more::{Display, Error, From};
-use slotmap::{DefaultKey, SlotMap};
+use slotmap::{SlotMap, new_key_type};
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
 pub struct Package<T> {
-    modules: SlotMap<DefaultKey, Module<T>>,
-    root_key: DefaultKey,
+    modules: SlotMap<ModuleKey, Module<T>>,
+    root_key: ModuleKey,
 }
 
 impl<T> Package<T> {
@@ -56,7 +56,7 @@ impl<T> Package<T> {
         mut self,
         mut f: F,
     ) -> Result<Package<U>, E> {
-        let mut modules = SlotMap::new();
+        let mut modules = SlotMap::default();
         let root_key = self
             .modules
             .remove(self.root_key)
@@ -66,19 +66,19 @@ impl<T> Package<T> {
     }
 
     fn new(root: Module<T>) -> Self {
-        let mut modules = SlotMap::new();
+        let mut modules = SlotMap::default();
         let root_key = modules.insert(root);
         Self { modules, root_key }
     }
 
-    fn insert(&mut self, module: Module<T>) -> DefaultKey {
+    fn insert(&mut self, module: Module<T>) -> ModuleKey {
         self.modules.insert(module)
     }
 }
 
 impl<T> From<ModuleTree<T>> for Package<T> {
     fn from(value: ModuleTree<T>) -> Self {
-        let mut modules = SlotMap::new();
+        let mut modules = SlotMap::default();
         let root_key = from_tree_helper(value, &mut modules, None);
         Self { modules, root_key }
     }
@@ -86,9 +86,9 @@ impl<T> From<ModuleTree<T>> for Package<T> {
 
 fn from_tree_helper<T>(
     tree: ModuleTree<T>,
-    modules: &mut SlotMap<DefaultKey, Module<T>>,
-    parent: Option<DefaultKey>,
-) -> DefaultKey {
+    modules: &mut SlotMap<ModuleKey, Module<T>>,
+    parent: Option<ModuleKey>,
+) -> ModuleKey {
     let key = modules.insert(Module {
         parent,
         name: tree.name,
@@ -103,14 +103,16 @@ fn from_tree_helper<T>(
     key
 }
 
+new_key_type! { pub struct ModuleKey; }
+
 /// A module, generic over it's contents.
 pub struct Module<T> {
-    parent: Option<DefaultKey>,
+    parent: Option<ModuleKey>,
     /// The name of this module, determined by it's filename.
     pub name: String,
     /// The generic contents of this module.
     pub contents: T,
-    children: Vec<DefaultKey>,
+    children: Vec<ModuleKey>,
 }
 
 impl<T> Module<T> {
@@ -118,9 +120,9 @@ impl<T> Module<T> {
         self,
         f: &mut F,
         old_package: &mut Package<T>,
-        new_modules: &mut SlotMap<DefaultKey, Module<U>>,
-        parent: Option<DefaultKey>,
-    ) -> Result<DefaultKey, E> {
+        new_modules: &mut SlotMap<ModuleKey, Module<U>>,
+        parent: Option<ModuleKey>,
+    ) -> Result<ModuleKey, E> {
         let contents = f(&self.name, self.contents)?;
         let key = new_modules.insert(Module {
             parent,
@@ -258,8 +260,8 @@ pub fn gather_modules(root_path: &Path) -> Result<Package<File>, Error> {
 fn gather_module(
     path: PathBuf,
     package: &mut Package<File>,
-    parent: Option<DefaultKey>,
-) -> Result<DefaultKey, Error> {
+    parent: Option<ModuleKey>,
+) -> Result<ModuleKey, Error> {
     let name = match path
         .file_prefix()
         .expect("provided path shouldn't end in `..`")

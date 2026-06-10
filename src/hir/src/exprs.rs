@@ -14,7 +14,7 @@ pub enum Stmt {
     Decl {
         id: VarId,
         val: ExprId,
-        span: Range<usize>,
+        span: Range<u32>,
     },
     Expr(ExprId),
 }
@@ -83,13 +83,13 @@ pub enum LitExpr {
 pub struct Arg {
     pub val: ExprId,
     pub mutable: bool,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
-    pub span: Range<usize>,
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

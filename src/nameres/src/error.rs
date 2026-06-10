@@ -14,9 +14,9 @@ pub enum ErrorKind {
     #[display("expected this to be a mutable place")]
     NotPlaceExpr,
     #[display("this mutable place overlaps with {_0:?}")]
-    OverlappingPlace(Range<usize>),
+    OverlappingPlace(Range<u32>),
     #[display("duplicate item with name {_0} (first occurence at {_1:?})")]
-    DupItem(Ident, Range<usize>),
+    DupItem(Ident, Range<u32>),
     #[display("duplicate field {_0}")]
     DupFields(Ident),
     #[display("unknown type")]
@@ -30,7 +30,7 @@ pub enum ErrorKind {
 impl error::Error for ErrorKind {}
 
 impl ErrorKind {
-    pub fn span(self, span: impl Into<Range<usize>>) -> Error<Self> {
+    pub fn span(self, span: impl Into<Range<u32>>) -> Error<Self> {
         Error::new(self, span)
     }
 }

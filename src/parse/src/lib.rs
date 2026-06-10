@@ -12,8 +12,6 @@ mod patterns;
 mod test;
 mod types;
 
-use std::ops::Range;
-
 use ast::{Ast, Expr};
 use errors::{ErrorHandler, Result};
 use lex::{Lexer, Tok, TokKind};
@@ -69,14 +67,17 @@ impl<'src> Parser<'src> {
     }
 
     fn src_of(&self, tok: Tok) -> &'src str {
-        &self.src[Range::from(tok.span)]
+        &self.src[tok.span.start as usize..tok.span.end as usize]
     }
 
     /// Consumes the next token. Ignores whitespace.
     fn next(&mut self) -> Result<Tok> {
         self.toks
             .next()
-            .unwrap_or_else(|| Ok(TokKind::Eof.span(self.src.len()..self.src.len())))
+            .unwrap_or_else(|| {
+                let src_len = u32::try_from(self.src.len()).expect("file too long");
+                Ok(TokKind::Eof.span(src_len..src_len))
+            })
             .map_err(|span| self.handler.err(ErrorKind::BadToken.span(span)))
             .and_then(|tok| match tok.kind {
                 TokKind::Whitespace => self.next(),

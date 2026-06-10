@@ -44,7 +44,7 @@ impl Parser<'_> {
             .map(|tok| Ident::new(self.src_of(tok)).span(tok.span))
     }
 
-    pub(crate) fn path(&mut self) -> Result<(Path, Range<usize>)> {
+    pub(crate) fn path(&mut self) -> Result<(Path, Range<u32>)> {
         let ident = self.ident()?;
         let start = ident.span.start;
 
@@ -65,7 +65,7 @@ impl Parser<'_> {
         mut f: F,
         start: TokKind,
         end: TokKind,
-    ) -> Result<(Vec<T>, Range<usize>)>
+    ) -> Result<(Vec<T>, Range<u32>)>
     where
         F: FnMut(&mut Self) -> Result<T>,
     {

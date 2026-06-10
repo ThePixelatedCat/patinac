@@ -145,7 +145,7 @@ impl Parser<'_> {
             .map(|(path, span)| ExprKind::Var(path).span(span))
     }
 
-    fn process_escapes(&mut self, src: &str, start: usize) -> Result<String> {
+    fn process_escapes(&mut self, src: &str, start: u32) -> Result<String> {
         let mut chars = src.char_indices();
         let mut out = String::new();
         while let Some((_, c)) = chars.next() {
@@ -158,7 +158,11 @@ impl Parser<'_> {
                     (_, 'n') => '\n',
                     (_, 'r') => '\r',
                     (_, 't') => '\t',
-                    (i, 'u') => self.process_unicode_escape(&mut chars, start, i + 2)?,
+                    (i, 'u') => self.process_unicode_escape(
+                        &mut chars,
+                        start,
+                        u32::try_from(i).expect("file too long") + 2,
+                    )?,
                     (_, c) => c,
                 },
                 c => c,
@@ -171,8 +175,8 @@ impl Parser<'_> {
     fn process_unicode_escape(
         &mut self,
         chars: &mut CharIndices<'_>,
-        start: usize,
-        start_offset: usize,
+        start: u32,
+        start_offset: u32,
     ) -> Result<char> {
         debug_assert_matches!(
             chars.next(),
@@ -203,13 +207,14 @@ impl Parser<'_> {
             }
         }
 
+        let end_offset = u32::try_from(end_offset).expect("file too long");
         char::from_u32(value).ok_or_else(|| {
             self.handler
                 .err(ErrorKind::BadUnicodeEscape.span(start + start_offset..start + end_offset + 1))
         })
     }
 
-    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Range<usize>)> {
+    pub(crate) fn lit_expr(&mut self) -> Result<(LitExpr, Range<u32>)> {
         let tok = self.next()?;
         let src = self.src_of(tok);
         let lit = match tok.kind {
