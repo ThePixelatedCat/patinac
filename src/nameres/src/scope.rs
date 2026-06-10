@@ -3,9 +3,10 @@ use foldhash::fast::RandomState;
 use ast::Path;
 use hir::{TyId, VarId};
 use ident::Ident;
+use imbl::shared_ptr;
 use package::ModuleId;
 
-type ImFoldHashMap<K, V> = im_rc::HashMap<K, V, RandomState>;
+type ImFoldHashMap<K, V> = imbl::GenericHashMap<K, V, RandomState, shared_ptr::RcK>;
 
 #[derive(Clone)]
 pub struct Scope<'pkg> {
@@ -59,7 +60,11 @@ impl<'pkg> Scope<'pkg> {
     pub fn resolve_var(&self, path: Path) -> Option<VarId> {
         match path.split() {
             (start, None) => self.vars.get(&start).copied(),
-            (start, Some(rest)) => self.mods.get(&*start.str())?.resolve_var(rest),
+            (start, Some(rest)) => {
+                // Needs to be split across two lines to avoid a deadlock in the recursive call.
+                let new_mod = self.mods.get(&*start.str())?;
+                new_mod.resolve_var(rest)
+            }
         }
     }
 }

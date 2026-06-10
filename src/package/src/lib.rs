@@ -10,17 +10,17 @@ use derive_more::{Display, Error, From, IntoIterator};
 use slotmap::{SlotMap, new_key_type};
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
-#[derive(IntoIterator)]
+#[derive(Debug, IntoIterator)]
 pub struct Package {
     #[into_iterator(ref)]
     modules: SlotMap<ModuleId, Module>,
-    root_key: ModuleId,
+    root_id: ModuleId,
 }
 
 impl Package {
     /// Returns the id for the root module.
     pub fn root(&self) -> ModuleId {
-        self.root_key
+        self.root_id
     }
 
     /// Returns the module associated with the given id.
@@ -35,8 +35,8 @@ impl Package {
 
     fn new(root: Module) -> Self {
         let mut modules = SlotMap::default();
-        let root_key = modules.insert(root);
-        Self { modules, root_key }
+        let root_id = modules.insert(root);
+        Self { modules, root_id }
     }
 
     fn insert(&mut self, module: Module) -> ModuleId {
@@ -77,6 +77,7 @@ new_key_type! {
 }
 
 /// A module, generic over it's contents.
+#[derive(Debug)]
 pub struct Module {
     /// The parent module of this module, unless this is the root module.
     pub parent: Option<ModuleId>,
@@ -109,7 +110,7 @@ pub enum Error {
     NoMain(PathBuf),
     /// The root file with the same name as the directory can't be found.
     #[error(ignore)]
-    #[display("module root {} not found", _0.display())]
+    #[display("module root not found in {}", _0.display())]
     NoRoot(PathBuf),
     /// A user-specified source file doesn't have the `ptn` extension.
     #[error(ignore)]
@@ -152,34 +153,28 @@ pub fn gather_modules(root_path: &Path) -> Result<Package, Error> {
         }
     };
     if is_dir {
-        // let root = match File::open(root_path.join("main.ptn")) {
-        //     Ok(file) => file,
-        //     Err(err) => {
-        //         let err = match err.kind() {
-        //             io::ErrorKind::NotFound => Error::NoMain(root_path.to_path_buf()),
-        //             _ => Error::IO(err),
-        //         };
-        //         return Err(err);
-        //     }
-        // };
+        let main_path = root_path.join("main.ptn");
+        if !main_path.exists() {
+            return Err(Error::NoMain(root_path.to_path_buf()));
+        }
 
         let mut package = Package::new(Module {
             parent: None,
             name: String::from("main"),
-            path: root_path.join("main.ptn"),
+            path: main_path.clone(),
             children: Vec::new(),
         });
-        let root_key = package.root_key;
+        let root_id = package.root_id;
 
         let mut children = Vec::new();
         for entry in fs::read_dir(root_path)? {
             let entry = entry?;
-            if should_search(&entry) {
-                children.push(gather_module(entry.path(), &mut package, Some(root_key))?);
+            if should_search(&entry, &main_path) {
+                children.push(gather_module(entry.path(), &mut package, Some(root_id))?);
             }
         }
 
-        package.modules[root_key].children = children;
+        package.modules[root_id].children = children;
 
         Ok(package)
     } else {
@@ -216,41 +211,30 @@ fn gather_module(
         .expect("provided path should exist")
         .is_dir()
     {
-        // let root = {
-        //     let mut root_path = path.join(&name);
-        //     root_path.set_extension("ptn");
-        //     match File::open(&root_path) {
-        //         Ok(file) => file,
-        //         Err(err) => {
-        //             let err = match err.kind() {
-        //                 io::ErrorKind::NotFound => Error::NoRoot(root_path),
-        //                 _ => Error::IO(err),
-        //             };
-        //             return Err(err);
-        //         }
-        //     }
-        // };
         let mut root_path = path.join(&name);
         root_path.set_extension("ptn");
+        if !root_path.exists() {
+            return Err(Error::NoRoot(path));
+        }
 
-        let index = package.insert(Module {
+        let root_id = package.insert(Module {
             parent,
             name,
-            path: root_path,
+            path: root_path.clone(),
             children: Vec::new(),
         });
 
         let mut children = Vec::new();
         for entry in fs::read_dir(path)? {
             let entry = entry?;
-            if should_search(&entry) {
-                children.push(gather_module(entry.path(), package, Some(index))?);
+            if should_search(&entry, &root_path) {
+                children.push(gather_module(entry.path(), package, Some(root_id))?);
             }
         }
 
-        package.modules[index].children = children;
+        package.modules[root_id].children = children;
 
-        Ok(index)
+        Ok(root_id)
     } else {
         Ok(package.insert(Module {
             parent,
@@ -261,7 +245,9 @@ fn gather_module(
     }
 }
 
-fn should_search(entry: &DirEntry) -> bool {
-    entry.file_type().is_ok_and(|ft| ft.is_dir())
-        || entry.path().extension().is_some_and(|ext| ext == "ptn")
+fn should_search(entry: &DirEntry, parent: &Path) -> bool {
+    let not_parent = entry.path() != parent;
+    let right_type = entry.file_type().is_ok_and(|ft| ft.is_dir())
+        || entry.path().extension().is_some_and(|ext| ext == "ptn");
+    not_parent && right_type
 }

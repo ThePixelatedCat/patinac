@@ -74,7 +74,7 @@ fn main() -> ExitCode {
         &|msg, span, module, kind| print_diagnostic(msg, span, kind, &sources[module]);
     let handler = ErrorHandler::new(handler_inner);
 
-    eprintln!("Parsing...");
+    //eprintln!("Parsing...");
     let Ok(asts) = sources
         .iter()
         .map(|(id, src)| {
