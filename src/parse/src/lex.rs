@@ -1,9 +1,10 @@
-use std::{iter::Peekable, range::Range};
+use std::range::Range;
 
 use derive_more::Display;
+use itertools::MultiPeek;
 use logos::Logos;
 
-pub type Lexer<'src> = Peekable<Box<dyn Iterator<Item = Result<Tok, Range<u32>>> + 'src>>;
+pub type Lexer<'src> = MultiPeek<Box<dyn Iterator<Item = Result<Tok, Range<u32>>> + 'src>>;
 
 /// Produces an iterator over tokens extracted from the source.
 pub fn lex(src: &str) -> Lexer<'_> {
@@ -16,7 +17,7 @@ pub fn lex(src: &str) -> Lexer<'_> {
         }
     });
     let boxed_iter: Box<dyn Iterator<Item = _>> = Box::new(iter);
-    boxed_iter.peekable()
+    itertools::multipeek(boxed_iter)
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]

@@ -112,11 +112,14 @@ impl<'src> Parser<'src> {
             .map_or(TokKind::Eof, |tok| tok.kind);
         match tok {
             TokKind::Whitespace => {
-                // Skip the whitespace and retry
-                self.toks.next();
+                // Skip the whitespace and retry.
                 self.peek()
             }
-            _ => Ok(tok),
+            _ => {
+                // Reset the repeated peeking.
+                self.toks.reset_peek();
+                Ok(tok)
+            }
         }
     }
 
@@ -127,7 +130,8 @@ impl<'src> Parser<'src> {
 
     /// Checks if the next token is of the given kind. Respects whitespace.
     fn at_ws(&mut self, tok: TokKind) -> bool {
-        self.toks
+        let result = self
+            .toks
             .peek()
             .copied()
             .transpose()
@@ -138,7 +142,9 @@ impl<'src> Parser<'src> {
                     false
                 },
                 |t| t == tok,
-            )
+            );
+        self.toks.reset_peek();
+        result
     }
 
     /// Consumes the next token and checks that it was the expected kind. Ignores whitespace.
@@ -160,11 +166,6 @@ impl<'src> Parser<'src> {
 
     fn consume_at(&mut self, token: TokKind) -> Option<Tok> {
         self.at(token)
-            .then(|| self.next().expect("known to be at a valid token"))
-    }
-
-    fn consume_at_ws(&mut self, token: TokKind) -> Option<Tok> {
-        self.at_ws(token)
             .then(|| self.next().expect("known to be at a valid token"))
     }
 
@@ -219,7 +220,7 @@ impl<'src> Parser<'src> {
         let mut path = Path::single(ident.ident);
         let mut end = ident.span.end;
 
-        while self.consume_at_ws(TokKind::PathSep).is_some() {
+        while self.consume_at(TokKind::PathSep).is_some() {
             let ident = self.ident()?;
             end = ident.span.end;
             path.push(ident.ident);
