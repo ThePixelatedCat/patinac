@@ -418,6 +418,47 @@ fn tuple_or_call() {
 }
 
 #[test]
+fn if_whitespace() {
+    assert_eq!(
+        Parser::new_test("{ if foo { bar } () }").expr(),
+        Ok(ExprKind::Block(BlockExpr {
+            stmts: vec![
+                Stmt::Expr(
+                    ExprKind::If {
+                        cond: ExprKind::ident("foo").span(5..8).into(),
+                        th: ExprKind::ident("bar").span(11..14).as_block(9..16),
+                        el: None
+                    }
+                    .span(2..16)
+                ),
+                Stmt::Expr(ExprKind::Tuple(vec![]).span(17..19))
+            ],
+            span: Range::from(0..21)
+        })
+        .span(0..21))
+    );
+
+    assert_eq!(
+        Parser::new_test("{ if foo { bar }() }").expr(),
+        Ok(ExprKind::Block(
+            ExprKind::Call {
+                func: ExprKind::If {
+                    cond: ExprKind::ident("foo").span(5..8).into(),
+                    th: ExprKind::ident("bar").span(11..14).as_block(9..16),
+                    el: None
+                }
+                .span(2..16)
+                .into(),
+                args: vec![]
+            }
+            .span(2..18)
+            .as_block(0..20)
+        )
+        .span(0..20))
+    );
+}
+
+#[test]
 fn var_expressions() {
     assert_eq!(
         Parser::new_test("let x = 7 + sin(3.0)").stmt(),

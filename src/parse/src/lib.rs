@@ -163,6 +163,11 @@ impl<'src> Parser<'src> {
             .then(|| self.next().expect("known to be at a valid token"))
     }
 
+    fn consume_at_ws(&mut self, token: TokKind) -> Option<Tok> {
+        self.at_ws(token)
+            .then(|| self.next().expect("known to be at a valid token"))
+    }
+
     fn err(&mut self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {
         self.handler.err(error.span(span, self.module))
     }
@@ -214,7 +219,7 @@ impl<'src> Parser<'src> {
         let mut path = Path::single(ident.ident);
         let mut end = ident.span.end;
 
-        while self.consume_at(TokKind::PathSep).is_some() {
+        while self.consume_at_ws(TokKind::PathSep).is_some() {
             let ident = self.ident()?;
             end = ident.span.end;
             path.push(ident.ident);
