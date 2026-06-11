@@ -7,16 +7,14 @@ use ident::Ident;
 
 #[derive(Debug, Display, PartialEq, Eq)]
 pub enum ErrorKind {
-    #[display("unbound variable `{_0}`")]
-    UnboundValue(Ident),
-    #[display("{_0} `{_1}` found but not visible")]
+    #[display("{_0} `{_1}` is not visible")]
     NotVisible(ItemKind, Ident),
-    #[display("can't find {_0} `{_1}`")]
+    #[display("unresolved {_0} `{_1}`")]
     UnknownItem(ItemKind, Ident),
-    #[display("expected `{_0}` to be a {_1}, but found a {_2}")]
-    WrongKind(Ident, ItemKind, ItemKind),
     #[display("cannot export imports")]
     Reexport,
+    #[display("cannot import an item from a module into itself")]
+    SelfImport,
     #[display("cannot mutate this immutable value")]
     Mutation,
     #[display("expected this to be a mutable place")]
