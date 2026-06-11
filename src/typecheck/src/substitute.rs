@@ -67,7 +67,7 @@ fn sub_ty(table: &mut Table, ty: &PartialTy) -> Result<Ty, ()> {
                 })
                 .try_collect()?;
             let ret = Box::new(sub_ty(table, ret)?);
-            Ok(Ty::Fn(params, ret))
+            Ok(Ty::Func(params, ret))
         }
         PartialTy::Named(id) => Ok(Ty::Named(*id)),
         PartialTy::Var(var) => table

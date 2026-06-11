@@ -3,26 +3,95 @@ use std::range::Range;
 use derive_more::From;
 use smallvec::{SmallVec, smallvec};
 
-use ast::{ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant};
+use ast::{ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant, VisItem};
 use ident::SpanIdent;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
-#[derive(From, PartialEq, Debug)]
+#[derive(Debug, PartialEq, From)]
 pub enum Item {
-    ExecItem(ExecItem),
+    VisItem(VisItem),
     TyItem(TyItem),
+    ExecItem(ExecItem),
 }
 
 impl Parser<'_> {
     pub(crate) fn item(&mut self) -> Result<Item> {
         match self.peek()? {
-            TokKind::Const => self.const_item().map(Item::from),
-            TokKind::Fn => self.func_item().map(Item::from),
+            TokKind::Import => self.import_item().map(Item::from),
+            TokKind::Export => self.export_item().map(Item::from),
             TokKind::Record => self.record_item().map(Item::from),
             TokKind::Enum => self.enum_item().map(Item::from),
+            TokKind::Const => self.const_item().map(Item::from),
+            TokKind::Fn => self.func_item().map(Item::from),
             _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
         }
+    }
+
+    fn import_item(&mut self) -> Result<VisItem> {
+        self.consume(TokKind::Import)?;
+        let (path, span) = self.path()?;
+        Ok(VisItem::Import(path, span))
+    }
+
+    fn export_item(&mut self) -> Result<VisItem> {
+        self.consume(TokKind::Export)?;
+        let (idents, _) = self.delimited_list(Self::ident, TokKind::LBrace, TokKind::RBrace)?;
+        Ok(VisItem::Export(idents))
+    }
+
+    fn record_item(&mut self) -> Result<TyItem> {
+        self.consume(TokKind::Record)?;
+
+        let ident = self.ident();
+        let generics = self.generic_params();
+        let (fields, _) = self.fields()?;
+        let (generics, _) = generics?;
+        let ident = ident?;
+
+        Ok(TyItem {
+            ident,
+            generics,
+            kind: TyItemKind::Record(fields),
+        })
+    }
+
+    fn enum_item(&mut self) -> Result<TyItem> {
+        self.consume(TokKind::Enum)?;
+
+        let ident = self.ident();
+        let generics = self.generic_params();
+        let (variants, _) = self.delimited_list(
+            |this| {
+                let ident = this.ident()?;
+                let (fields, _) = this.fields()?;
+                Ok(Variant { ident, fields })
+            },
+            TokKind::LBrace,
+            TokKind::RBrace,
+        )?;
+        let (generics, _) = generics?;
+        let ident = ident?;
+
+        Ok(TyItem {
+            ident,
+            generics,
+            kind: TyItemKind::Enum(variants),
+        })
+    }
+
+    fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
+        self.delimited_list(
+            |this| {
+                let ident = this.ident()?;
+                this.consume(TokKind::Colon)?;
+                let ty = this.ty()?;
+
+                Ok(Field { ident, ty })
+            },
+            TokKind::LParen,
+            TokKind::RParen,
+        )
     }
 
     fn const_item(&mut self) -> Result<ExecItem> {
@@ -81,60 +150,6 @@ impl Parser<'_> {
                 body,
             },
         })
-    }
-
-    fn record_item(&mut self) -> Result<TyItem> {
-        self.consume(TokKind::Record)?;
-
-        let ident = self.ident();
-        let generics = self.generic_params();
-        let (fields, _) = self.fields()?;
-        let (generics, _) = generics?;
-        let ident = ident?;
-
-        Ok(TyItem {
-            ident,
-            generics,
-            kind: TyItemKind::Record(fields),
-        })
-    }
-
-    fn enum_item(&mut self) -> Result<TyItem> {
-        self.consume(TokKind::Enum)?;
-
-        let ident = self.ident();
-        let generics = self.generic_params();
-        let (variants, _) = self.delimited_list(
-            |this| {
-                let ident = this.ident()?;
-                let (fields, _) = this.fields()?;
-                Ok(Variant { ident, fields })
-            },
-            TokKind::LBrace,
-            TokKind::RBrace,
-        )?;
-        let (generics, _) = generics?;
-        let ident = ident?;
-
-        Ok(TyItem {
-            ident,
-            generics,
-            kind: TyItemKind::Enum(variants),
-        })
-    }
-
-    fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
-        self.delimited_list(
-            |this| {
-                let ident = this.ident()?;
-                this.consume(TokKind::Colon)?;
-                let ty = this.ty()?;
-
-                Ok(Field { ident, ty })
-            },
-            TokKind::LParen,
-            TokKind::RParen,
-        )
     }
 
     fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Range<u32>>)> {

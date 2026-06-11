@@ -216,14 +216,14 @@ pub enum TokKind {
     #[display("mut")]
     #[token("mut")]
     Mut,
-    /// `const`.
-    #[display("const")]
-    #[token("const")]
-    Const,
-    /// `fn`.
-    #[display("fn")]
-    #[token("fn")]
-    Fn,
+    /// `import`.
+    #[display("import")]
+    #[token("import")]
+    Import,
+    /// `export`.
+    #[display("export")]
+    #[token("export")]
+    Export,
     /// `record`.
     #[display("record")]
     #[token("record")]
@@ -232,6 +232,14 @@ pub enum TokKind {
     #[display("enum")]
     #[token("enum")]
     Enum,
+    /// `const`.
+    #[display("const")]
+    #[token("const")]
+    Const,
+    /// `fn`.
+    #[display("fn")]
+    #[token("fn")]
+    Fn,
     /// `if`.
     #[display("if")]
     #[token("if")]

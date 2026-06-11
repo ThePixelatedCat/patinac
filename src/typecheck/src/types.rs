@@ -71,7 +71,7 @@ impl From<&Ty> for PartialTy {
             Ty::Char => Self::Char,
             Ty::Tuple(tys) => Self::Tuple(tys.iter().map(Self::from).collect()),
             Ty::Array(ty) => Self::Array(Box::new(ty.as_ref().into())),
-            Ty::Fn(params, ret) => {
+            Ty::Func(params, ret) => {
                 let params = params
                     .iter()
                     .map(|param| Param {

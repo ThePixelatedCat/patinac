@@ -7,6 +7,7 @@ use std::{
 };
 
 use derive_more::{Display, Error, From, IntoIterator};
+use ident::Ident;
 use slotmap::{SlotMap, new_key_type};
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
@@ -82,7 +83,7 @@ pub struct Module {
     /// The parent module of this module, unless this is the root module.
     pub parent: Option<ModuleId>,
     /// The name of this module, determined by it's filename.
-    pub name: String,
+    pub name: Ident,
     /// The filepath of this module.
     pub path: PathBuf,
     /// Any child modules of this module.
@@ -160,7 +161,7 @@ pub fn gather_modules(root_path: &Path) -> Result<Package, Error> {
 
         let mut package = Package::new(Module {
             parent: None,
-            name: String::from("main"),
+            name: Ident::new("main"),
             path: main_path.clone(),
             children: Vec::new(),
         });
@@ -179,7 +180,7 @@ pub fn gather_modules(root_path: &Path) -> Result<Package, Error> {
         Ok(package)
     } else {
         let name = match root_path.file_prefix().expect("path is a file").to_str() {
-            Some(str) => str.to_string(),
+            Some(str) => Ident::new(str),
             None => return Err(Error::NotUnicode(root_path.to_path_buf())),
         };
         Ok(Package::new(Module {
@@ -198,20 +199,19 @@ fn gather_module(
     package: &mut Package,
     parent: Option<ModuleId>,
 ) -> Result<ModuleId, Error> {
-    let name = match path
+    let Some(name) = path
         .file_prefix()
         .expect("provided path shouldn't end in `..`")
         .to_str()
-    {
-        Some(str) => str.to_string(),
-        None => return Err(Error::NotUnicode(path)),
+    else {
+        return Err(Error::NotUnicode(path));
     };
 
     if fs::metadata(&path)
         .expect("provided path should exist")
         .is_dir()
     {
-        let mut root_path = path.join(&name);
+        let mut root_path = path.join(name);
         root_path.set_extension("ptn");
         if !root_path.exists() {
             return Err(Error::NoRoot(path));
@@ -219,7 +219,7 @@ fn gather_module(
 
         let root_id = package.insert(Module {
             parent,
-            name,
+            name: Ident::new(name),
             path: root_path.clone(),
             children: Vec::new(),
         });
@@ -238,7 +238,7 @@ fn gather_module(
     } else {
         Ok(package.insert(Module {
             parent,
-            name,
+            name: Ident::new(name),
             path,
             children: Vec::new(),
         }))

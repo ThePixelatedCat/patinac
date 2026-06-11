@@ -5,23 +5,29 @@ use smallvec::smallvec;
 
 use ast::{
     ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
-    Variant,
+    Variant, VisItem,
 };
 use ident::Ident;
 
 use crate::{Parser, items::Item};
 
 #[test]
-fn const_items() {
+fn vis_items() {
     assert_eq!(
-        Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
-        Ok(Item::ExecItem(ExecItem {
-            ident: Ident::new("hello_world").span(6..17),
-            kind: ExecKind::Const {
-                ty: TyKind::named("String").span(19..25),
-                val: ExprKind::string("Hello, World!").span(28..43)
-            },
-        }))
+        Parser::new_test("import foo::bar::baz",).item(),
+        Ok(Item::VisItem(VisItem::Import(
+            Path::new_const([Ident::new("foo"), Ident::new("bar"), Ident::new("baz")]),
+            Range::from(7..20)
+        )))
+    );
+
+    assert_eq!(
+        Parser::new_test("export { foo, bar, baz, }",).item(),
+        Ok(Item::VisItem(VisItem::Export(vec![
+            Ident::new("foo").span(9..12),
+            Ident::new("bar").span(14..17),
+            Ident::new("baz").span(19..22)
+        ])))
     );
 }
 
@@ -120,6 +126,20 @@ enum Foo {
                     ]
                 },
             ])
+        }))
+    );
+}
+
+#[test]
+fn const_items() {
+    assert_eq!(
+        Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
+        Ok(Item::ExecItem(ExecItem {
+            ident: Ident::new("hello_world").span(6..17),
+            kind: ExecKind::Const {
+                ty: TyKind::named("String").span(19..25),
+                val: ExprKind::string("Hello, World!").span(28..43)
+            },
         }))
     );
 }

@@ -6,8 +6,6 @@ use std::{
     range::Range,
 };
 
-use derive_more::Display;
-use itertools::Itertools as _;
 use package::ModuleId;
 use slotmap::SecondaryMap;
 use smallvec::SmallVec;
@@ -40,10 +38,12 @@ impl FromIterator<(ModuleId, Ast)> for PackageAsts {
 /// For easier manipulation, these items are split into [ type definitions][TyItem] and "[executable items][ExecItem]" (items containing expressions).
 #[derive(Default)]
 pub struct Ast {
+    /// The `import`s and `export`s of a module.
+    pub vis_items: Vec<VisItem>,
     /// The type definitions of a module, containing both `enum` and `record` definitions.
-    pub tys: Vec<TyItem>,
+    pub ty_items: Vec<TyItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
-    pub execs: Vec<ExecItem>,
+    pub exec_items: Vec<ExecItem>,
 }
 
 /// A path made of one or more identifiers.
@@ -110,6 +110,11 @@ impl Path {
         }
     }
 
+    /// Returns the last identifier of the path, which is the name of the referenced item.
+    pub fn end(&self) -> Ident {
+        self.tail
+    }
+
     /// Returns true if the path is made up of a single identifier.
     pub fn is_single_ident(&self) -> bool {
         self.head.is_empty()
@@ -126,8 +131,17 @@ impl Path {
     }
 }
 
+/// An `import` or `export`.
+#[derive(Debug, PartialEq)]
+pub enum VisItem {
+    /// An `import` item, abbreviating the path required to refer to an item.
+    Import(Path, Range<u32>),
+    /// An `export` item, exposing the listed local items to the parent module.
+    Export(Vec<SpanIdent>),
+}
+
 /// The definition of a type, either a `record` or a `enum`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct TyItem {
     /// The name of the type.
     pub ident: SpanIdent,
@@ -138,7 +152,7 @@ pub struct TyItem {
 }
 
 /// The information of a [`TyItem`] specific to whether it's a `record` or an `enum`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum TyItemKind {
     /// A `record` type.
     Record(Vec<Field>),
@@ -147,7 +161,7 @@ pub enum TyItemKind {
 }
 
 /// A variant of an `enum`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct Variant {
     /// The name of the variant.
     pub ident: SpanIdent,
@@ -155,7 +169,7 @@ pub struct Variant {
     pub fields: Vec<Field>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 /// A field of a `record` or of an `enum` variant.
 pub struct Field {
     /// The name of the field.
@@ -199,7 +213,7 @@ pub enum ExecKind {
 }
 
 /// A parameter of a [function item][ExecKind::Fn].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Param {
     /// Whether the parameter is mutable (a second-class in-out reference).
     pub mutable: bool,
@@ -212,7 +226,7 @@ pub struct Param {
 }
 
 /// A statement. Always contained within a [`BlockExpr`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     /// A variable declaration.
     Decl {
@@ -228,7 +242,7 @@ pub enum Stmt {
 }
 
 /// A spanned [expression][ExprKind].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Expr {
     /// The kind of the expression.
     pub kind: ExprKind,
@@ -265,7 +279,7 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 /// The kinds of expressions.
 pub enum ExprKind {
     /// A reference to a named value..
@@ -402,7 +416,7 @@ impl ExprKind {
 }
 
 /// The kinds of [literal expressions][ExprKind::Lit].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum LitExpr {
     /// An integer, of any of the [three][TyKind::Int] [integer][TyKind::UInt] [types][TyKind::Byte]. Sign is not part of the literal.
     Int(u64),
@@ -417,7 +431,7 @@ pub enum LitExpr {
 }
 
 /// A variable binding, combining mutability, pattern, and optional type annotation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Binding {
     /// Whether this variable is mutable.
     pub mutable: bool,
@@ -428,7 +442,7 @@ pub struct Binding {
 }
 
 /// An argument in a [ function call][ExprKind::Call], consisting of an expression that may have a mutability annotation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Arg {
     /// The value of the function argument.
     pub val: Expr,
@@ -441,7 +455,7 @@ pub struct Arg {
 }
 
 /// A single arm of a [match][ExprKind::Match] expression
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct MatchArm {
     /// The pattern to attempt to match the scrutinee against.
     pub pat: Pat,
@@ -450,7 +464,7 @@ pub struct MatchArm {
 }
 
 /// A block of statements. Used by [`ExprKind::Block`], [`ExprKind::If`], [`ExprKind::For`], and [`ExprKind::Loop`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct BlockExpr {
     /// The statements within the block.
     pub stmts: Vec<Stmt>,
@@ -537,8 +551,7 @@ impl PrefixOp {
 }
 
 /// A spanned [type][TyKind].
-#[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
-#[display("{kind}")]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Ty {
     /// The kind of the type.
     pub kind: TyKind,
@@ -547,7 +560,7 @@ pub struct Ty {
 }
 
 /// The kinds of types.
-#[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TyKind {
     /// 64-bit signed integer.
     Int,
@@ -562,16 +575,12 @@ pub enum TyKind {
     /// Truth value (`true`/`false``).
     Bool,
     /// A dynamic homogenous array.
-    #[display("[{_0}]")]
     Array(Box<Ty>),
     /// A heterogenous tuple (compile-time length).
-    #[display("{{{}}}", _0.iter().join(", "))]
     Tuple(Vec<Ty>),
     /// A first-class function value, implemented as a closure.
-    #[display("fn({}) -> {_1}", _0.iter().join(", "))]
-    Fn(Vec<ParamTy>, Return),
+    Func(Vec<FuncTy>, Box<FuncTy>),
     /// A user-defined type, such as a `record` or `enum`.
-    #[display("{_0}[{}]", _1.iter().join(", "))]
     Named(Path, Vec<Ty>),
 }
 
@@ -595,45 +604,26 @@ impl TyKind {
     }
 }
 
-/// A parameter of a function type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ParamTy {
+/// A parameter or return type of a function type.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FuncTy {
+    /// The type of the paremeter.
     pub ty: Ty,
+    /// Whether the parameter is mutable.
     pub mutable: bool,
+    /// The total span of the parameter.
+    /// If `mutable` is false, this should be identical to the span of `ty`.
+    /// Otherwise, it should include the span of the `mut` keyword.
     pub span: Range<u32>,
 }
 
-impl Display for ParamTy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
-        }
-        self.ty.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Return {
-    pub mutable: bool,
-    pub ty: Box<Ty>,
-}
-
-impl Display for Return {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
-        }
-        self.ty.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Pat {
     pub kind: PatKind,
     pub span: Range<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum PatKind {
     Literal { negate: bool, lit: LitExpr },
     Wildcard,

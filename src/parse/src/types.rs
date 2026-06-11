@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use ast::{ParamTy, Return, Ty, TyKind};
+use ast::{FuncTy, Ty, TyKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -33,36 +33,13 @@ impl Parser<'_> {
             TokKind::FnTy => {
                 let start = self.consume(TokKind::FnTy)?.span.start;
 
-                let (params, _) = self.delimited_list(
-                    |this| {
-                        let mut_tok = this.consume_at(TokKind::Mut);
-                        let ty = this.ty()?;
-
-                        let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
-                        let span = Range::from(start..ty.span.end);
-
-                        Ok(ParamTy {
-                            ty,
-                            mutable: mut_tok.is_some(),
-                            span,
-                        })
-                    },
-                    TokKind::LParen,
-                    TokKind::RParen,
-                )?;
+                let (params, _) =
+                    self.delimited_list(Self::func_ty, TokKind::LParen, TokKind::RParen)?;
                 self.consume(TokKind::Arrow)?;
-                let ret_mut = self.consume_at(TokKind::Mut).is_some();
-                let ret_ty = Box::new(self.ty()?);
+                let ret_ty = self.func_ty()?;
 
                 let span = start..ret_ty.span.end;
-                Ok(TyKind::Fn(
-                    params,
-                    Return {
-                        mutable: ret_mut,
-                        ty: ret_ty,
-                    },
-                )
-                .span(span))
+                Ok(TyKind::Func(params, Box::new(ret_ty)).span(span))
             }
             TokKind::Ident => {
                 let (path, span) = self.path()?;
@@ -78,5 +55,19 @@ impl Parser<'_> {
             }
             _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }
+    }
+
+    fn func_ty(&mut self) -> Result<FuncTy> {
+        let mut_tok = self.consume_at(TokKind::Mut);
+        let ty = self.ty()?;
+
+        let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
+        let span = Range::from(start..ty.span.end);
+
+        Ok(FuncTy {
+            ty,
+            mutable: mut_tok.is_some(),
+            span,
+        })
     }
 }

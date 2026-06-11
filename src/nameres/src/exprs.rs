@@ -21,9 +21,9 @@ pub fn resolve_expr(
 ) -> Result<ExprId> {
     let new_expr = match expr.kind {
         ExprKind::Var(path) => match scope.resolve_var(path) {
-            Some(id) => hir::Expr::Ident(id),
-            None => {
-                return Err(handler.err(ErrorKind::UnboundVariable.span(expr.span, scope.module())));
+            Ok(id) => hir::Expr::Ident(id),
+            Err(error) => {
+                return Err(handler.err(error.span(expr.span, scope.module())));
             }
         },
         ExprKind::Lit(lit) => hir::Expr::Lit(crate::convert_lit(lit)),

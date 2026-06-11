@@ -209,7 +209,7 @@ pub enum Ty {
     Bool,
     Tuple(Vec<Self>),
     Array(Box<Self>),
-    Fn(Vec<Param>, Box<Self>),
+    Func(Vec<Param>, Box<Self>),
     Named(TyId),
 }
 

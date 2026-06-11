@@ -54,7 +54,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             Ty::Named(_) => todo!(),
             Ty::Tuple(_) => todo!(),
             Ty::Array(_) => todo!(),
-            Ty::Fn(_, _) => todo!(),
+            Ty::Func(_, _) => todo!(),
         };
 
         let format_ptr = self
@@ -583,7 +583,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             let env = self.builder.build_load(self.ptr_ty(), env, "env").unwrap();
             args.push(env.as_basic_value_enum().into());
 
-            let Ty::Fn(params, ret_ty) = &self.ty_map[func] else {
+            let Ty::Func(params, ret_ty) = &self.ty_map[func] else {
                 unreachable!()
             };
             let func_ty = self.func_ty(params, ret_ty);
@@ -657,7 +657,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
         // Create the defunctionalised function
         let func = {
-            let Ty::Fn(param_tys, ret_ty) = ty else {
+            let Ty::Func(param_tys, ret_ty) = ty else {
                 unreachable!("ICE")
             };
             let func = self.module.add_function(

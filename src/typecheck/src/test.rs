@@ -75,7 +75,7 @@ fn vars() {
 fn inc() {
     assert_eq!(
         check_expr("fn(mut a) -> a = a +. 1.0"),
-        Ok(Ty::Fn(
+        Ok(Ty::Func(
             vec![Param {
                 mutable: true,
                 ty: Ty::Float,

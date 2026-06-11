@@ -148,7 +148,7 @@ fn modules() {
         .parse()
         .unwrap();
 
-    //todo!()
+    todo!()
     // let tree = ModuleTree {
     //     name: String::from("main"),
     //     contents: root_ast,
@@ -158,5 +158,5 @@ fn modules() {
     //         children: vec![],
     //     }],
     // };
-    // assert_matches!(crate::resolve(tree.into(), ErrorHandler::TEST), Ok(_));
+    // assert_matches!(crate::resolve(tree.into(), ErrorHandler::TEST), Err(_));
 }

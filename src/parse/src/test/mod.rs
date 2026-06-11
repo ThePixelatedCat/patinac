@@ -10,8 +10,8 @@ use proptest::{collection::vec, prelude::*};
 use smallvec::smallvec;
 
 use ast::{
-    Arg, Binding, BlockExpr, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, ParamTy, PatKind,
-    Path, Return, Stmt, TyItem, TyItemKind, TyKind,
+    Arg, Binding, BlockExpr, ExecItem, ExecKind, ExprKind, Field, FuncTy, InfixOp, Param, PatKind,
+    Path, Stmt, TyItem, TyItemKind, TyKind,
 };
 use errors::ErrorHandler;
 use ident::Ident;
@@ -41,7 +41,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
     let ast = Parser::new_test(input).parse().unwrap();
 
     assert_eq!(
-        ast.execs[0],
+        ast.exec_items[0],
         ExecItem {
             ident: Ident::new("testingfn").span(4..13),
             kind: ExecKind::Fn {
@@ -72,16 +72,17 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
                     }
                 ],
                 ret_mut: true,
-                ret_ty: TyKind::Fn(
-                    vec![ParamTy {
+                ret_ty: TyKind::Func(
+                    vec![FuncTy {
                         ty: TyKind::Int.span(60..63),
                         mutable: true,
                         span: Range::from(56..63)
                     }],
-                    Return {
+                    Box::new(FuncTy {
+                        ty: TyKind::unit().span(69..71),
                         mutable: false,
-                        ty: TyKind::unit().span(69..71).into()
-                    }
+                        span: Range::from(69..71)
+                    })
                 )
                 .span(53..71),
                 body: ExprKind::Block(BlockExpr {
@@ -201,7 +202,7 @@ record Foo[T, U](x: String, bar: Bar[Baz[T], [U]])
     );
 
     assert_eq!(
-        ast.tys[0],
+        ast.ty_items[0],
         TyItem {
             ident: Ident::new("Foo").span(238..241),
             generics: smallvec![

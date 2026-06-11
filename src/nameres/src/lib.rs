@@ -8,7 +8,7 @@ mod test;
 
 use itertools::Itertools as _;
 
-use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind};
+use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem};
 use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
 use hir::{ExprId, Hir, Param, TyInfo, VarId};
 use package::{ModuleId, Package};
@@ -26,18 +26,18 @@ pub fn resolve(package: &Package, mut asts: PackageAsts, mut handler: ErrorHandl
     handler.checked(hir)
 }
 
-fn resolve_module<'pkg>(
-    package: &'pkg Package,
+fn resolve_module(
+    package: &Package,
     asts: &mut PackageAsts,
     module: ModuleId,
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     is_root: bool,
-) -> Scope<'pkg> {
+) -> Scope {
     let mut scope = Scope::new(module);
     for &child in &package.get(module).children {
         scope.add_module(
-            &package.get(child).name,
+            package.get(child).name,
             resolve_module(package, asts, child, hir, handler, false),
         );
     }
@@ -52,13 +52,10 @@ fn resolve_ast(
     handler: &mut ErrorHandler,
     is_root: bool,
 ) {
-    for ty in &ast.tys {
+    for ty in &ast.ty_items {
         match scope.get_ty(ty.ident.ident) {
-            Some(id) => {
-                handler.err(
-                    ErrorKind::DupItem(ty.ident.ident, hir.ty_ident(id).span)
-                        .span(ty.ident.span, scope.module()),
-                );
+            Some(_) => {
+                handler.err(ErrorKind::DupItem(ty.ident.ident).span(ty.ident.span, scope.module()));
             }
             None => {
                 let id = hir.reserve_ty(ty.ident);
@@ -66,16 +63,12 @@ fn resolve_ast(
             }
         }
     }
-    for ty in ast.tys {
-        resolve_ty_item(scope, hir, handler, ty);
-    }
 
-    for exec in &ast.execs {
+    for exec in &ast.exec_items {
         match scope.get_var(exec.ident.ident) {
-            Some(id) => {
+            Some(_) => {
                 handler.err(
-                    ErrorKind::DupItem(exec.ident.ident, hir.var_info(id).span)
-                        .span(exec.ident.span, scope.module()),
+                    ErrorKind::DupItem(exec.ident.ident).span(exec.ident.span, scope.module()),
                 );
             }
             None => {
@@ -84,14 +77,36 @@ fn resolve_ast(
             }
         }
     }
+
+    for vis in ast.vis_items {
+        match vis {
+            VisItem::Import(path, span) => {
+                if let Err(error) = scope.import(path) {
+                    handler.err(error.span(span, scope.module()));
+                }
+            }
+            VisItem::Export(idents) => {
+                for ident in idents {
+                    if let Err(error) = scope.export(ident.ident) {
+                        handler.err(error.span(ident.span, scope.module()));
+                    }
+                }
+            }
+        }
+    }
+
+    for ty in ast.ty_items {
+        resolve_ty_item(scope, hir, handler, ty);
+    }
+
     if is_root
-        && let Ok(Some(idx)) = find_main(scope.module(), handler, &ast.execs)
-        && let Ok(main) = resolve_exec_item(scope, hir, handler, ast.execs.remove(idx))
+        && let Ok(Some(idx)) = find_main(scope.module(), handler, &ast.exec_items)
+        && let Ok(main) = resolve_exec_item(scope, hir, handler, ast.exec_items.remove(idx))
     {
         hir.set_main(main);
     }
     let execs: Vec<_> = ast
-        .execs
+        .exec_items
         .into_iter()
         .flat_map(|exec| resolve_exec_item(scope, hir, handler, exec))
         .collect();
@@ -141,7 +156,7 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 return;
             }
 
-            let constructor_ty = hir::Ty::Fn(
+            let constructor_ty = hir::Ty::Func(
                 fields
                     .iter()
                     .map(|(ident, ty)| Param {
@@ -228,7 +243,7 @@ fn resolve_exec_item(
             let ret_ty = resolve_ty(&scope, handler, ret_ty)?;
             let (params, param_tys) = params?;
 
-            hir.add_var_ty(id, hir::Ty::Fn(param_tys, Box::new(ret_ty)));
+            hir.add_var_ty(id, hir::Ty::Func(param_tys, Box::new(ret_ty)));
 
             Ok(hir::ExecItem {
                 module: scope.module(),
@@ -265,7 +280,7 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
         TyKind::Bool => Ok(hir::Ty::Bool),
         TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(resolve_ty(scope, handler, *ty)?))),
         TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(resolve_tys(scope, handler, tys)?)),
-        TyKind::Fn(params, ret) => {
+        TyKind::Func(params, ret) => {
             if ret.mutable {
                 todo!("Projections")
             }
@@ -280,8 +295,8 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
                     })
                 })
                 .try_collect_eager();
-            let ret = Box::new(resolve_ty(scope, handler, *ret.ty)?);
-            Ok(hir::Ty::Fn(params?, ret))
+            let ret_ty = Box::new(resolve_ty(scope, handler, ret.ty)?);
+            Ok(hir::Ty::Func(params?, ret_ty))
         }
         TyKind::Named(path, args) => {
             if !args.is_empty() {
@@ -289,8 +304,8 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
             }
 
             match scope.resolve_ty(path) {
-                Some(id) => Ok(hir::Ty::Named(id)),
-                None => Err(handler.err(ErrorKind::UnknownType.span(ty.span, scope.module()))),
+                Ok(id) => Ok(hir::Ty::Named(id)),
+                Err(error) => Err(handler.err(error.span(ty.span, scope.module()))),
             }
         }
     }

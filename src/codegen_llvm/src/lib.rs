@@ -189,7 +189,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             match &exec.kind {
                 ExecKind::Const { .. } => todo!("Constants"),
                 ExecKind::Fn { params, body } => {
-                    let Ty::Fn(_, ret_ty) = self.hir.var_ty(exec.id) else {
+                    let Ty::Func(_, ret_ty) = self.hir.var_ty(exec.id) else {
                         unreachable!("ICE")
                     };
                     self.build_func(self.funcs[exec.id], params, ret_ty, *body);
@@ -246,7 +246,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     fn create_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
-        let Ty::Fn(params, ret_ty) = self.hir.var_ty(id) else {
+        let Ty::Func(params, ret_ty) = self.hir.var_ty(id) else {
             unreachable!("ICE")
         };
         let name = Self::mangle_name(self.hir.var_info(id).ident.to_string());
@@ -331,7 +331,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
             }
             Ty::Array(_) => self.array_ty(),
-            Ty::Fn(..) => self.closure_ty(),
+            Ty::Func(..) => self.closure_ty(),
             Ty::Named(id) => self.structs[*id].as_basic_type_enum(),
         }
     }
@@ -457,7 +457,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     fn is_trivial(&self, ty: &Ty) -> bool {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
-            Ty::Array(_) | Ty::Fn(_, _) => false,
+            Ty::Array(_) | Ty::Func(_, _) => false,
             Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
             Ty::Named(id) => (&self.hir.ty_info(*id).fields)
                 .into_iter()
@@ -468,7 +468,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     const fn is_indirect(ty: &Ty) -> bool {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
-            Ty::Array(_) | Ty::Fn(_, _) | Ty::Named(_) => true,
+            Ty::Array(_) | Ty::Func(_, _) | Ty::Named(_) => true,
             Ty::Tuple(inner) => !inner.is_empty(),
         }
     }
@@ -515,7 +515,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 self.tuple_drop(ty, elem_tys)
             }
             Ty::Array(elem_ty) => self.array_drop(ty, elem_ty),
-            Ty::Fn(_, _) => self.closure_drop(),
+            Ty::Func(_, _) => self.closure_drop(),
             Ty::Named(id) => self.struct_drop(*id),
         };
         self.builder
@@ -539,7 +539,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 self.tuple_copy(ty, elem_tys)
             }
             Ty::Array(_) => self.array_copy(ty),
-            Ty::Fn(..) => self.closure_copy(),
+            Ty::Func(..) => self.closure_copy(),
             Ty::Named(id) => self.struct_copy(*id),
         };
         self.builder
@@ -605,7 +605,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_int_value(),
-            Ty::Fn(_, _) => self
+            Ty::Func(_, _) => self
                 .builder
                 .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
                 .unwrap()
@@ -665,7 +665,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 tys.iter().map(|ty| self.mangle_ty(ty)).collect::<String>()
             ),
             Ty::Array(ty) => format!("A{}", self.mangle_ty(ty)),
-            Ty::Fn(params, ret_ty) => {
+            Ty::Func(params, ret_ty) => {
                 let param_names = params.iter().fold(String::new(), |mut s, p| {
                     let prefix = if p.mutable { "M" } else { "P" };
                     let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
