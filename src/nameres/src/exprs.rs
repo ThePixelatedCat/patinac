@@ -50,8 +50,8 @@ pub fn resolve_expr(
             let arr = resolve_expr(scope, hir, handler, *arr);
             let idx = resolve_expr(scope, hir, handler, *idx);
             hir::Expr::Index {
-                arr: arr?,
-                idx: idx?,
+                array: arr?,
+                index: idx?,
             }
         }
         ExprKind::Call { func, args } => {
@@ -205,7 +205,7 @@ fn check_is_place(
                 Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place), module)))
             }
         }
-        hir::Expr::Field { base, .. } | hir::Expr::Index { arr: base, .. } => {
+        hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
             check_is_place(hir, module, handler, *base)
         }
         hir::Expr::Call { .. } => todo!("Projections"),
@@ -216,16 +216,16 @@ fn check_is_place(
 fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
     match (hir.expr_info(a), hir.expr_info(b)) {
         (hir::Expr::Ident(a), hir::Expr::Ident(b)) => a == b,
-        (hir::Expr::Ident(_), hir::Expr::Index { arr, .. }) => overlaps(hir, a, *arr),
+        (hir::Expr::Ident(_), hir::Expr::Index { array: arr, .. }) => overlaps(hir, a, *arr),
         (hir::Expr::Ident(_), hir::Expr::Field { base, .. }) => overlaps(hir, a, *base),
         (
             hir::Expr::Index {
-                arr: arr_a,
-                idx: idx_a,
+                array: arr_a,
+                index: idx_a,
             },
             hir::Expr::Index {
-                arr: arr_b,
-                idx: idx_b,
+                array: arr_b,
+                index: idx_b,
             },
         ) => {
             if let hir::Expr::Lit(LitExpr::Int(idx_a)) = hir.expr_info(*idx_a)
@@ -246,7 +246,7 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
                 field: field_b,
             },
         ) => (field_a.ident == field_b.ident) && overlaps(hir, *base_a, *base_b),
-        (hir::Expr::Index { arr, .. }, hir::Expr::Field { base, .. }) => {
+        (hir::Expr::Index { array: arr, .. }, hir::Expr::Field { base, .. }) => {
             overlaps(hir, *arr, b) || overlaps(hir, a, *base)
         }
         _ => false,

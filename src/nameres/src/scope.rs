@@ -16,7 +16,6 @@ pub struct Scope {
     mods: Table<Self>,
     tys: Table<TyId>,
     vars: Table<VarId>,
-    //scope: GenericHashMap<Ident, (ScopeItem, Visibility), RandomState, RcK>,
 }
 
 impl Scope {

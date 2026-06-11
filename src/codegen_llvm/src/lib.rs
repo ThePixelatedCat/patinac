@@ -9,6 +9,7 @@
 )]
 
 mod exprs;
+mod layout;
 mod runtime;
 #[cfg(test)]
 mod test;
@@ -24,12 +25,14 @@ use inkwell::{
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
-    values::{BasicValue as _, BasicValueEnum, FunctionValue, IntValue, PointerValue},
+    values::{BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
 use errors::ErrorHandler;
 use hir::{ExecKind, ExprId, Hir, Param, Ty, TyId, VarId};
+
+use crate::layout::LayoutValue;
 
 /// What to produce, if anything.
 #[derive(PartialEq, Eq)]
@@ -271,6 +274,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         for (idx, (arg, field_ty)) in
             iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
         {
+            let arg = if Self::is_indirect(field_ty) {
+                LayoutValue::Indirect(arg.into_pointer_value())
+            } else {
+                LayoutValue::Scalar(arg)
+            };
             let field_ptr = self
                 .builder
                 .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "fieldptr")
@@ -308,13 +316,15 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
 
         let body = self.emit_expr(body);
 
-        if Self::is_indirect(ret_ty) {
-            let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-            self.emit_move(ret_ty, body, out_ptr);
-            self.builder.build_return(None).unwrap();
-        } else {
-            self.builder.build_return(Some(&body)).unwrap();
-        }
+        match body {
+            LayoutValue::Scalar(scalar) => self.builder.build_return(Some(&scalar)).unwrap(),
+            LayoutValue::Indirect(_) => {
+                let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+                self.emit_move(ret_ty, body, out_ptr);
+                self.builder.build_return(None).unwrap()
+            }
+            LayoutValue::Unit => self.builder.build_return(None).unwrap(),
+        };
 
         assert!(func.verify(true));
     }
@@ -337,13 +347,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     fn array_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("Array") {
-            return ty.as_basic_type_enum();
-        }
-
-        let ty = self.ctx.opaque_struct_type("Array");
-        ty.set_body(&[self.ptr_ty()], false);
-        ty.as_basic_type_enum()
+        self.ptr_ty()
     }
 
     fn array_header_ty(&self) -> BasicTypeEnum<'ctx> {
@@ -358,41 +362,25 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ty.as_basic_type_enum()
     }
 
-    fn get_array_payload(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        let payload = self
-            .builder
-            .build_struct_gep(self.array_ty(), array, 0, "payload")
-            .unwrap();
-        self.builder
-            .build_load(self.ptr_ty(), payload, "payload")
-            .unwrap()
-            .into_pointer_value()
-    }
-
     fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        let payload = self.get_array_payload(array);
-        let header = self.get_array_header_from_payload(payload);
+        let header = unsafe {
+            self.builder
+                .build_in_bounds_gep(
+                    self.array_header_ty(),
+                    array,
+                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
+                    "header",
+                )
+                .unwrap()
+        };
         let is_null = self
             .builder
-            .build_int_compare(IntPredicate::EQ, payload, self.null_ptr(), "")
+            .build_int_compare(IntPredicate::EQ, array, self.null_ptr(), "")
             .unwrap();
         self.builder
             .build_select(is_null, self.null_ptr(), header, "")
             .unwrap()
             .into_pointer_value()
-    }
-
-    fn get_array_header_from_payload(&self, payload: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        unsafe {
-            self.builder
-                .build_in_bounds_gep(
-                    self.array_header_ty(),
-                    payload,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
-                    "header",
-                )
-                .unwrap()
-        }
     }
 
     fn func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
@@ -454,6 +442,18 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.ctx.ptr_type(AddressSpace::default()).const_null()
     }
 
+    fn value_from_ptr(&self, ty: &Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'ctx> {
+        if Self::is_indirect(ty) {
+            LayoutValue::Indirect(ptr)
+        } else {
+            let value = self
+                .builder
+                .build_load(self.lower_ty(ty), ptr, "name")
+                .unwrap();
+            LayoutValue::Scalar(value)
+        }
+    }
+
     fn is_trivial(&self, ty: &Ty) -> bool {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
@@ -503,12 +503,12 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ptr
     }
 
-    pub(crate) fn emit_drop(&self, ty: &Ty, val: BasicValueEnum<'ctx>) {
+    pub(crate) fn emit_drop(&self, ty: &Ty, val: LayoutValue<'ctx>) {
         let func = match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
             Ty::Char => todo!("Strings"),
             Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
+                // If it's empty, it's unit and therefore doesn't exist
                 if elem_tys.is_empty() {
                     return;
                 }
@@ -519,21 +519,20 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::Named(id) => self.struct_drop(*id),
         };
         self.builder
-            .build_call(func, &[val.into()], "drop")
+            .build_call(func, &[val.as_value().into()], "drop")
             .unwrap();
     }
 
-    pub(crate) fn emit_copy(&self, ty: &Ty, val: BasicValueEnum<'ctx>, dst: PointerValue<'ctx>) {
+    pub(crate) fn emit_copy(&self, ty: &Ty, val: LayoutValue<'ctx>, dst: PointerValue<'ctx>) {
         let func = match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
-                self.builder.build_store(dst, val).unwrap();
+                self.builder.build_store(dst, val.as_scalar()).unwrap();
                 return;
             }
             Ty::Char => todo!("Strings"),
             Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and therefore trivial + direct
+                // If it's empty, it's unit and doesn't exist.
                 if elem_tys.is_empty() {
-                    self.builder.build_store(dst, val).unwrap();
                     return;
                 }
                 self.tuple_copy(ty, elem_tys)
@@ -545,7 +544,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.builder
             .build_call(
                 func,
-                &[dst.as_basic_value_enum().into(), val.into()],
+                &[dst.as_basic_value_enum().into(), val.as_value().into()],
                 "copy",
             )
             .unwrap();
@@ -554,8 +553,8 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     pub(crate) fn emit_equals(
         &self,
         ty: &Ty,
-        lhs: BasicValueEnum<'ctx>,
-        rhs: BasicValueEnum<'ctx>,
+        lhs: LayoutValue<'ctx>,
+        rhs: LayoutValue<'ctx>,
     ) -> IntValue<'ctx> {
         match ty {
             Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
@@ -598,7 +597,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 .builder
                 .build_call(
                     self.array_equals(ty, inner_ty),
-                    &[lhs.into(), rhs.into()],
+                    &[lhs.as_scalar().into(), rhs.as_scalar().into()],
                     "equals",
                 )
                 .unwrap()
@@ -622,7 +621,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    fn emit_move(&self, ty: &Ty, val: BasicValueEnum<'ctx>, to: PointerValue<'ctx>) {
+    fn emit_move(&self, ty: &Ty, val: LayoutValue<'ctx>, to: PointerValue<'ctx>) {
         self.emit_copy(ty, val, to);
         self.emit_drop(ty, val);
     }

@@ -8,7 +8,7 @@ use inkwell::{
 
 use hir::{Ty, TyId, VarId};
 
-use crate::Codegen;
+use crate::{Codegen, layout::LayoutValue};
 
 impl<'ctx> Codegen<'_, '_, 'ctx> {
     pub(crate) fn drop_func_ty(&self) -> FunctionType<'ctx> {
@@ -73,7 +73,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let lowered_ty = self.lower_ty(ty);
         let out = func.get_nth_param(0).unwrap().into_pointer_value();
         // Drop each non-trivial field
-        for (idx, field) in fields
+        for (idx, field_ty) in fields
             .into_iter()
             .enumerate()
             .filter(|(_, ty)| !self.is_trivial(ty))
@@ -82,7 +82,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .builder
                 .build_struct_gep(lowered_ty, out, u32::try_from(idx).unwrap(), "fieldptr")
                 .unwrap();
-            self.emit_drop(field, field_ptr.as_basic_value_enum());
+            self.emit_drop(field_ty, self.value_from_ptr(field_ty, field_ptr));
         }
         self.builder.build_return(None).unwrap();
 
@@ -119,7 +119,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.emit_memcpy(dst, src, &lowered_ty);
         } else {
             // If the struct/tuple is not trivial, we need to copy each field individually
-            for (idx, field) in fields.into_iter().enumerate() {
+            for (idx, field_ty) in fields.into_iter().enumerate() {
                 let idx = u32::try_from(idx).unwrap();
 
                 let dst = self
@@ -131,16 +131,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .build_struct_gep(lowered_ty, src, idx, "srcfieldptr")
                     .unwrap();
 
-                let val = if Self::is_indirect(field) {
-                    src.as_basic_value_enum()
-                } else {
-                    self.builder
-                        .build_load(self.lower_ty(field), src, "srcfield")
-                        .unwrap()
-                        .as_basic_value_enum()
-                };
-
-                self.emit_copy(field, val, dst);
+                self.emit_copy(field_ty, self.value_from_ptr(field_ty, src), dst);
             }
         }
         self.builder.build_return(None).unwrap();
@@ -175,7 +166,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
         let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
         let ne_block = self.ctx.append_basic_block(func, "ne");
-        for (idx, field) in fields.into_iter().enumerate() {
+        for (idx, field_ty) in fields.into_iter().enumerate() {
             let idx = u32::try_from(idx).unwrap();
 
             let lhs = self
@@ -187,26 +178,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_struct_gep(lowered_ty, rhs, idx, "rhsfieldptr")
                 .unwrap();
 
-            let (lhs, rhs) = if Self::is_indirect(field) {
-                (lhs.as_basic_value_enum(), rhs.as_basic_value_enum())
-            } else {
-                let field_ty = self.lower_ty(field);
-                let lhs = self
-                    .builder
-                    .build_load(field_ty, lhs, "lhsfield")
-                    .unwrap()
-                    .as_basic_value_enum();
-                let rhs = self
-                    .builder
-                    .build_load(field_ty, rhs, "rhsfield")
-                    .unwrap()
-                    .as_basic_value_enum();
-                (lhs, rhs)
-            };
-
             // If the fields are equal, continue to a new block for the next comparison, else branch to the not-equal block
             let eq_block = self.ctx.append_basic_block(func, "eq");
-            let equal = self.emit_equals(field, lhs, rhs);
+            let equal = self.emit_equals(
+                field_ty,
+                self.value_from_ptr(field_ty, lhs),
+                self.value_from_ptr(field_ty, rhs),
+            );
             self.builder
                 .build_conditional_branch(equal, eq_block, ne_block)
                 .unwrap();
@@ -302,7 +280,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
 
         // Initialise the loop to drop all the elements.
-        let (count, index, payload) = {
+        let (count, index) = {
             self.builder.position_at_end(drop_block);
             let count = self
                 .builder
@@ -317,7 +295,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.builder
                 .build_store(index, self.ctx.i64_type().const_zero())
                 .unwrap();
-            let payload = self.get_array_payload(array);
             let empty = self
                 .builder
                 .build_int_compare(
@@ -330,7 +307,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.builder
                 .build_conditional_branch(empty, free_block, loop_block)
                 .unwrap();
-            (count, index, payload)
+            (count, index)
         };
 
         // Loop over each element and free it.
@@ -343,10 +320,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .into_int_value();
             let elem = unsafe {
                 self.builder
-                    .build_in_bounds_gep(self.lower_ty(elem_ty), payload, &[curr_index], "")
+                    .build_in_bounds_gep(self.lower_ty(elem_ty), array, &[curr_index], "")
                     .unwrap()
             };
-            self.emit_drop(elem_ty, elem.as_basic_value_enum());
+            self.emit_drop(elem_ty, LayoutValue::Indirect(elem));
             let new_index = self
                 .builder
                 .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
@@ -409,35 +386,44 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let dst = func.get_nth_param(0).unwrap().into_pointer_value();
         let src = func.get_nth_param(1).unwrap().into_pointer_value();
 
-        self.builder.position_at_end(entry_block);
-        let array_ty = self.array_ty();
-        self.emit_memcpy(dst, src, &array_ty);
-        let header = self.get_array_header(src);
-        let is_null = self
-            .builder
-            .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "nullchk")
-            .unwrap();
-        self.builder
-            .build_conditional_branch(is_null, ret_block, incr_block)
-            .unwrap();
+        // Store the array payload pointer into the destination, then return if the array is unallocated.
+        let header = {
+            self.builder.position_at_end(entry_block);
+            self.builder.build_store(dst, src).unwrap();
+            let header = self.get_array_header(src);
+            let is_null = self
+                .builder
+                .build_int_compare(IntPredicate::EQ, header, self.null_ptr(), "")
+                .unwrap();
+            self.builder
+                .build_conditional_branch(is_null, ret_block, incr_block)
+                .unwrap();
+            header
+        };
 
-        self.builder.position_at_end(incr_block);
-        let refc = self
-            .builder
-            .build_struct_gep(self.array_header_ty(), header, 0, "refc")
-            .unwrap();
-        self.builder
-            .build_atomicrmw(
-                AtomicRMWBinOp::Add,
-                refc,
-                self.ctx.i64_type().const_int(1, false),
-                AtomicOrdering::Monotonic,
-            )
-            .unwrap();
-        self.builder.build_unconditional_branch(ret_block).unwrap();
+        // Increment the refcount of the original array.
+        {
+            self.builder.position_at_end(incr_block);
+            let refc = self
+                .builder
+                .build_struct_gep(self.array_header_ty(), header, 0, "")
+                .unwrap();
+            self.builder
+                .build_atomicrmw(
+                    AtomicRMWBinOp::Add,
+                    refc,
+                    self.ctx.i64_type().const_int(1, false),
+                    AtomicOrdering::Monotonic,
+                )
+                .unwrap();
+            self.builder.build_unconditional_branch(ret_block).unwrap();
+        }
 
-        self.builder.position_at_end(ret_block);
-        self.builder.build_return(None).unwrap();
+        // Return.
+        {
+            self.builder.position_at_end(ret_block);
+            self.builder.build_return(None).unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 
@@ -471,18 +457,15 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
 
         // Always equal if the arrays share storage. This will also handle both arrays being unallocated.
-        let (lhs_payload, rhs_payload) = {
+        {
             self.builder.position_at_end(entry_block);
-            let lhs_payload = self.get_array_payload(lhs);
-            let rhs_payload = self.get_array_payload(rhs);
             let equal = self
                 .builder
-                .build_int_compare(IntPredicate::EQ, lhs_payload, rhs_payload, "")
+                .build_int_compare(IntPredicate::EQ, lhs, lhs, "")
                 .unwrap();
             self.builder
                 .build_conditional_branch(equal, ret_block, null_block)
                 .unwrap();
-            (lhs_payload, rhs_payload)
         };
 
         // If either array is unallocated, they're not equal (both being unallocated is handled in the entry block).
@@ -490,11 +473,11 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.builder.position_at_end(null_block);
             let lhs_null = self
                 .builder
-                .build_int_compare(IntPredicate::EQ, lhs_payload, self.null_ptr(), "")
+                .build_int_compare(IntPredicate::EQ, lhs, self.null_ptr(), "")
                 .unwrap();
             let rhs_null = self
                 .builder
-                .build_int_compare(IntPredicate::EQ, rhs_payload, self.null_ptr(), "")
+                .build_int_compare(IntPredicate::EQ, rhs, self.null_ptr(), "")
                 .unwrap();
             let either_null = self.builder.build_or(lhs_null, rhs_null, "").unwrap();
             self.builder
@@ -505,7 +488,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         // If the arrays' counts aren't equal, they're not equal.
         let count = {
             self.builder.position_at_end(count_block);
-            let lhs_header = self.get_array_header_from_payload(lhs_payload);
+            let lhs_header = self.get_array_header(lhs);
             let lhs_count = self
                 .builder
                 .build_struct_gep(self.array_header_ty(), lhs_header, 1, "")
@@ -515,7 +498,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_load(self.ctx.i64_type(), lhs_count, "")
                 .unwrap()
                 .into_int_value();
-            let rhs_header = self.get_array_header_from_payload(rhs_payload);
+            let rhs_header = self.get_array_header(rhs);
             let rhs_count = self
                 .builder
                 .build_struct_gep(self.array_header_ty(), rhs_header, 1, "")
@@ -574,28 +557,20 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             let lowered_elem_ty = self.lower_ty(elem_ty);
             let lhs_elem = unsafe {
                 self.builder
-                    .build_in_bounds_gep(lowered_elem_ty, lhs_payload, &[curr_index], "")
+                    .build_in_bounds_gep(lowered_elem_ty, lhs, &[curr_index], "")
                     .unwrap()
             };
             let rhs_elem = unsafe {
                 self.builder
-                    .build_in_bounds_gep(lowered_elem_ty, rhs_payload, &[curr_index], "")
+                    .build_in_bounds_gep(lowered_elem_ty, rhs, &[curr_index], "")
                     .unwrap()
             };
             // Need to load the elements if they're direct.
-            let equal = if Self::is_indirect(elem_ty) {
-                self.emit_equals(elem_ty, lhs_elem.into(), rhs_elem.into())
-            } else {
-                let lhs_elem = self
-                    .builder
-                    .build_load(lowered_elem_ty, lhs_elem, "")
-                    .unwrap();
-                let rhs_elem = self
-                    .builder
-                    .build_load(lowered_elem_ty, rhs_elem, "")
-                    .unwrap();
-                self.emit_equals(elem_ty, lhs_elem, rhs_elem)
-            };
+            let equal = self.emit_equals(
+                elem_ty,
+                self.value_from_ptr(elem_ty, lhs_elem),
+                self.value_from_ptr(elem_ty, rhs_elem),
+            );
             let new_index = self
                 .builder
                 .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
@@ -639,7 +614,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_init(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
+    pub(crate) fn array_new(&self, ty: &Ty, elem_ty: &Ty) -> FunctionValue<'ctx> {
         let func_name = format!("{}.init", self.mangle_ty(ty));
 
         // Check if we already built this function
@@ -651,21 +626,16 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
         // Create the init function
-        let func_ty = self
-            .ctx
-            .void_type()
-            .fn_type(&[self.ptr_ty().into(), self.ctx.i64_type().into()], false);
+        let func_ty = self.ptr_ty().fn_type(&[self.ctx.i64_type().into()], false);
         let func = self
             .module
             .add_function(&func_name, func_ty, Some(Linkage::Private));
         let entry_block = self.ctx.append_basic_block(func, "entry");
-        let count_zero_block = self.ctx.append_basic_block(func, "count.zero");
-        let count_not_zero_block = self.ctx.append_basic_block(func, "count.not_zero");
+        let init_block = self.ctx.append_basic_block(func, "init");
         let ret_block = self.ctx.append_basic_block(func, "return");
-        let array = func.get_nth_param(0).unwrap().into_pointer_value();
-        let count = func.get_nth_param(1).unwrap().into_int_value();
+        let count = func.get_first_param().unwrap().into_int_value();
 
-        // Check if the count is zero.
+        // Check if the count is zero, if so directly return a null pointer.
         {
             self.builder.position_at_end(entry_block);
             let cmp = self
@@ -678,24 +648,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 )
                 .unwrap();
             self.builder
-                .build_conditional_branch(cmp, count_zero_block, count_not_zero_block)
+                .build_conditional_branch(cmp, ret_block, init_block)
                 .unwrap();
         }
 
-        // If the count is zero, set the payload pointer to null and return.
-        {
-            self.builder.position_at_end(count_zero_block);
-            let payload = self
-                .builder
-                .build_struct_gep(self.array_ty(), array, 0, "")
-                .unwrap();
-            self.builder.build_store(payload, self.null_ptr()).unwrap();
-            self.builder.build_unconditional_branch(ret_block).unwrap();
-        }
-
-        // If the count isn't zero, calculate capacity and allocate space for capacity + header.
-        {
-            self.builder.position_at_end(count_not_zero_block);
+        // If the count isn't zero, allocate space for capacity + header and initialise metadata.
+        let payload = {
+            self.builder.position_at_end(init_block);
             // Calculate capacity.
             let cap = self
                 .builder
@@ -718,22 +677,6 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_pointer_value();
-            // Store offset pointer to alloc into array out parameter.
-            let src_payload = unsafe {
-                self.builder
-                    .build_in_bounds_gep(
-                        header_ty,
-                        alloc,
-                        &[self.ctx.i64_type().const_int(1, false)],
-                        "",
-                    )
-                    .unwrap()
-            };
-            let dst_payload = self
-                .builder
-                .build_struct_gep(self.array_ty(), array, 0, "")
-                .unwrap();
-            self.builder.build_store(dst_payload, src_payload).unwrap();
             // Initialise each field of the header.
             let refc_ptr = self
                 .builder
@@ -754,11 +697,29 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .build_struct_gep(header_ty, alloc, 2, "")
                 .unwrap();
             self.builder.build_store(cap_ptr, cap).unwrap();
+            let payload = unsafe {
+                self.builder
+                    .build_in_bounds_gep(
+                        header_ty,
+                        alloc,
+                        &[self.ctx.i64_type().const_int(1, false)],
+                        "",
+                    )
+                    .unwrap()
+            };
             self.builder.build_unconditional_branch(ret_block).unwrap();
-        }
+            payload
+        };
 
-        self.builder.position_at_end(ret_block);
-        self.builder.build_return(None).unwrap();
+        // Return.
+        {
+            self.builder.position_at_end(ret_block);
+            let phi = self.builder.build_phi(self.ptr_ty(), "").unwrap();
+            phi.add_incoming(&[(&self.null_ptr(), entry_block), (&payload, init_block)]);
+            self.builder
+                .build_return(Some(&phi.as_basic_value()))
+                .unwrap();
+        }
 
         self.builder.position_at_end(old_insert_block);
 
@@ -887,9 +848,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .build_struct_gep(header_ty, alloc, 2, "")
             .unwrap();
         self.builder.build_store(new_capacity, capacity).unwrap();
-        // Get payloads.
-        let payload = self.get_array_payload(array);
-        let new_payload = unsafe {
+        // Get payload of new array.
+        let new_array = unsafe {
             self.builder
                 .build_in_bounds_gep(
                     header_ty,
@@ -906,7 +866,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .get_target_data()
                 .get_abi_alignment(&self.lower_ty(elem_ty));
             self.builder
-                .build_memcpy(new_payload, align, payload, align, capacity)
+                .build_memcpy(new_array, align, array, align, capacity)
                 .unwrap();
             self.builder
                 .build_unconditional_branch(store_block)
@@ -940,15 +900,15 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 let lowered_elem_ty = self.lower_ty(elem_ty);
                 let elem = unsafe {
                     self.builder
-                        .build_in_bounds_gep(lowered_elem_ty, payload, &[curr_index], "")
+                        .build_in_bounds_gep(lowered_elem_ty, array, &[curr_index], "")
                         .unwrap()
                 };
                 let new_elem = unsafe {
                     self.builder
-                        .build_in_bounds_gep(lowered_elem_ty, new_payload, &[curr_index], "")
+                        .build_in_bounds_gep(lowered_elem_ty, new_array, &[curr_index], "")
                         .unwrap()
                 };
-                self.emit_copy(elem_ty, elem.as_basic_value_enum(), new_elem);
+                self.emit_copy(elem_ty, self.value_from_ptr(elem_ty, elem), new_elem);
                 let new_index = self
                     .builder
                     .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
@@ -971,7 +931,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .builder
                 .build_struct_gep(self.array_ty(), array, 0, "")
                 .unwrap();
-            self.builder.build_store(payload_ptr, new_payload).unwrap();
+            self.builder.build_store(payload_ptr, new_array).unwrap();
             let refc = self
                 .builder
                 .build_struct_gep(header_ty, header, 0, "")
@@ -1471,9 +1431,9 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             }) {
                 let capture_ptr = self
                     .builder
-                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "captureptr")
+                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "")
                     .unwrap();
-                self.emit_drop(ty, capture_ptr.as_basic_value_enum());
+                self.emit_drop(ty, self.value_from_ptr(ty, capture_ptr));
             }
 
             // Free the environment's memory
@@ -1560,14 +1520,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                         .builder
                         .build_struct_gep(env_ty, src_env, idx, "srccapture")
                         .unwrap();
-                    let src_capture = if Self::is_indirect(ty) {
-                        src_capture.as_basic_value_enum()
-                    } else {
-                        self.builder
-                            .build_load(self.lower_ty(ty), src_capture, "srccapture")
-                            .unwrap()
-                    };
-                    self.emit_copy(ty, src_capture, dst_capture);
+                    self.emit_copy(ty, self.value_from_ptr(ty, src_capture), dst_capture);
                 }
             }
 
@@ -1663,25 +1616,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                         .builder
                         .build_struct_gep(env_ty, rhs_env, idx, "rhscapture")
                         .unwrap();
-                    let (lhs_capture, rhs_capture) = if Self::is_indirect(ty) {
-                        (
-                            lhs_capture.as_basic_value_enum(),
-                            lhs_capture.as_basic_value_enum(),
-                        )
-                    } else {
-                        let ty = self.lower_ty(ty);
-                        (
-                            self.builder
-                                .build_load(ty, lhs_capture, "lhscapture")
-                                .unwrap(),
-                            self.builder
-                                .build_load(ty, rhs_capture, "rhscapture")
-                                .unwrap(),
-                        )
-                    };
+                    let equal = self.emit_equals(
+                        ty,
+                        self.value_from_ptr(ty, lhs_capture),
+                        self.value_from_ptr(ty, rhs_capture),
+                    );
                     // Bail out if we found a difference.
                     let eq_block = self.ctx.append_basic_block(func, "eq");
-                    let equal = self.emit_equals(ty, lhs_capture, rhs_capture);
                     self.builder
                         .build_conditional_branch(equal, eq_block, ne_block)
                         .unwrap();

@@ -103,7 +103,7 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            &Expr::Index { arr, idx } => {
+            &Expr::Index { array: arr, index: idx } => {
                 let idx_ty = self.infer_expr(hir, module, idx);
                 self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx), module);
                 let arr_ty = self.infer_expr(hir, module, arr);

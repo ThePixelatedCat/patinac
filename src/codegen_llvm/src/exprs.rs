@@ -7,15 +7,15 @@ use inkwell::{
     module::Linkage,
     types::StructType,
     values::{
-        BasicMetadataValueEnum, BasicValue as _, BasicValueEnum, CallSiteValue, FunctionValue,
+        BasicMetadataValueEnum, BasicValue, BasicValueEnum, CallSiteValue, FunctionValue,
         PointerValue,
     },
 };
 
-use crate::Codegen;
+use crate::{Codegen, layout::LayoutValue};
 
 impl<'ctx> Codegen<'_, '_, 'ctx> {
-    pub(crate) fn emit_expr(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    pub(crate) fn emit_expr(&mut self, expr: ExprId) -> LayoutValue<'ctx> {
         match self.hir.expr_info(expr) {
             Expr::Ident(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(expr, lit),
@@ -24,7 +24,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
-            Expr::Index { arr, idx } => self.emit_index(*arr, *idx),
+            Expr::Index {
+                array: arr,
+                index: idx,
+            } => self.emit_index(*arr, *idx),
             Expr::Call { func, args } => self.emit_call(*func, args, &self.ty_map[expr]),
             Expr::Lambda {
                 params,
@@ -43,7 +46,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
     }
 
-    fn emit_print(&mut self, expr: ExprId) -> BasicValueEnum<'ctx> {
+    fn emit_print(&mut self, expr: ExprId) -> LayoutValue<'ctx> {
         let format_string = match &self.ty_map[expr] {
             Ty::Int => "%lld\n",
             Ty::UInt => "%llu\n",
@@ -65,10 +68,14 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
 
         let expr = self.emit_expr(expr);
         self.builder
-            .build_call(self.printf(), &[format_ptr.into(), expr.into()], "print")
+            .build_call(
+                self.printf(),
+                &[format_ptr.into(), expr.as_scalar().into()],
+                "print",
+            )
             .unwrap();
 
-        self.unit()
+        LayoutValue::Unit
     }
 
     fn emit_place(&mut self, expr: ExprId) -> PointerValue<'ctx> {
@@ -84,21 +91,25 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
                     .unwrap()
             }
-            Expr::Index { arr, idx } => {
-                let Ty::Array(elem_ty) = &self.ty_map[*arr] else {
+            Expr::Index { array, index } => {
+                let Ty::Array(elem_ty) = &self.ty_map[*array] else {
                     unreachable!("ICE")
                 };
-                let arr = self.emit_place(*arr);
-                let idx = self.emit_expr(*idx);
+                let array = self.emit_place(*array);
+                let index = self.emit_expr(*index);
                 self.builder
-                    .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
+                    .build_call(
+                        self.array_bounds_check(),
+                        &[array.into(), index.as_scalar().into()],
+                        "",
+                    )
                     .unwrap();
                 unsafe {
                     self.builder
                         .build_in_bounds_gep(
                             self.lower_ty(elem_ty),
-                            self.get_array_payload(arr),
-                            &[idx.into_int_value()],
+                            array,
+                            &[index.as_scalar().into_int_value()],
                             "elemptr",
                         )
                         .unwrap()
@@ -122,13 +133,20 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     .build_struct_gep(self.structs[*id], base, idx, "fieldptr")
                     .unwrap()
             }
-            Expr::Index { arr, idx } => {
+            Expr::Index {
+                array: arr,
+                index: idx,
+            } => {
                 let ty = &self.ty_map[*arr];
                 let elem_ty = &self.ty_map[expr];
                 let arr = self.emit_unique_place(*arr);
                 let idx = self.emit_expr(*idx);
                 self.builder
-                    .build_call(self.array_bounds_check(), &[arr.into(), idx.into()], "")
+                    .build_call(
+                        self.array_bounds_check(),
+                        &[arr.into(), idx.as_scalar().into()],
+                        "",
+                    )
                     .unwrap();
                 self.builder
                     .build_call(self.array_unique(ty, elem_ty), &[arr.into()], "")
@@ -138,7 +156,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                         .build_in_bounds_gep(
                             self.lower_ty(elem_ty),
                             self.get_array_payload(arr),
-                            &[idx.into_int_value()],
+                            &[idx.as_scalar().into_int_value()],
                             "elemptr",
                         )
                         .unwrap()
@@ -149,22 +167,16 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
     }
 
-    fn unit(&self) -> BasicValueEnum<'ctx> {
-        self.ctx.const_struct(&[], false).as_basic_value_enum()
-    }
-
-    fn emit_ident(&self, id: VarId) -> BasicValueEnum<'ctx> {
+    fn emit_ident(&self, id: VarId) -> LayoutValue<'ctx> {
         // If it's the name of a top-level function, convert it into a closure
         if let Some(func) = self.funcs.get(id) {
-            return self
-                .emit_closure(
-                    &self.hir.var_info(id).ident.str(),
-                    *func,
-                    &[],
-                    self.null_ptr(),
-                    None,
-                )
-                .as_basic_value_enum();
+            return LayoutValue::Indirect(self.emit_closure(
+                &self.hir.var_info(id).ident.str(),
+                *func,
+                &[],
+                self.null_ptr(),
+                None,
+            ));
         }
 
         let alloc = self.vars[id];
@@ -182,7 +194,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
     }
 
-    fn emit_lit(&self, expr: ExprId, lit: &LitExpr) -> BasicValueEnum<'ctx> {
+    fn emit_lit(&self, expr: ExprId, lit: &LitExpr) -> LayoutValue<'ctx> {
         match lit {
             LitExpr::Int(val) => match &self.ty_map[expr] {
                 Ty::Int => {
@@ -213,9 +225,8 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                     self.ctx.i8_type().const_int(clamped_val, false)
                 }
                 _ => unreachable!("ICE: int literal inferred as non-int type"),
-            }
-            .as_basic_value_enum(),
-            LitExpr::Float(val) => self.ctx.f64_type().const_float(*val).as_basic_value_enum(),
+            },
+            LitExpr::Float(val) => self.ctx.f64_type().const_float(*val).into(),
             LitExpr::Char(_) => todo!("Strings"),
             LitExpr::String(_) => todo!("Strings"),
             LitExpr::Bool(val) => {
@@ -225,38 +236,38 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 } else {
                     bool_ty.const_zero()
                 }
-                .as_basic_value_enum()
             }
         }
     }
 
-    fn emit_array(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
+    fn emit_array(&mut self, ty: &Ty, exprs: &[ExprId]) -> LayoutValue<'ctx> {
         let Ty::Array(elem_ty) = ty else {
             unreachable!("ICE")
         };
 
         // Allocate the array.
-        let alloc = self.emit_alloca_entry(self.array_ty(), "array");
-        self.builder
+        let array = self
+            .builder
             .build_call(
-                self.array_init(ty, elem_ty),
-                &[
-                    alloc.into(),
-                    self.ctx
-                        .i64_type()
-                        .const_int(
-                            u64::try_from(exprs.len())
-                                .expect("I doubt we'll see 128bit CPUs any time soon"),
-                            false,
-                        )
-                        .into(),
-                ],
+                self.array_new(ty, elem_ty),
+                &[self
+                    .ctx
+                    .i64_type()
+                    .const_int(
+                        u64::try_from(exprs.len())
+                            .expect("I doubt we'll see 128bit CPUs any time soon"),
+                        false,
+                    )
+                    .into()],
                 "",
             )
-            .unwrap();
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic()
+            .into_pointer_value();
 
         // Initialize each element.
-        let payload = self.get_array_payload(alloc);
+        let payload = self.get_array_payload(array);
         let lowered_elem_ty = self.lower_ty(elem_ty);
         for (idx, expr) in exprs.iter().enumerate() {
             let idx = self.ctx.i64_type().const_int(
@@ -272,13 +283,13 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             self.emit_move(elem_ty, elem, ptr);
         }
 
-        alloc.as_basic_value_enum()
+        LayoutValue::scalar(array)
     }
 
-    fn emit_tuple(&mut self, ty: &Ty, exprs: &[ExprId]) -> BasicValueEnum<'ctx> {
+    fn emit_tuple(&mut self, ty: &Ty, exprs: &[ExprId]) -> LayoutValue<'ctx> {
         // Fast-path explicit units
         if exprs.is_empty() {
-            return self.unit();
+            return LayoutValue::Unit;
         }
 
         let ty = self.lower_ty(ty);
@@ -291,10 +302,10 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 .unwrap();
             self.emit_move(&self.ty_map[*expr], tmp, ptr);
         }
-        out.as_basic_value_enum()
+        LayoutValue::Indirect(out)
     }
 
-    fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> BasicValueEnum<'ctx> {
+    fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> LayoutValue<'ctx> {
         let ty = &self.ty_map[lhs];
         match op {
             InfixOp::Assign => {
@@ -324,7 +335,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         op: InfixOp,
         lhs: BasicValueEnum<'ctx>,
         rhs: BasicValueEnum<'ctx>,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> LayoutValue<'ctx> {
         match op {
             InfixOp::Assign => unreachable!("ICE: Should not be called when the op is assignment"),
             InfixOp::Add => self
@@ -433,7 +444,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
     }
 
-    fn emit_prefix(&mut self, op: PrefixOp, expr: ExprId) -> BasicValueEnum<'ctx> {
+    fn emit_prefix(&mut self, op: PrefixOp, expr: ExprId) -> LayoutValue<'ctx> {
         let expr = self.emit_expr(expr);
 
         match op {
@@ -450,7 +461,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         }
     }
 
-    fn emit_field(&mut self, base: ExprId, field: SpanIdent) -> BasicValueEnum<'ctx> {
+    fn emit_field(&mut self, base: ExprId, field: SpanIdent) -> LayoutValue<'ctx> {
         let Ty::Named(id) = &self.ty_map[base] else {
             unreachable!("ICE")
         };
@@ -480,7 +491,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         result
     }
 
-    fn emit_index(&mut self, arr: ExprId, idx: ExprId) -> BasicValueEnum<'ctx> {
+    fn emit_index(&mut self, arr: ExprId, idx: ExprId) -> LayoutValue<'ctx> {
         let ty = &self.ty_map[arr];
         let Ty::Array(elem_ty) = ty else {
             unreachable!("ICE")
@@ -515,7 +526,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         result
     }
 
-    fn emit_call(&mut self, func: ExprId, args: &[Arg], ret_ty: &Ty) -> BasicValueEnum<'ctx> {
+    fn emit_call(&mut self, func: ExprId, args: &[Arg], ret_ty: &Ty) -> LayoutValue<'ctx> {
         let mut tmps = Vec::new();
         let mut args: Vec<_> = args
             .iter()
@@ -607,7 +618,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         params: &[VarId],
         body: ExprId,
         captures: &[VarId],
-    ) -> BasicValueEnum<'ctx> {
+    ) -> LayoutValue<'ctx> {
         // Create a unique name for this lambda, used for it's witnesses and it's defunctionalised body
         let func_name = format!("_lambda{}", self.lambda_counter);
         self.lambda_counter += 1;
@@ -665,7 +676,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
                 self.func_ty(param_tys, ret_ty),
                 Some(Linkage::Private),
             );
-            self.emit_defunc_body(func, body, params, ret_ty, captures, env_ty);
+            self.emit_lifted_body(func, body, params, ret_ty, captures, env_ty);
             func
         };
 
@@ -716,7 +727,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         closure
     }
 
-    fn emit_defunc_body(
+    fn emit_lifted_body(
         &mut self,
         func: FunctionValue<'ctx>,
         body: ExprId,
@@ -783,19 +794,14 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         cond: ExprId,
         th: &BlockExpr,
         el: Option<&BlockExpr>,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> LayoutValue<'ctx> {
         match el {
             Some(el) => self.emit_if_else(cond, th, el),
             None => self.emit_if_no_else(cond, th),
         }
     }
 
-    fn emit_if_else(
-        &mut self,
-        cond: ExprId,
-        th: &BlockExpr,
-        el: &BlockExpr,
-    ) -> BasicValueEnum<'ctx> {
+    fn emit_if_else(&mut self, cond: ExprId, th: &BlockExpr, el: &BlockExpr) -> LayoutValue<'ctx> {
         let cond = self.emit_expr(cond);
 
         let function = self.curr_function();
@@ -833,7 +839,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         phi.as_basic_value()
     }
 
-    fn emit_if_no_else(&mut self, cond: ExprId, th: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn emit_if_no_else(&mut self, cond: ExprId, th: &BlockExpr) -> LayoutValue<'ctx> {
         let cond = self.emit_expr(cond);
 
         let function = self.curr_function();
@@ -857,7 +863,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.unit()
     }
 
-    fn emit_loop(&mut self, body: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn emit_loop(&mut self, body: &BlockExpr) -> LayoutValue<'ctx> {
         let function = self.curr_function();
 
         let body_block = self.ctx.append_basic_block(function, "body");
@@ -873,7 +879,7 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
         self.unit()
     }
 
-    fn emit_block_expr(&mut self, block: &BlockExpr) -> BasicValueEnum<'ctx> {
+    fn emit_block_expr(&mut self, block: &BlockExpr) -> LayoutValue<'ctx> {
         let mut tmps: Vec<_> = block
             .stmts
             .iter()

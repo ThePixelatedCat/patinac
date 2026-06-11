@@ -39,8 +39,8 @@ pub enum Expr {
         field: SpanIdent,
     },
     Index {
-        arr: ExprId,
-        idx: ExprId,
+        array: ExprId,
+        index: ExprId,
     },
     Call {
         func: ExprId,
