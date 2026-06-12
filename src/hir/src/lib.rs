@@ -148,6 +148,10 @@ impl Fields {
         self.0.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn get_ty(&self, ident: Ident) -> Option<&Ty> {
         self.0
             .iter()

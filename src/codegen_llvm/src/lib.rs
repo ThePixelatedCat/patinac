@@ -3,11 +3,13 @@
 //! The entry point to this crate is the [`Codegen`] type, and the [`codegen`][Codegen::codegen] method on it.
 //! Use the [`create_ctx`] function to acquire a [`Context`] for use in [`Codegen::new`].
 
+#![feature(integer_casts)]
 #![allow(
     clippy::unwrap_used,
     reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
 )]
 
+mod arrays;
 mod exprs;
 mod layout;
 mod runtime;
@@ -19,20 +21,21 @@ use std::{fmt::Write as _, iter, path::PathBuf, str::FromStr};
 
 use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
+    basic_block::BasicBlock,
     builder::Builder,
     context::Context,
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
     types::{BasicType, BasicTypeEnum, FunctionType, StructType},
-    values::{BasicValue, BasicValueEnum, FunctionValue, IntValue, PointerValue},
+    values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
 use errors::ErrorHandler;
 use hir::{ExecKind, ExprId, Hir, Param, Ty, TyId, VarId};
 
-use crate::layout::LayoutValue;
+use crate::layout::{IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass};
 
 /// What to produce, if anything.
 #[derive(PartialEq, Eq)]
@@ -98,7 +101,7 @@ pub struct Codegen<'hir, 'handler, 'ctx> {
     target: TargetMachine,
     structs: SecondaryMap<TyId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
-    vars: SecondaryMap<VarId, PointerValue<'ctx>>,
+    vars: SecondaryMap<VarId, LayoutValue<'hir, 'ctx>>,
     lambda_counter: u32,
 }
 
@@ -225,8 +228,6 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    //fn link(&self, )
-
     fn create_struct(&mut self, id: TyId) {
         let name = Self::mangle_name(self.hir.ty_ident(id).ident.to_string());
         self.structs.insert(id, self.ctx.opaque_struct_type(&name));
@@ -253,12 +254,13 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             unreachable!("ICE")
         };
         let name = Self::mangle_name(self.hir.var_info(id).ident.to_string());
-        let func = self
-            .module
-            .add_function(&name, self.func_ty(params, ret_ty), None);
+        let func_ty = self.func_ty(params, ret_ty, false);
+        let func = self.module.add_function(&name, func_ty, None);
         self.funcs.insert(id, func);
-        self.vars
-            .insert(id, func.as_global_value().as_pointer_value());
+        self.vars.insert(
+            id,
+            LayoutValue::func_ptr(func_ty, func.as_global_value().as_pointer_value()),
+        );
         func
     }
 
@@ -274,16 +276,14 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         for (idx, (arg, field_ty)) in
             iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
         {
-            let arg = if Self::is_indirect(field_ty) {
-                LayoutValue::Indirect(arg.into_pointer_value())
-            } else {
-                LayoutValue::Scalar(arg)
-            };
             let field_ptr = self
                 .builder
-                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "fieldptr")
+                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "")
                 .unwrap();
-            self.emit_copy(field_ty, arg, field_ptr);
+            self.emit_copy(
+                self.layout(field_ty, arg),
+                self.layout_indirect(field_ty, field_ptr),
+            );
         }
 
         self.builder.build_return(None).unwrap();
@@ -301,32 +301,51 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         let entry_block = self.ctx.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        // Skip the first argument if it's an out-pointer
-        let offset = if Self::is_indirect(ret_ty) { 1 } else { 0 };
-        for (arg, param) in iter::zip(func.get_param_iter().skip(offset), params) {
-            let ty = self.hir.var_ty(*param);
-            if self.hir.var_info(*param).mutable || Self::is_indirect(ty) {
-                self.vars.insert(*param, arg.into_pointer_value());
-            } else {
-                let ptr = self.emit_alloca(arg.get_type(), &self.hir.var_info(*param).ident.str());
-                self.builder.build_store(ptr, arg).unwrap();
-                self.vars.insert(*param, ptr);
-            }
-        }
+        // Skip the first argument if it's an out-pointer.
+        let offset = if self.is_indirect(ret_ty) { 1 } else { 0 };
+        self.bind_params(params.iter().copied(), func.get_param_iter().skip(offset));
 
         let body = self.emit_expr(body);
 
-        match body {
-            LayoutValue::Scalar(scalar) => self.builder.build_return(Some(&scalar)).unwrap(),
-            LayoutValue::Indirect(_) => {
+        match self.storage_class(ret_ty) {
+            StorageClass::Zst => self.builder.build_return(None).unwrap(),
+            StorageClass::Indirect => {
                 let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-                self.emit_move(ret_ty, body, out_ptr);
+                self.emit_move(body, self.layout_indirect(ret_ty, out_ptr));
                 self.builder.build_return(None).unwrap()
             }
-            LayoutValue::Unit => self.builder.build_return(None).unwrap(),
+            StorageClass::Scalar => self.builder.build_return(Some(&body.as_scalar())).unwrap(),
         };
 
+        // Clear the parameters to keep the variable map small.
+        for id in params {
+            self.vars.remove(*id);
+        }
+
         assert!(func.verify(true));
+    }
+
+    fn bind_params<P: IntoIterator<Item = VarId>, A: Iterator<Item = BasicValueEnum<'ctx>>>(
+        &mut self,
+        params: P,
+        mut args: A,
+    ) {
+        for id in params {
+            let ty = self.hir.var_ty(id);
+            let mutable = self.hir.var_info(id).mutable;
+            // We don't actually pass ZSTs.
+            if self.is_zst(ty) {
+                self.vars.insert(id, LayoutValue::Zst);
+                continue;
+            }
+            let value = args.next().expect("there should be enough args");
+            let value = if mutable {
+                self.layout_indirect(ty, value.into_pointer_value())
+            } else {
+                self.layout(ty, value)
+            };
+            self.vars.insert(id, value);
+        }
     }
 
     fn lower_ty(&self, ty: &Ty) -> BasicTypeEnum<'ctx> {
@@ -362,49 +381,33 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         ty.as_basic_type_enum()
     }
 
-    fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
-        let header = unsafe {
-            self.builder
-                .build_in_bounds_gep(
-                    self.array_header_ty(),
-                    array,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
-                    "header",
-                )
-                .unwrap()
-        };
-        let is_null = self
-            .builder
-            .build_int_compare(IntPredicate::EQ, array, self.null_ptr(), "")
-            .unwrap();
-        self.builder
-            .build_select(is_null, self.null_ptr(), header, "")
-            .unwrap()
-            .into_pointer_value()
-    }
-
-    fn func_ty(&self, params: &[Param], ret_ty: &Ty) -> FunctionType<'ctx> {
+    fn func_ty(&self, params: &[Param], ret_ty: &Ty, env: bool) -> FunctionType<'ctx> {
         let mut param_tys: Vec<_> = params
             .iter()
-            .map(|p| {
-                if p.mutable || Self::is_indirect(&p.ty) {
-                    self.ptr_ty()
+            .filter_map(|p| {
+                if self.is_zst(&p.ty) {
+                    None // Skip passing ZSTs.
+                } else if p.mutable || self.is_indirect(&p.ty) {
+                    Some(self.ptr_ty().into()) // Pass stack pointers for mutable parameters or indirect types.
                 } else {
-                    self.lower_ty(&p.ty)
+                    Some(self.lower_ty(&p.ty).into()) // Pass by value otherwise.
                 }
-                .into()
             })
             .collect();
 
-        // Add parameter for the environment
-        param_tys.push(self.ptr_ty().into());
+        // Add parameter for environment if necessary
+        if env {
+            param_tys.push(self.ptr_ty().into());
+        }
 
-        // Add parameter for return out-pointer if needed
-        if Self::is_indirect(ret_ty) {
-            param_tys.insert(0, self.ptr_ty().into());
-            self.ctx.void_type().fn_type(&param_tys, false)
-        } else {
-            self.lower_ty(ret_ty).fn_type(&param_tys, false)
+        // Add parameter for return out-pointer if needed.
+        match self.storage_class(ret_ty) {
+            StorageClass::Zst => self.ctx.void_type().fn_type(&param_tys, false),
+            StorageClass::Indirect => {
+                param_tys.insert(0, self.ptr_ty().into());
+                self.ctx.void_type().fn_type(&param_tys, false)
+            }
+            StorageClass::Scalar => self.lower_ty(ret_ty).fn_type(&param_tys, false),
         }
     }
 
@@ -438,19 +441,90 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             .as_basic_type_enum()
     }
 
-    fn null_ptr(&self) -> PointerValue<'ctx> {
+    fn const_int(&self, value: i64) -> IntValue<'ctx> {
+        self.ctx.i64_type().const_int(value.cast_unsigned(), false)
+    }
+
+    fn const_uint(&self, value: u64) -> IntValue<'ctx> {
+        self.ctx.i64_type().const_int(value, false)
+    }
+
+    fn const_byte(&self, value: u8) -> IntValue<'ctx> {
+        self.ctx.i8_type().const_int(u64::from(value), false)
+    }
+
+    fn const_float(&self, value: f64) -> FloatValue<'ctx> {
+        self.ctx.f64_type().const_float(value)
+    }
+
+    fn const_bool(&self, value: bool) -> IntValue<'ctx> {
+        match value {
+            true => self.ctx.bool_type().const_all_ones(),
+            false => self.ctx.bool_type().const_zero(),
+        }
+    }
+
+    fn const_null(&self) -> PointerValue<'ctx> {
         self.ctx.ptr_type(AddressSpace::default()).const_null()
     }
 
-    fn value_from_ptr(&self, ty: &Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'ctx> {
-        if Self::is_indirect(ty) {
-            LayoutValue::Indirect(ptr)
-        } else {
-            let value = self
-                .builder
-                .build_load(self.lower_ty(ty), ptr, "name")
-                .unwrap();
-            LayoutValue::Scalar(value)
+    fn layout(&self, ty: &'hir Ty, value: BasicValueEnum<'ctx>) -> LayoutValue<'hir, 'ctx> {
+        match ty {
+            Ty::Int | Ty::UInt => LayoutValue::int(IntSize::Bits64, value),
+            Ty::Byte | Ty::Bool => LayoutValue::int(IntSize::Bits8, value),
+            Ty::Float => LayoutValue::float(value),
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(_) => LayoutValue::Tuple(ty, value.into_pointer_value()),
+            Ty::Array(elem_ty) => LayoutValue::array(elem_ty, value),
+            Ty::Func(params, ret_ty) => LayoutValue::Closure(
+                self.func_ty(params, ret_ty, true),
+                value.into_pointer_value(),
+            ),
+            Ty::Named(id) => LayoutValue::Record(*id, value.into_pointer_value()),
+        }
+    }
+
+    fn layout_direct(&self, ty: &'hir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'hir, 'ctx> {
+        match ty {
+            Ty::Int | Ty::UInt => {
+                let int = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                LayoutValue::int(IntSize::Bits64, int)
+            }
+            Ty::Byte | Ty::Bool => {
+                let int = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                LayoutValue::int(IntSize::Bits8, int)
+            }
+            Ty::Float => {
+                let float = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                LayoutValue::float(float)
+            }
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(_) => LayoutValue::Tuple(ty, ptr),
+            Ty::Array(elem_ty) => {
+                let array = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                LayoutValue::array(elem_ty, array)
+            }
+            Ty::Func(params, ret_ty) => {
+                let func_ty = self.func_ty(params, ret_ty, true);
+                LayoutValue::Closure(func_ty, ptr)
+            }
+            Ty::Named(id) => LayoutValue::Record(*id, ptr),
+        }
+    }
+
+    fn layout_indirect(&self, ty: &'hir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'hir, 'ctx> {
+        match ty {
+            Ty::Int | Ty::UInt => LayoutValue::indirect_int(IntSize::Bits64, ptr),
+            Ty::Byte | Ty::Bool => LayoutValue::indirect_int(IntSize::Bits8, ptr),
+            Ty::Float => LayoutValue::indirect_float(ptr),
+            Ty::Char => todo!("Strings"),
+            Ty::Tuple(_) => LayoutValue::Tuple(ty, ptr),
+            Ty::Array(elem_ty) => LayoutValue::indirect_array(elem_ty, ptr),
+            Ty::Func(params, ret_ty) => {
+                let func_ty = self.func_ty(params, ret_ty, true);
+                LayoutValue::Closure(func_ty, ptr)
+            }
+            Ty::Named(id) => LayoutValue::Record(*id, ptr),
         }
     }
 
@@ -465,28 +539,12 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    const fn is_indirect(ty: &Ty) -> bool {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => false,
-            Ty::Array(_) | Ty::Func(_, _) | Ty::Named(_) => true,
-            Ty::Tuple(inner) => !inner.is_empty(),
-        }
-    }
-
-    fn emit_alloca(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
-        self.builder.build_alloca(ty, name).unwrap()
-    }
-
     /// # Panics
     /// Panics if the builder is not positioned, or is positioned but not within a function.
     fn emit_alloca_entry(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
-        let curr_block = self
-            .builder
-            .get_insert_block()
-            .expect("builder has been positioned");
-        let head_block = curr_block
-            .get_parent()
-            .expect("builder is within function")
+        let curr_block = self.curr_block();
+        let head_block = self
+            .curr_function()
             .get_first_basic_block()
             .expect("function has at least one block; we got this function via a block");
 
@@ -496,134 +554,324 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             self.builder.position_at_end(head_block);
         }
 
-        let ptr = self.emit_alloca(ty, name);
+        let alloc = self.builder.build_alloca(ty, name).unwrap();
 
         self.builder.position_at_end(curr_block);
 
-        ptr
+        alloc
     }
 
-    pub(crate) fn emit_drop(&self, ty: &Ty, val: LayoutValue<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => return, // Trivial types
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and therefore doesn't exist
-                if elem_tys.is_empty() {
-                    return;
-                }
-                self.tuple_drop(ty, elem_tys)
+    fn emit_drop(&self, value: LayoutValue<'hir, 'ctx>) {
+        match value {
+            LayoutValue::Scalar(ScalarKind::Int(_), _)
+            | LayoutValue::Scalar(ScalarKind::Float, _)
+            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), _)
+            | LayoutValue::Zst => return, // Trivial types
+            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) => {
+                self.builder
+                    .build_call(self.array_drop(elem_ty), &[ptr.into()], "")
+                    .unwrap();
             }
-            Ty::Array(elem_ty) => self.array_drop(ty, elem_ty),
-            Ty::Func(_, _) => self.closure_drop(),
-            Ty::Named(id) => self.struct_drop(*id),
-        };
-        self.builder
-            .build_call(func, &[val.as_value().into()], "drop")
-            .unwrap();
+            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
+                let ptr = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
+                self.builder
+                    .build_call(self.array_drop(elem_ty), &[ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Closure(_, ptr) => {
+                self.builder
+                    .build_call(self.closure_drop(), &[ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Record(id, ptr) => {
+                self.builder
+                    .build_call(self.record_drop(id), &[ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Tuple(ty, ptr) => {
+                self.builder
+                    .build_call(self.tuple_drop(ty), &[ptr.into()], "")
+                    .unwrap();
+            }
+        }
     }
 
-    pub(crate) fn emit_copy(&self, ty: &Ty, val: LayoutValue<'ctx>, dst: PointerValue<'ctx>) {
-        let func = match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => {
-                self.builder.build_store(dst, val.as_scalar()).unwrap();
-                return;
+    fn emit_dup(&self, value: LayoutValue<'hir, 'ctx>) -> LayoutValue<'hir, 'ctx> {
+        match value {
+            LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(_))
+            | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(_))
+            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), _) => value, // Trivial types
+            LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(ptr)) => {
+                let ty = match size {
+                    IntSize::Bits8 => self.ctx.i8_type(),
+                    IntSize::Bits64 => self.ctx.i64_type(),
+                };
+                LayoutValue::int(size, self.builder.build_load(ty, ptr, "").unwrap())
             }
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(elem_tys) => {
-                // If it's empty, it's unit and doesn't exist.
-                if elem_tys.is_empty() {
-                    return;
-                }
-                self.tuple_copy(ty, elem_tys)
+            LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Indirect(ptr)) => {
+                LayoutValue::float(
+                    self.builder
+                        .build_load(self.ctx.f64_type(), ptr, "")
+                        .unwrap(),
+                )
             }
-            Ty::Array(_) => self.array_copy(ty),
-            Ty::Func(..) => self.closure_copy(),
-            Ty::Named(id) => self.struct_copy(*id),
-        };
-        self.builder
-            .build_call(
-                func,
-                &[dst.as_basic_value_enum().into(), val.as_value().into()],
-                "copy",
-            )
-            .unwrap();
+            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
+                self.builder
+                    .build_call(self.array_incr_refc(), &[array.into()], "")
+                    .unwrap();
+                value
+            }
+            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
+                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
+                self.builder
+                    .build_call(self.array_incr_refc(), &[array.into()], "")
+                    .unwrap();
+                LayoutValue::array(elem_ty, array)
+            }
+            LayoutValue::Closure(func_ty, ptr) => {
+                let new_ptr = self.emit_alloca_entry(self.closure_ty(), "");
+                self.builder
+                    .build_call(self.closure_copy(), &[new_ptr.into(), ptr.into()], "")
+                    .unwrap();
+                LayoutValue::Closure(func_ty, new_ptr)
+            }
+            LayoutValue::Record(id, ptr) => {
+                let new_ptr = self.emit_alloca_entry(self.lower_ty(&Ty::Named(id)), "");
+                self.builder
+                    .build_call(self.record_copy(id), &[new_ptr.into(), ptr.into()], "")
+                    .unwrap();
+                LayoutValue::Record(id, new_ptr)
+            }
+            LayoutValue::Tuple(ty, ptr) => {
+                let new_ptr = self.emit_alloca_entry(self.lower_ty(ty), "");
+                self.builder
+                    .build_call(self.tuple_copy(ty), &[new_ptr.into(), ptr.into()], "")
+                    .unwrap();
+                LayoutValue::Tuple(ty, new_ptr)
+            }
+            LayoutValue::Zst => LayoutValue::Zst,
+        }
     }
 
-    pub(crate) fn emit_equals(
+    fn emit_copy(&self, value: LayoutValue<'hir, 'ctx>, dst: LayoutValue<'hir, 'ctx>) {
+        if value == LayoutValue::Zst {
+            return;
+        }
+        let dst = dst.as_pointer();
+        match value {
+            LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(value))
+            | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(value))
+            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Direct(value)) => {
+                self.builder.build_store(dst, value).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(ptr)) => {
+                let ty = match size {
+                    IntSize::Bits8 => self.ctx.i8_type(),
+                    IntSize::Bits64 => self.ctx.i64_type(),
+                };
+                let int = self.builder.build_load(ty, ptr, "").unwrap();
+                self.builder.build_store(dst, int).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Indirect(ptr)) => {
+                let float = self
+                    .builder
+                    .build_load(self.ctx.f64_type(), ptr, "")
+                    .unwrap();
+                self.builder.build_store(dst, float).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
+                self.builder
+                    .build_call(self.array_incr_refc(), &[array.into()], "")
+                    .unwrap();
+                self.builder.build_store(dst, array).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(ptr)) => {
+                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
+                self.builder
+                    .build_call(self.array_incr_refc(), &[array.into()], "")
+                    .unwrap();
+                self.builder.build_store(dst, array).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(ptr)) => {
+                let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
+                self.builder.build_store(dst, func).unwrap();
+            }
+            LayoutValue::Closure(_, ptr) => {
+                self.builder
+                    .build_call(self.closure_copy(), &[dst.into(), ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Record(id, ptr) => {
+                self.builder
+                    .build_call(self.record_copy(id), &[dst.into(), ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Tuple(ty, ptr) => {
+                self.builder
+                    .build_call(self.tuple_copy(ty), &[dst.into(), ptr.into()], "")
+                    .unwrap();
+            }
+            LayoutValue::Zst => {}
+        }
+    }
+
+    fn emit_equals(
         &self,
-        ty: &Ty,
-        lhs: LayoutValue<'ctx>,
-        rhs: LayoutValue<'ctx>,
+        lhs: LayoutValue<'hir, 'ctx>,
+        rhs: LayoutValue<'hir, 'ctx>,
     ) -> IntValue<'ctx> {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Bool => self
+        match (lhs, rhs) {
+            (
+                LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(lhs)),
+                LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(rhs)),
+            ) => self
                 .builder
                 .build_int_compare(
                     IntPredicate::EQ,
                     lhs.into_int_value(),
                     rhs.into_int_value(),
-                    "equals",
+                    "",
                 )
                 .unwrap(),
-            Ty::Float => self
+            (
+                LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(lhs)),
+                LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Indirect(rhs)),
+            ) => {
+                let ty = match size {
+                    IntSize::Bits64 => self.ctx.i64_type(),
+                    IntSize::Bits8 => self.ctx.i8_type(),
+                };
+                let lhs = self.builder.build_load(ty, lhs, "").unwrap();
+                let rhs = self.builder.build_load(ty, rhs, "").unwrap();
+                self.builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        lhs.into_int_value(),
+                        rhs.into_int_value(),
+                        "",
+                    )
+                    .unwrap()
+            }
+            (
+                LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(lhs)),
+                LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(rhs)),
+            ) => self
                 .builder
                 .build_float_compare(
                     FloatPredicate::OEQ,
                     lhs.into_float_value(),
                     rhs.into_float_value(),
-                    "equals",
+                    "",
                 )
                 .unwrap(),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(inner_tys) => {
-                // If it's empty, it's unit and therefore always equals
-                if inner_tys.is_empty() {
-                    self.ctx.bool_type().const_int(1, false)
-                } else {
-                    self.builder
-                        .build_call(
-                            self.tuple_equals(ty, inner_tys),
-                            &[lhs.into(), rhs.into()],
-                            "equals",
-                        )
-                        .unwrap()
-                        .try_as_basic_value()
-                        .unwrap_basic()
-                        .into_int_value()
-                }
+            (
+                LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Indirect(lhs)),
+                LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Indirect(rhs)),
+            ) => {
+                let ty = self.ctx.f64_type();
+                let lhs = self.builder.build_load(ty, lhs, "").unwrap();
+                let rhs = self.builder.build_load(ty, rhs, "").unwrap();
+                self.builder
+                    .build_float_compare(
+                        FloatPredicate::OEQ,
+                        lhs.into_float_value(),
+                        rhs.into_float_value(),
+                        "",
+                    )
+                    .unwrap()
             }
-            Ty::Array(inner_ty) => self
+            (
+                LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(lhs)),
+                LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(rhs)),
+            ) => self
                 .builder
-                .build_call(
-                    self.array_equals(ty, inner_ty),
-                    &[lhs.as_scalar().into(), rhs.as_scalar().into()],
-                    "equals",
+                .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()], "")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_int_value(),
+            (
+                LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(lhs)),
+                LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(rhs)),
+            ) => {
+                let ty = self.array_ty();
+                let lhs = self.builder.build_load(ty, lhs, "").unwrap();
+                let rhs = self.builder.build_load(ty, rhs, "").unwrap();
+                self.builder
+                    .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()], "")
+                    .unwrap()
+                    .try_as_basic_value()
+                    .unwrap_basic()
+                    .into_int_value()
+            }
+            (
+                LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Direct(lhs)),
+                LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Direct(rhs)),
+            ) => self
+                .builder
+                .build_int_compare(
+                    IntPredicate::EQ,
+                    lhs.into_pointer_value(),
+                    rhs.into_pointer_value(),
+                    "",
                 )
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
-                .into_int_value(),
-            Ty::Func(_, _) => self
+                .unwrap(),
+            (
+                LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(lhs)),
+                LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(rhs)),
+            ) => {
+                let lhs = self.builder.build_load(self.ptr_ty(), lhs, "").unwrap();
+                let rhs = self.builder.build_load(self.ptr_ty(), rhs, "").unwrap();
+                self.builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        lhs.into_pointer_value(),
+                        rhs.into_pointer_value(),
+                        "",
+                    )
+                    .unwrap()
+            }
+            (LayoutValue::Closure(_, lhs), LayoutValue::Closure(_, rhs)) => self
                 .builder
-                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "equals")
+                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_int_value(),
-            Ty::Named(id) => self
+            (LayoutValue::Record(id, lhs), LayoutValue::Record(_, rhs)) => self
                 .builder
-                .build_call(self.struct_equals(*id), &[lhs.into(), rhs.into()], "equals")
+                .build_call(self.record_equals(id), &[lhs.into(), rhs.into()], "")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_int_value(),
+            (LayoutValue::Tuple(ty, lhs), LayoutValue::Tuple(_, rhs)) => self
+                .builder
+                .build_call(self.tuple_equals(ty), &[lhs.into(), rhs.into()], "equals")
+                .unwrap()
+                .try_as_basic_value()
+                .unwrap_basic()
+                .into_int_value(),
+            (LayoutValue::Zst, LayoutValue::Zst) => self.const_bool(true),
+            _ => unreachable!("mismatched lhs and rhs types"),
         }
     }
 
-    fn emit_move(&self, ty: &Ty, val: LayoutValue<'ctx>, to: PointerValue<'ctx>) {
-        self.emit_copy(ty, val, to);
-        self.emit_drop(ty, val);
+    fn emit_panic(&self, msg: &str) {
+        let msg = self
+            .builder
+            .build_global_string_ptr(msg, "")
+            .unwrap()
+            .as_pointer_value();
+        self.builder
+            .build_call(self.panic(), &[msg.into()], "")
+            .unwrap();
+        self.builder.build_unreachable().unwrap();
+    }
+
+    fn emit_move(&self, value: LayoutValue<'hir, 'ctx>, to: LayoutValue<'hir, 'ctx>) {
+        self.emit_copy(value, to);
+        self.emit_drop(value);
     }
 
     /// # Panics
@@ -637,11 +885,17 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     }
 
     /// # Panics
-    /// Panics if the builder is not positioned, or is positioned but not within a function.
-    fn curr_function(&self) -> FunctionValue<'ctx> {
+    /// Panics if the builder is not positioned.
+    fn curr_block(&self) -> BasicBlock<'ctx> {
         self.builder
             .get_insert_block()
             .expect("builder has been positioned")
+    }
+
+    /// # Panics
+    /// Panics if the builder is not positioned, or is positioned but not within a function.
+    fn curr_function(&self) -> FunctionValue<'ctx> {
+        self.curr_block()
             .get_parent()
             .expect("builder is within function")
     }
@@ -663,7 +917,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 "T{}E",
                 tys.iter().map(|ty| self.mangle_ty(ty)).collect::<String>()
             ),
-            Ty::Array(ty) => format!("A{}", self.mangle_ty(ty)),
+            Ty::Array(elem_ty) => self.mangle_array_ty(elem_ty),
             Ty::Func(params, ret_ty) => {
                 let param_names = params.iter().fold(String::new(), |mut s, p| {
                     let prefix = if p.mutable { "M" } else { "P" };
@@ -674,5 +928,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             }
             Ty::Named(id) => Self::mangle_name(self.hir.ty_ident(*id).ident.to_string()),
         }
+    }
+
+    fn mangle_array_ty(&self, elem_ty: &Ty) -> String {
+        format!("A{}", self.mangle_ty(elem_ty))
     }
 }

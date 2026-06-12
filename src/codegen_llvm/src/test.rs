@@ -165,3 +165,18 @@ fn arrays() {
 ";
     check(input, OptLevel::O0);
 }
+
+#[test]
+fn unit_param() {
+    let input = "
+    fn main(): () = {
+        let mut v = ()
+        stupid((), mut v, 42)
+    }
+    fn stupid(x: (), mut y: (), z: Int): () = {
+        y = x
+        y
+    }
+";
+    check(input, OptLevel::O0);
+}

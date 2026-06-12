@@ -41,22 +41,14 @@ impl<'ctx> Codegen<'_, '_, 'ctx> {
             .into_pointer_value();
         let is_null = self
             .builder
-            .build_int_compare(IntPredicate::EQ, ptr, self.null_ptr(), "")
+            .build_int_compare(IntPredicate::EQ, ptr, self.const_null(), "")
             .unwrap();
         self.builder
             .build_conditional_branch(is_null, panic_block, ret_block)
             .unwrap();
 
         self.builder.position_at_end(panic_block);
-        let panic_msg = self
-            .builder
-            .build_global_string_ptr("allocation failed", "alloc_panic_msg")
-            .unwrap()
-            .as_pointer_value();
-        self.builder
-            .build_call(self.panic(), &[panic_msg.into()], "")
-            .unwrap();
-        self.builder.build_unconditional_branch(ret_block).unwrap();
+        self.emit_panic("allocation failed");
 
         self.builder.position_at_end(ret_block);
         self.builder.build_return(Some(&ptr)).unwrap();
