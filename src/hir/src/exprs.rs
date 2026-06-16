@@ -1,7 +1,6 @@
 use std::range::Range;
 
 use slotmap::new_key_type;
-use smallvec::SmallVec;
 
 use ident::SpanIdent;
 
@@ -21,10 +20,10 @@ pub enum Stmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Ident(VarId),
+    Var(VarId),
     Lit(LitExpr),
-    Array(SmallVec<[ExprId; 3]>),
-    Tuple(SmallVec<[ExprId; 3]>),
+    Array(Vec<ExprId>),
+    Tuple(Vec<ExprId>),
     Infix {
         op: InfixOp,
         lhs: ExprId,
@@ -47,9 +46,13 @@ pub enum Expr {
         args: Vec<Arg>,
     },
     Lambda {
-        params: SmallVec<[VarId; 3]>,
+        params: Vec<VarId>,
         body: ExprId,
-        captures: SmallVec<[VarId; 3]>,
+        captures: Vec<VarId>,
+    },
+    Assign {
+        place: ExprId,
+        value: ExprId,
     },
     If {
         cond: ExprId,
@@ -81,7 +84,7 @@ pub enum LitExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
-    pub val: ExprId,
+    pub value: ExprId,
     pub mutable: bool,
     pub span: Range<u32>,
 }
@@ -94,7 +97,6 @@ pub struct BlockExpr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
-    Assign,
     Add,
     AddF,
     Sub,

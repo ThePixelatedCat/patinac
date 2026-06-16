@@ -51,14 +51,14 @@ pub fn type_hir(hir: &mut Hir, handler: ErrorHandler<'_>) -> Result<SecondaryMap
 
     for exec in hir.execs() {
         match &exec.kind {
-            ExecKind::Const { val, .. } => {
+            ExecKind::Const(val) => {
                 let initialiser_ty = checker.infer_expr(hir, exec.module, *val);
-                let binding_ty = checker.var_ty(hir, exec.id).clone();
+                let binding_ty = checker.var_ty(hir, exec.var).clone();
                 checker.constrain_eq(initialiser_ty, binding_ty, hir.expr_span(*val), exec.module);
             }
-            ExecKind::Fn { body, .. } => {
+            ExecKind::Func { body, .. } => {
                 let body_ty = checker.infer_expr(hir, exec.module, *body);
-                let PartialTy::Fn(_, ret_ty) = checker.var_ty(hir, exec.id) else {
+                let PartialTy::Fn(_, ret_ty) = checker.var_ty(hir, exec.var) else {
                     unreachable!("function was given non-function type during nameres")
                 };
                 let ret_ty = *ret_ty.clone();
@@ -67,7 +67,7 @@ pub fn type_hir(hir: &mut Hir, handler: ErrorHandler<'_>) -> Result<SecondaryMap
         }
     }
     if let Some(main) = hir.main() {
-        let ExecKind::Fn { body, .. } = &main.kind else {
+        let ExecKind::Func { body, .. } = &main.kind else {
             unreachable!("ICE")
         };
         let body_ty = checker.infer_expr(hir, main.module, *body);

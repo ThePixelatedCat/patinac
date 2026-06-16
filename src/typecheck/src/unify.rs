@@ -62,7 +62,7 @@ fn unify_field_ty(
         }
     };
 
-    let Some(decl_field_ty) = hir.ty_info(base_id).fields.get_ty(field_name.ident) else {
+    let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
         return Err(
             ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span, module)
         );
@@ -73,7 +73,7 @@ fn unify_field_ty(
         field_name.span,
         module,
         field_ty,
-        &decl_field_ty.into(),
+        &PartialTy::from(&field.ty),
     )
 }
 

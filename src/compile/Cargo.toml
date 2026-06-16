@@ -11,7 +11,8 @@ ast.path = "../ast"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"
-codegen_llvm.path = "../codegen_llvm"
+lower.path = "../lower"
+codegen.path = "../codegen"
 # External
 yansi = "1.0.1"
 argh = { version = "0.1.19", features = ["help"], default-features = false }

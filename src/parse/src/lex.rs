@@ -225,6 +225,10 @@ pub enum TokKind {
     #[display("export")]
     #[token("export")]
     Export,
+    /// `pub`.
+    #[display("pub")]
+    #[token("pub")]
+    Pub,
     /// `record`.
     #[display("record")]
     #[token("record")]

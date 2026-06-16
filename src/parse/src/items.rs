@@ -1,7 +1,6 @@
 use std::range::Range;
 
 use derive_more::From;
-use smallvec::{SmallVec, smallvec};
 
 use ast::{ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant, VisItem};
 use ident::SpanIdent;
@@ -46,7 +45,7 @@ impl Parser<'_> {
         let ident = self.ident();
         let generics = self.generic_params();
         let (fields, _) = self.fields()?;
-        let (generics, _) = generics?;
+        let generics = generics?;
         let ident = ident?;
 
         Ok(TyItem {
@@ -70,7 +69,7 @@ impl Parser<'_> {
             TokKind::LBrace,
             TokKind::RBrace,
         )?;
-        let (generics, _) = generics?;
+        let generics = generics?;
         let ident = ident?;
 
         Ok(TyItem {
@@ -83,11 +82,12 @@ impl Parser<'_> {
     fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
         self.delimited_list(
             |this| {
+                let public = this.consume_at(TokKind::Pub).is_some();
                 let ident = this.ident()?;
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
 
-                Ok(Field { ident, ty })
+                Ok(Field { public, ident, ty })
             },
             TokKind::LParen,
             TokKind::RParen,
@@ -113,7 +113,7 @@ impl Parser<'_> {
         self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
-        let (generics, _) = self.generic_params()?;
+        let generics = self.generic_params()?;
         let (params, _) = self.delimited_list(
             |this| {
                 let mut_tok = this.consume_at(TokKind::Mut);
@@ -152,13 +152,13 @@ impl Parser<'_> {
         })
     }
 
-    fn generic_params(&mut self) -> Result<(SmallVec<[SpanIdent; 4]>, Option<Range<u32>>)> {
+    fn generic_params(&mut self) -> Result<Vec<SpanIdent>> {
         if self.at(TokKind::LBracket) {
-            let (idents, span) =
+            let (idents, _) =
                 self.delimited_list(Self::ident, TokKind::LBracket, TokKind::RBracket)?;
-            Ok((idents.into(), Some(span)))
+            Ok(idents)
         } else {
-            Ok((smallvec![], None))
+            Ok(Vec::new())
         }
     }
 }

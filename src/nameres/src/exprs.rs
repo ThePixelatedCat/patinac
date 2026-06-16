@@ -1,7 +1,6 @@
 use foldhash::HashSet;
 use itertools::Itertools as _;
 use package::ModuleId;
-use smallvec::SmallVec;
 
 use ast::ExprKind;
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
@@ -21,7 +20,7 @@ pub fn resolve_expr(
 ) -> Result<ExprId> {
     let new_expr = match expr.kind {
         ExprKind::Var(path) => match scope.resolve_var(path) {
-            Ok(id) => hir::Expr::Ident(id),
+            Ok(id) => hir::Expr::Var(id),
             Err(error) => {
                 return Err(handler.err(error.span(expr.span, scope.module())));
             }
@@ -32,11 +31,16 @@ pub fn resolve_expr(
         ExprKind::Infix { op, lhs, rhs } => {
             let rhs = resolve_expr(scope, hir, handler, *rhs);
             let lhs = resolve_expr(scope, hir, handler, *lhs)?;
-            let op = convert_infix_op(op);
-            if op == hir::InfixOp::Assign {
-                check_is_place(hir, scope.module(), handler, lhs)?;
+            match convert_infix_op(op) {
+                Some(op) => hir::Expr::Infix { op, lhs, rhs: rhs? },
+                None => {
+                    check_is_place(hir, scope.module(), handler, lhs)?;
+                    hir::Expr::Assign {
+                        place: lhs,
+                        value: rhs?,
+                    }
+                }
             }
-            hir::Expr::Infix { op, lhs, rhs: rhs? }
         }
         ExprKind::Prefix { op, expr } => hir::Expr::Prefix {
             op: convert_prefix_op(op),
@@ -64,7 +68,7 @@ pub fn resolve_expr(
                         check_is_place(hir, scope.module(), handler, val)?;
                     }
                     Ok(Arg {
-                        val,
+                        value: val,
                         mutable: arg.mutable,
                         span: arg.span,
                     })
@@ -78,7 +82,7 @@ pub fn resolve_expr(
                 .map(|p| (p[0], p[1]))
                 .filter(|(a, b)| a.mutable || b.mutable)
                 .try_for_each(|(a, b)| {
-                    if overlaps(hir, a.val, b.val) {
+                    if overlaps(hir, a.value, b.value) {
                         Err(handler
                             .err(ErrorKind::OverlappingPlace(b.span).span(a.span, scope.module())))
                     } else {
@@ -154,7 +158,7 @@ fn resolve_exprs(
     hir: &mut Hir,
     handler: &mut ErrorHandler,
     exprs: Vec<ast::Expr>,
-) -> Result<SmallVec<[ExprId; 3]>> {
+) -> Result<Vec<ExprId>> {
     exprs
         .into_iter()
         .map(|expr| resolve_expr(scope, hir, handler, expr))
@@ -197,8 +201,8 @@ fn check_is_place(
     handler: &mut ErrorHandler,
     place: ExprId,
 ) -> Result<()> {
-    match hir.expr_info(place) {
-        hir::Expr::Ident(id) => {
+    match hir.expr(place) {
+        hir::Expr::Var(id) => {
             if hir.var_info(*id).mutable {
                 Ok(())
             } else {
@@ -214,10 +218,10 @@ fn check_is_place(
 }
 
 fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
-    match (hir.expr_info(a), hir.expr_info(b)) {
-        (hir::Expr::Ident(a), hir::Expr::Ident(b)) => a == b,
-        (hir::Expr::Ident(_), hir::Expr::Index { array: arr, .. }) => overlaps(hir, a, *arr),
-        (hir::Expr::Ident(_), hir::Expr::Field { base, .. }) => overlaps(hir, a, *base),
+    match (hir.expr(a), hir.expr(b)) {
+        (hir::Expr::Var(a), hir::Expr::Var(b)) => a == b,
+        (hir::Expr::Var(_), hir::Expr::Index { array: arr, .. }) => overlaps(hir, a, *arr),
+        (hir::Expr::Var(_), hir::Expr::Field { base, .. }) => overlaps(hir, a, *base),
         (
             hir::Expr::Index {
                 array: arr_a,
@@ -228,8 +232,8 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
                 index: idx_b,
             },
         ) => {
-            if let hir::Expr::Lit(LitExpr::Int(idx_a)) = hir.expr_info(*idx_a)
-                && let hir::Expr::Lit(LitExpr::Int(idx_b)) = hir.expr_info(*idx_b)
+            if let hir::Expr::Lit(LitExpr::Int(idx_a)) = hir.expr(*idx_a)
+                && let hir::Expr::Lit(LitExpr::Int(idx_b)) = hir.expr(*idx_b)
             {
                 idx_a == idx_b
             } else {
@@ -319,21 +323,34 @@ fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &
     }
 }
 
-macro_rules! convert_op {
-    ($op:ident, $enum_name:ident, $($variant:ident),*) => {
-        match $op {
-            $(ast::$enum_name::$variant => hir::$enum_name::$variant),*
-        }
-    };
-}
-
 const fn convert_prefix_op(op: ast::PrefixOp) -> hir::PrefixOp {
-    convert_op!(op, PrefixOp, Not, Neg)
+    match op {
+        ast::PrefixOp::Not => hir::PrefixOp::Not,
+        ast::PrefixOp::Neg => hir::PrefixOp::Neg,
+    }
 }
 
-const fn convert_infix_op(op: ast::InfixOp) -> hir::InfixOp {
-    convert_op!(
-        op, InfixOp, Assign, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Xor, Eqq,
-        Neq, Gt, Lt, Geq, Leq
-    )
+/// Converts an ast infix operator to a hir infix operator, returning `None` if the ast operator was `Assign`.
+const fn convert_infix_op(op: ast::InfixOp) -> Option<hir::InfixOp> {
+    match op {
+        ast::InfixOp::Assign => None,
+        ast::InfixOp::Add => Some(hir::InfixOp::Add),
+        ast::InfixOp::AddF => Some(hir::InfixOp::AddF),
+        ast::InfixOp::Sub => Some(hir::InfixOp::Sub),
+        ast::InfixOp::SubF => Some(hir::InfixOp::SubF),
+        ast::InfixOp::Mul => Some(hir::InfixOp::Mul),
+        ast::InfixOp::MulF => Some(hir::InfixOp::MulF),
+        ast::InfixOp::Div => Some(hir::InfixOp::Div),
+        ast::InfixOp::DivF => Some(hir::InfixOp::DivF),
+        ast::InfixOp::Exp => Some(hir::InfixOp::Exp),
+        ast::InfixOp::And => Some(hir::InfixOp::And),
+        ast::InfixOp::Or => Some(hir::InfixOp::Or),
+        ast::InfixOp::Xor => Some(hir::InfixOp::Xor),
+        ast::InfixOp::Eqq => Some(hir::InfixOp::Eqq),
+        ast::InfixOp::Neq => Some(hir::InfixOp::Neq),
+        ast::InfixOp::Gt => Some(hir::InfixOp::Gt),
+        ast::InfixOp::Lt => Some(hir::InfixOp::Lt),
+        ast::InfixOp::Geq => Some(hir::InfixOp::Geq),
+        ast::InfixOp::Leq => Some(hir::InfixOp::Leq),
+    }
 }

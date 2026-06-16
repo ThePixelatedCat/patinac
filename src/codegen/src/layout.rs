@@ -1,23 +1,22 @@
-use hir::{Ty, TyId};
 use inkwell::{
     types::FunctionType,
     values::{BasicValue, BasicValueEnum, FloatValue, IntValue, PointerValue},
 };
 
-use crate::Codegen;
+use mir::Ty;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum LayoutValue<'hir, 'ctx> {
-    Scalar(ScalarKind<'hir, 'ctx>, ScalarLayout<'ctx>),
+pub enum LayoutValue<'mir, 'ctx> {
+    Scalar(ScalarKind<'mir, 'ctx>, ScalarLayout<'ctx>),
 
     Closure(FunctionType<'ctx>, PointerValue<'ctx>),
-    Record(TyId, PointerValue<'ctx>),
-    Tuple(&'hir Ty, PointerValue<'ctx>),
-
+    Fields(&'mir [Ty], PointerValue<'ctx>),
+    // Record(TyId, PointerValue<'ctx>),
+    // Tuple(&'hir Ty, PointerValue<'ctx>),
     Zst,
 }
 
-impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
+impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
     pub fn int<B: BasicValue<'ctx>>(size: IntSize, int: B) -> Self {
         assert!(int.as_basic_value_enum().is_int_value());
         Self::Scalar(
@@ -48,7 +47,7 @@ impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
         )
     }
 
-    pub fn array<B: BasicValue<'ctx>>(elem_ty: &'hir Ty, ptr: B) -> Self {
+    pub fn array<B: BasicValue<'ctx>>(elem_ty: &'mir Ty, ptr: B) -> Self {
         assert!(ptr.as_basic_value_enum().is_pointer_value());
         Self::Scalar(
             ScalarKind::Array(elem_ty),
@@ -56,7 +55,7 @@ impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
         )
     }
 
-    pub fn indirect_array<B: BasicValue<'ctx>>(elem_ty: &'hir Ty, ptr: B) -> Self {
+    pub fn indirect_array<B: BasicValue<'ctx>>(elem_ty: &'mir Ty, ptr: B) -> Self {
         Self::Scalar(
             ScalarKind::Array(elem_ty),
             ScalarLayout::Indirect(ptr.as_basic_value_enum().into_pointer_value()),
@@ -70,13 +69,18 @@ impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
         )
     }
 
+    pub fn indirect_func_ptr<B: BasicValue<'ctx>>(ty: FunctionType<'ctx>, ptr: B) -> Self {
+        Self::Scalar(
+            ScalarKind::FuncPtr(ty),
+            ScalarLayout::Indirect(ptr.as_basic_value_enum().into_pointer_value()),
+        )
+    }
+
     pub fn as_value(&self) -> BasicValueEnum<'ctx> {
         match self {
             Self::Scalar(_, ScalarLayout::Direct(value)) => *value,
             Self::Scalar(_, ScalarLayout::Indirect(ptr)) => ptr.as_basic_value_enum(),
-            Self::Closure(_, ptr) | Self::Record(_, ptr) | Self::Tuple(_, ptr) => {
-                ptr.as_basic_value_enum()
-            }
+            Self::Closure(_, ptr) | Self::Fields(_, ptr) => ptr.as_basic_value_enum(),
             Self::Zst => panic!("not a value"),
         }
     }
@@ -102,16 +106,16 @@ impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
         float.into_float_value()
     }
 
-    pub fn as_array(&self) -> (&'hir Ty, PointerValue<'ctx>) {
+    pub fn as_array(&self) -> (&'mir Ty, PointerValue<'ctx>) {
         let Self::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) = self else {
             panic!("not an array")
         };
         (elem_ty, ptr.into_pointer_value())
     }
 
-    pub fn as_record(&self) -> PointerValue<'ctx> {
+    pub fn as_fields(&self) -> (&'mir [Ty], PointerValue<'ctx>) {
         match self {
-            Self::Record(_, ptr) => *ptr,
+            &Self::Fields(fields, ptr) => (fields, ptr),
             _ => panic!("not a record"),
         }
     }
@@ -120,8 +124,7 @@ impl<'hir, 'ctx> LayoutValue<'hir, 'ctx> {
         match self {
             Self::Scalar(_, ScalarLayout::Indirect(ptr))
             | Self::Closure(_, ptr)
-            | Self::Record(_, ptr)
-            | Self::Tuple(_, ptr) => *ptr,
+            | Self::Fields(_, ptr) => *ptr,
             _ => panic!("not a pointer"),
         }
     }
@@ -144,10 +147,10 @@ pub enum ScalarLayout<'ctx> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum ScalarKind<'hir, 'ctx> {
+pub enum ScalarKind<'mir, 'ctx> {
     Int(IntSize),
     Float,
-    Array(&'hir Ty),
+    Array(&'mir Ty),
     FuncPtr(FunctionType<'ctx>),
 }
 
@@ -164,36 +167,38 @@ pub enum StorageClass {
     Scalar,
 }
 
-impl<'ctx> Codegen<'_, '_, 'ctx> {
-    pub fn storage_class(&self, ty: &Ty) -> StorageClass {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool | Ty::Array(_) => {
-                StorageClass::Scalar
-            }
-            Ty::Tuple(inner) => {
-                if inner.is_empty() {
-                    StorageClass::Zst
-                } else {
-                    StorageClass::Indirect
-                }
-            }
-            // FIXME: non-capturing functions are register
-            Ty::Func(_, _) => StorageClass::Indirect,
-            Ty::Named(id) => {
-                if self.hir.ty_info(*id).fields.is_empty() {
-                    StorageClass::Zst
-                } else {
-                    StorageClass::Indirect
-                }
+pub fn storage_class(ty: &Ty) -> StorageClass {
+    match ty {
+        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Array(_) | Ty::FuncPtr(_, _) => {
+            StorageClass::Scalar
+        }
+        Ty::Closure(_, _) => StorageClass::Indirect,
+        Ty::Fields(elem_tys) => {
+            if elem_tys.is_empty() {
+                StorageClass::Zst
+            } else {
+                StorageClass::Indirect
             }
         }
     }
+}
 
-    pub fn is_indirect(&self, ty: &Ty) -> bool {
-        self.storage_class(ty) == StorageClass::Indirect
-    }
+pub fn indirect(ty: &Ty) -> bool {
+    storage_class(ty) == StorageClass::Indirect
+}
 
-    pub fn is_zst(&self, ty: &Ty) -> bool {
-        self.storage_class(ty) == StorageClass::Zst
+pub fn zst(ty: &Ty) -> bool {
+    storage_class(ty) == StorageClass::Zst
+}
+
+pub fn trivial(ty: &Ty) -> bool {
+    match ty {
+        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::FuncPtr(_, _) => true,
+        Ty::Array(_) | Ty::Closure(_, _) => false,
+        Ty::Fields(fields) => all_trivial(fields),
     }
+}
+
+pub fn all_trivial(fields: &[Ty]) -> bool {
+    fields.iter().all(trivial)
 }

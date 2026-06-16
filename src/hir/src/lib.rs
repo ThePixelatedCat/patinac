@@ -2,16 +2,16 @@
 
 mod exprs;
 
-use std::range::Range;
+use std::{mem, range::Range};
 
 use derive_more::{From, IntoIterator};
+use foldhash::HashMap;
 use package::ModuleId;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::{Ident, SpanIdent};
 
 pub use exprs::*;
-use smallvec::SmallVec;
 
 #[derive(Debug, Default)]
 pub struct Hir {
@@ -32,6 +32,10 @@ impl Hir {
 
     pub fn add_execs(&mut self, execs: impl IntoIterator<Item = ExecItem>) {
         self.execs.extend(execs);
+    }
+
+    pub fn take_execs(&mut self) -> Vec<ExecItem> {
+        mem::take(&mut self.execs)
     }
 
     pub const fn main(&self) -> Option<&ExecItem> {
@@ -80,14 +84,14 @@ impl Hir {
         id
     }
 
+    pub fn expr(&self, id: ExprId) -> &Expr {
+        &self.exprs[id]
+    }
+
     pub fn take_expr(&mut self, id: ExprId) -> Expr {
         self.exprs
             .remove(id)
             .expect("id was gotten from this slotmap")
-    }
-
-    pub fn expr_info(&self, id: ExprId) -> &Expr {
-        &self.exprs[id]
     }
 
     pub fn expr_span(&self, id: ExprId) -> Range<u32> {
@@ -136,61 +140,32 @@ impl Hir {
 new_key_type! { pub struct TyId; }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TyInfo {
-    pub fields: Fields,
-    pub constructor_id: VarId,
+    pub fields: HashMap<Ident, Field>,
+    pub ctor: VarId,
 }
 
-#[derive(From, Debug, Clone, PartialEq, Eq, IntoIterator)]
-#[into_iterator(ref, ref_mut, owned)]
-pub struct Fields(Vec<(SpanIdent, Ty)>);
-impl Fields {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn get_ty(&self, ident: Ident) -> Option<&Ty> {
-        self.0
-            .iter()
-            .find(|(id, _)| id.ident == ident)
-            .map(|(_, ty)| ty)
-    }
-
-    /// # Panics
-    /// Panics if there is no field with the given name
-    pub fn get_ty_idx(&self, ident: Ident) -> (u32, &Ty) {
-        self.0
-            .iter()
-            .enumerate()
-            .find(|(_, (id, _))| id.ident == ident)
-            .map(|(idx, (_, ty))| (u32::try_from(idx).unwrap(), ty))
-            .unwrap()
-    }
-
-    pub fn tys(&self) -> impl Iterator<Item = &Ty> {
-        self.0.iter().map(|(_, ty)| ty)
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// A field of a `record` or of an `enum` variant.
+pub struct Field {
+    /// Whether the field is public.
+    pub public: bool,
+    /// The type of the field.
+    pub ty: Ty,
+    /// The span of the field.
+    pub span: Range<u32>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExecItem {
     pub module: ModuleId,
-    pub id: VarId,
+    pub var: VarId,
     pub kind: ExecKind,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ExecKind {
-    Const {
-        val: ExprId,
-    },
-    Fn {
-        params: SmallVec<[VarId; 3]>,
-        body: ExprId,
-    },
+    Const(ExprId),
+    Func { params: Vec<VarId>, body: ExprId },
 }
 
 new_key_type! { pub struct VarId; }

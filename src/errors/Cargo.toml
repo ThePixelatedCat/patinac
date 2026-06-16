@@ -8,7 +8,6 @@ edition = "2024"
 package.path = "../package"
 # External
 smol_str = "0.3.6"
-smallvec = { version = "1.15.1", features = ["union"] }
 derive_more = { version = "2.1.1", features = ["display", "error"] }
 
 [lints]

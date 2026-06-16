@@ -12,8 +12,8 @@ impl TypeChecker<'_> {
         reason = "Any given arm is readable on it's own"
     )]
     pub(super) fn infer_expr(&mut self, hir: &Hir, module: ModuleId, expr: ExprId) -> PartialTy {
-        let ty = match hir.expr_info(expr) {
-            Expr::Ident(id) => self.var_ty(hir, *id).clone(),
+        let ty = match hir.expr(expr) {
+            Expr::Var(id) => self.var_ty(hir, *id).clone(),
             Expr::Lit(lit) => match lit {
                 LitExpr::Int(_) => PartialTy::int_var(&mut self.table),
                 LitExpr::Float(_) => PartialTy::Float,
@@ -35,7 +35,7 @@ impl TypeChecker<'_> {
                 let arg_tys = args
                     .iter()
                     .map(|arg| Param {
-                        ty: self.infer_expr(hir, module, arg.val),
+                        ty: self.infer_expr(hir, module, arg.value),
                         mutable: arg.mutable,
                         span: arg.span,
                     })
@@ -53,10 +53,6 @@ impl TypeChecker<'_> {
                 let lhs_ty = self.infer_expr(hir, module, lhs);
                 let rhs_ty = self.infer_expr(hir, module, rhs);
                 match op {
-                    InfixOp::Assign => {
-                        self.constrain_eq(rhs_ty, lhs_ty, hir.expr_span(rhs), module);
-                        PartialTy::unit()
-                    }
                     InfixOp::Add | InfixOp::Sub | InfixOp::Mul | InfixOp::Div => {
                         let int_var = PartialTy::int_var(&mut self.table);
                         self.constrain_eq(lhs_ty, int_var.clone(), hir.expr_span(lhs), module);
@@ -103,7 +99,10 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            &Expr::Index { array: arr, index: idx } => {
+            &Expr::Index {
+                array: arr,
+                index: idx,
+            } => {
                 let idx_ty = self.infer_expr(hir, module, idx);
                 self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx), module);
                 let arr_ty = self.infer_expr(hir, module, arr);
@@ -142,6 +141,12 @@ impl TypeChecker<'_> {
                     .collect();
                 let body_ty = self.infer_expr(hir, module, *body);
                 PartialTy::Fn(param_tys, Box::new(body_ty))
+            }
+            Expr::Assign { place, value } => {
+                let place_ty = self.infer_expr(hir, module, *place);
+                let value_ty = self.infer_expr(hir, module, *value);
+                self.constrain_eq(value_ty, place_ty, hir.expr_span(*value), module);
+                PartialTy::unit()
             }
             Expr::If { cond, th, el } => {
                 let cond_ty = self.infer_expr(hir, module, *cond);

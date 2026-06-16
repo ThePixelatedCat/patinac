@@ -1,9 +1,8 @@
-//! Generates LLVM-IR and emits object files from the [`Hir`].
+//! Generates LLVM-IR and emits object files from the [`Mir`].
 //!
 //! The entry point to this crate is the [`Codegen`] type, and the [`codegen`][Codegen::codegen] method on it.
 //! Use the [`create_ctx`] function to acquire a [`Context`] for use in [`Codegen::new`].
 
-#![feature(integer_casts)]
 #![allow(
     clippy::unwrap_used,
     reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
@@ -17,7 +16,7 @@ mod runtime;
 mod test;
 mod witnesses;
 
-use std::{fmt::Write as _, iter, path::PathBuf, str::FromStr};
+use std::{fmt::Write as _, path::PathBuf, str::FromStr};
 
 use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
@@ -27,13 +26,12 @@ use inkwell::{
     module::Module,
     passes::PassBuilderOptions,
     targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
-    types::{BasicType, BasicTypeEnum, FunctionType, StructType},
+    types::{BasicType, BasicTypeEnum, FunctionType},
     values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
 };
 use slotmap::SecondaryMap;
 
-use errors::ErrorHandler;
-use hir::{ExecKind, ExprId, Hir, Param, Ty, TyId, VarId};
+use mir::{ExprId, ItemKind, Mir, Param, Ty, VarId};
 
 use crate::layout::{IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass};
 
@@ -91,17 +89,14 @@ impl OptLevel {
     }
 }
 
-pub struct Codegen<'hir, 'handler, 'ctx> {
-    hir: &'hir Hir,
-    ty_map: &'hir SecondaryMap<ExprId, Ty>,
-    handler: ErrorHandler<'handler>,
+pub struct Codegen<'mir, 'ctx> {
+    mir: &'mir Mir,
     ctx: &'ctx Context,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     target: TargetMachine,
-    structs: SecondaryMap<TyId, StructType<'ctx>>,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
-    vars: SecondaryMap<VarId, LayoutValue<'hir, 'ctx>>,
+    vars: SecondaryMap<VarId, LayoutValue<'mir, 'ctx>>,
     lambda_counter: u32,
 }
 
@@ -112,20 +107,14 @@ pub fn create_ctx() -> Context {
     Context::create()
 }
 
-impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
+impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
     /// Creates a new [`Codegen`] for a package with the given name.
     ///
     /// The context should be obtained via [`create_ctx()`].
     ///
     /// # Panics
     /// Panics if there is an issue initialising the target.
-    pub fn new(
-        hir: &'hir Hir,
-        ty_map: &'hir SecondaryMap<ExprId, Ty>,
-        handler: ErrorHandler<'handler>,
-        ctx: &'ctx Context,
-        package_name: &str,
-    ) -> Self {
+    pub fn new(mir: &'mir Mir, ctx: &'ctx Context, package_name: &str) -> Self {
         let module = ctx.create_module(package_name);
 
         Target::initialize_native(&InitializationConfig::default()).unwrap();
@@ -136,14 +125,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             .unwrap();
 
         Self {
-            hir,
-            ty_map,
-            handler,
+            mir,
             ctx,
             builder: ctx.create_builder(),
             module,
             target: target_machine,
-            structs: SecondaryMap::new(),
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
             lambda_counter: 0,
@@ -153,31 +139,21 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
     /// # Panics
     /// Panics if any functions are invalid, or if writing to the output file fails.
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
-        for (ty, _) in self.hir.tys() {
-            self.create_struct(ty);
-        }
-        for (ty, _) in self.hir.tys() {
-            self.build_struct(ty);
-        }
-        for (ty, _) in self.hir.tys() {
-            self.build_constructor(ty);
-        }
-
-        for exec in self.hir.execs() {
+        for exec in self.mir.execs() {
             match &exec.kind {
-                ExecKind::Const { .. } => todo!("Constants"),
-                ExecKind::Fn { .. } => {
-                    self.create_func(exec.id);
+                ItemKind::Const { .. } => todo!("Constants"),
+                ItemKind::Func { .. } => {
+                    self.create_func(exec.var);
                 }
             }
         }
 
-        if let Some(main) = self.hir.main() {
+        if let Some(main) = self.mir.main() {
             let fn_ty = self.ctx.i32_type().fn_type(&[], false);
             let func = self.module.add_function("main", fn_ty, None);
-            self.funcs.insert(main.id, func);
+            self.funcs.insert(main.var, func);
 
-            let ExecKind::Fn { body, .. } = main.kind else {
+            let ItemKind::Func { body, .. } = main.kind else {
                 unreachable!("ICE")
             };
 
@@ -191,14 +167,14 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             assert!(func.verify(true));
         }
 
-        for exec in self.hir.execs() {
+        for exec in self.mir.execs() {
             match &exec.kind {
-                ExecKind::Const { .. } => todo!("Constants"),
-                ExecKind::Fn { params, body } => {
-                    let Ty::Func(_, ret_ty) = self.hir.var_ty(exec.id) else {
+                ItemKind::Const { .. } => todo!("Constants"),
+                ItemKind::Func { params, body } => {
+                    let Ty::FuncPtr(_, ret_ty) = &self.mir.var(exec.var).ty else {
                         unreachable!("ICE")
                     };
-                    self.build_func(self.funcs[exec.id], params, ret_ty, *body);
+                    self.build_func(self.funcs[exec.var], params, ret_ty, *body);
                 }
             }
         }
@@ -228,32 +204,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
     }
 
-    fn create_struct(&mut self, id: TyId) {
-        let name = Self::mangle_name(self.hir.ty_ident(id).ident.to_string());
-        self.structs.insert(id, self.ctx.opaque_struct_type(&name));
-    }
-
-    fn build_struct(&self, id: TyId) {
-        let field_tys: Vec<_> = (&self.hir.ty_info(id).fields)
-            .into_iter()
-            .map(|(_, ty)| {
-                if let Ty::Named(field_id) = ty
-                    && *field_id == id
-                {
-                    todo!("Recursive records")
-                } else {
-                    self.lower_ty(ty)
-                }
-            })
-            .collect();
-        self.structs[id].set_body(&field_tys, false);
-    }
-
     fn create_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
-        let Ty::Func(params, ret_ty) = self.hir.var_ty(id) else {
+        let Ty::FuncPtr(params, ret_ty) = &self.mir.var(id).ty else {
             unreachable!("ICE")
         };
-        let name = Self::mangle_name(self.hir.var_info(id).ident.to_string());
+        let name = Self::mangle_name(self.mir.var(id).ident.to_string());
         let func_ty = self.func_ty(params, ret_ty, false);
         let func = self.module.add_function(&name, func_ty, None);
         self.funcs.insert(id, func);
@@ -264,32 +219,32 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         func
     }
 
-    fn build_constructor(&mut self, ty: TyId) {
-        let info = self.hir.ty_info(ty);
+    // fn build_ctor(&mut self, ctor: VarId, ty: TyId) {
+    //     let info = self.mir.ty(ty);
 
-        let func = self.create_func(info.constructor_id);
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        self.builder.position_at_end(entry_block);
+    //     let func = self.create_func(ctor);
+    //     let entry_block = self.ctx.append_basic_block(func, "entry");
+    //     self.builder.position_at_end(entry_block);
 
-        let ty = self.lower_ty(&Ty::Named(ty));
-        let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-        for (idx, (arg, field_ty)) in
-            iter::zip(func.get_param_iter().skip(1), info.fields.tys()).enumerate()
-        {
-            let field_ptr = self
-                .builder
-                .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "")
-                .unwrap();
-            self.emit_copy(
-                self.layout(field_ty, arg),
-                self.layout_indirect(field_ty, field_ptr),
-            );
-        }
+    //     let ty = self.fields_ty(&info.fields);
+    //     let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+    //     for (idx, (arg, field_ty)) in
+    //         iter::zip(func.get_param_iter().skip(1), &info.fields).enumerate()
+    //     {
+    //         let field_ptr = self
+    //             .builder
+    //             .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "")
+    //             .unwrap();
+    //         self.emit_copy(
+    //             self.layout(field_ty, arg),
+    //             self.layout_indirect(field_ty, field_ptr),
+    //         );
+    //     }
 
-        self.builder.build_return(None).unwrap();
+    //     self.builder.build_return(None).unwrap();
 
-        assert!(func.verify(true));
-    }
+    //     assert!(func.verify(true));
+    // }
 
     fn build_func(
         &mut self,
@@ -302,16 +257,16 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.builder.position_at_end(entry_block);
 
         // Skip the first argument if it's an out-pointer.
-        let offset = if self.is_indirect(ret_ty) { 1 } else { 0 };
+        let offset = if layout::indirect(ret_ty) { 1 } else { 0 };
         self.bind_params(params.iter().copied(), func.get_param_iter().skip(offset));
 
         let body = self.emit_expr(body);
 
-        match self.storage_class(ret_ty) {
+        match layout::storage_class(ret_ty) {
             StorageClass::Zst => self.builder.build_return(None).unwrap(),
             StorageClass::Indirect => {
                 let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-                self.emit_move(body, self.layout_indirect(ret_ty, out_ptr));
+                self.emit_move(body, out_ptr);
                 self.builder.build_return(None).unwrap()
             }
             StorageClass::Scalar => self.builder.build_return(Some(&body.as_scalar())).unwrap(),
@@ -331,18 +286,17 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         mut args: A,
     ) {
         for id in params {
-            let ty = self.hir.var_ty(id);
-            let mutable = self.hir.var_info(id).mutable;
+            let info = self.mir.var(id);
             // We don't actually pass ZSTs.
-            if self.is_zst(ty) {
+            if layout::zst(&info.ty) {
                 self.vars.insert(id, LayoutValue::Zst);
                 continue;
             }
             let value = args.next().expect("there should be enough args");
-            let value = if mutable {
-                self.layout_indirect(ty, value.into_pointer_value())
+            let value = if info.mutable {
+                self.layout_indirect(&info.ty, value.into_pointer_value())
             } else {
-                self.layout(ty, value)
+                self.layout(&info.ty, value)
             };
             self.vars.insert(id, value);
         }
@@ -353,15 +307,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::Int | Ty::UInt => self.ctx.i64_type().as_basic_type_enum(),
             Ty::Byte => self.ctx.i8_type().as_basic_type_enum(),
             Ty::Float => self.ctx.f64_type().as_basic_type_enum(),
-            Ty::Char => todo!("Strings"),
             Ty::Bool => self.ctx.bool_type().as_basic_type_enum(),
-            Ty::Tuple(inner_tys) => {
-                let inner_tys: Vec<_> = inner_tys.iter().map(|ty| self.lower_ty(ty)).collect();
-                self.ctx.struct_type(&inner_tys, false).as_basic_type_enum()
-            }
+            Ty::Fields(fields) => self.fields_ty(fields),
             Ty::Array(_) => self.array_ty(),
-            Ty::Func(..) => self.closure_ty(),
-            Ty::Named(id) => self.structs[*id].as_basic_type_enum(),
+            Ty::FuncPtr(..) => self.ptr_ty(),
+            Ty::Closure(..) => self.closure_ty(),
         }
     }
 
@@ -385,9 +335,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         let mut param_tys: Vec<_> = params
             .iter()
             .filter_map(|p| {
-                if self.is_zst(&p.ty) {
+                if layout::zst(&p.ty) {
                     None // Skip passing ZSTs.
-                } else if p.mutable || self.is_indirect(&p.ty) {
+                } else if p.mutable || layout::indirect(&p.ty) {
                     Some(self.ptr_ty().into()) // Pass stack pointers for mutable parameters or indirect types.
                 } else {
                     Some(self.lower_ty(&p.ty).into()) // Pass by value otherwise.
@@ -401,7 +351,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         }
 
         // Add parameter for return out-pointer if needed.
-        match self.storage_class(ret_ty) {
+        match layout::storage_class(ret_ty) {
             StorageClass::Zst => self.ctx.void_type().fn_type(&param_tys, false),
             StorageClass::Indirect => {
                 param_tys.insert(0, self.ptr_ty().into());
@@ -433,6 +383,11 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             false,
         );
         ty.as_basic_type_enum()
+    }
+
+    fn fields_ty(&self, fields: &[Ty]) -> BasicTypeEnum<'ctx> {
+        let field_tys: Vec<_> = fields.iter().map(|ty| self.lower_ty(ty)).collect();
+        self.ctx.struct_type(&field_tys, false).as_basic_type_enum()
     }
 
     fn ptr_ty(&self) -> BasicTypeEnum<'ctx> {
@@ -468,74 +423,78 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.ctx.ptr_type(AddressSpace::default()).const_null()
     }
 
-    fn layout(&self, ty: &'hir Ty, value: BasicValueEnum<'ctx>) -> LayoutValue<'hir, 'ctx> {
+    fn layout(&self, ty: &'mir Ty, value: BasicValueEnum<'ctx>) -> LayoutValue<'mir, 'ctx> {
         match ty {
             Ty::Int | Ty::UInt => LayoutValue::int(IntSize::Bits64, value),
             Ty::Byte | Ty::Bool => LayoutValue::int(IntSize::Bits8, value),
             Ty::Float => LayoutValue::float(value),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(_) => LayoutValue::Tuple(ty, value.into_pointer_value()),
             Ty::Array(elem_ty) => LayoutValue::array(elem_ty, value),
-            Ty::Func(params, ret_ty) => LayoutValue::Closure(
+            Ty::FuncPtr(params, ret_ty) => LayoutValue::func_ptr(
                 self.func_ty(params, ret_ty, true),
                 value.into_pointer_value(),
             ),
-            Ty::Named(id) => LayoutValue::Record(*id, value.into_pointer_value()),
+            Ty::Closure(params, ret_ty) => LayoutValue::Closure(
+                self.func_ty(params, ret_ty, true),
+                value.into_pointer_value(),
+            ),
+            Ty::Fields(fields) => LayoutValue::Fields(fields, value.into_pointer_value()),
         }
     }
 
-    fn layout_direct(&self, ty: &'hir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'hir, 'ctx> {
+    fn layout_direct(&self, ty: &'mir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'mir, 'ctx> {
         match ty {
             Ty::Int | Ty::UInt => {
-                let int = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                let int = self
+                    .builder
+                    .build_load(self.ctx.i64_type(), ptr, "")
+                    .unwrap();
                 LayoutValue::int(IntSize::Bits64, int)
             }
             Ty::Byte | Ty::Bool => {
-                let int = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                let int = self
+                    .builder
+                    .build_load(self.ctx.i8_type(), ptr, "")
+                    .unwrap();
                 LayoutValue::int(IntSize::Bits8, int)
             }
             Ty::Float => {
-                let float = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                let float = self
+                    .builder
+                    .build_load(self.ctx.f64_type(), ptr, "")
+                    .unwrap();
                 LayoutValue::float(float)
             }
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(_) => LayoutValue::Tuple(ty, ptr),
             Ty::Array(elem_ty) => {
-                let array = self.builder.build_load(self.lower_ty(ty), ptr, "").unwrap();
+                let array = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
                 LayoutValue::array(elem_ty, array)
             }
-            Ty::Func(params, ret_ty) => {
-                let func_ty = self.func_ty(params, ret_ty, true);
-                LayoutValue::Closure(func_ty, ptr)
+            Ty::FuncPtr(params, ret_ty) => {
+                let func_ptr = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
+                LayoutValue::func_ptr(
+                    self.func_ty(params, ret_ty, true),
+                    func_ptr.into_pointer_value(),
+                )
             }
-            Ty::Named(id) => LayoutValue::Record(*id, ptr),
+            Ty::Closure(params, ret_ty) => {
+                LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
+            }
+            Ty::Fields(fields) => LayoutValue::Fields(fields, ptr),
         }
     }
 
-    fn layout_indirect(&self, ty: &'hir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'hir, 'ctx> {
+    fn layout_indirect(&self, ty: &'mir Ty, ptr: PointerValue<'ctx>) -> LayoutValue<'mir, 'ctx> {
         match ty {
             Ty::Int | Ty::UInt => LayoutValue::indirect_int(IntSize::Bits64, ptr),
             Ty::Byte | Ty::Bool => LayoutValue::indirect_int(IntSize::Bits8, ptr),
             Ty::Float => LayoutValue::indirect_float(ptr),
-            Ty::Char => todo!("Strings"),
-            Ty::Tuple(_) => LayoutValue::Tuple(ty, ptr),
             Ty::Array(elem_ty) => LayoutValue::indirect_array(elem_ty, ptr),
-            Ty::Func(params, ret_ty) => {
-                let func_ty = self.func_ty(params, ret_ty, true);
-                LayoutValue::Closure(func_ty, ptr)
+            Ty::FuncPtr(params, ret_ty) => {
+                LayoutValue::indirect_func_ptr(self.func_ty(params, ret_ty, true), ptr)
             }
-            Ty::Named(id) => LayoutValue::Record(*id, ptr),
-        }
-    }
-
-    fn is_trivial(&self, ty: &Ty) -> bool {
-        match ty {
-            Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Char | Ty::Bool => true,
-            Ty::Array(_) | Ty::Func(_, _) => false,
-            Ty::Tuple(tys) => tys.iter().all(|ty| self.is_trivial(ty)),
-            Ty::Named(id) => (&self.hir.ty_info(*id).fields)
-                .into_iter()
-                .all(|(_, ty)| self.is_trivial(ty)),
+            Ty::Closure(params, ret_ty) => {
+                LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
+            }
+            Ty::Fields(fields) => LayoutValue::Fields(fields, ptr),
         }
     }
 
@@ -561,7 +520,7 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         alloc
     }
 
-    fn emit_drop(&self, value: LayoutValue<'hir, 'ctx>) {
+    fn emit_drop(&self, value: LayoutValue<'mir, 'ctx>) {
         match value {
             LayoutValue::Scalar(ScalarKind::Int(_), _)
             | LayoutValue::Scalar(ScalarKind::Float, _)
@@ -583,20 +542,15 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     .build_call(self.closure_drop(), &[ptr.into()], "")
                     .unwrap();
             }
-            LayoutValue::Record(id, ptr) => {
+            LayoutValue::Fields(fields, ptr) => {
                 self.builder
-                    .build_call(self.record_drop(id), &[ptr.into()], "")
-                    .unwrap();
-            }
-            LayoutValue::Tuple(ty, ptr) => {
-                self.builder
-                    .build_call(self.tuple_drop(ty), &[ptr.into()], "")
+                    .build_call(self.fields_drop(fields), &[ptr.into()], "")
                     .unwrap();
             }
         }
     }
 
-    fn emit_dup(&self, value: LayoutValue<'hir, 'ctx>) -> LayoutValue<'hir, 'ctx> {
+    fn emit_dup(&self, value: LayoutValue<'mir, 'ctx>) -> LayoutValue<'mir, 'ctx> {
         match value {
             LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(_))
             | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(_))
@@ -635,29 +589,21 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     .unwrap();
                 LayoutValue::Closure(func_ty, new_ptr)
             }
-            LayoutValue::Record(id, ptr) => {
-                let new_ptr = self.emit_alloca_entry(self.lower_ty(&Ty::Named(id)), "");
+            LayoutValue::Fields(fields, ptr) => {
+                let new_ptr = self.emit_alloca_entry(self.fields_ty(fields), "");
                 self.builder
-                    .build_call(self.record_copy(id), &[new_ptr.into(), ptr.into()], "")
+                    .build_call(self.fields_copy(fields), &[new_ptr.into(), ptr.into()], "")
                     .unwrap();
-                LayoutValue::Record(id, new_ptr)
-            }
-            LayoutValue::Tuple(ty, ptr) => {
-                let new_ptr = self.emit_alloca_entry(self.lower_ty(ty), "");
-                self.builder
-                    .build_call(self.tuple_copy(ty), &[new_ptr.into(), ptr.into()], "")
-                    .unwrap();
-                LayoutValue::Tuple(ty, new_ptr)
+                LayoutValue::Fields(fields, new_ptr)
             }
             LayoutValue::Zst => LayoutValue::Zst,
         }
     }
 
-    fn emit_copy(&self, value: LayoutValue<'hir, 'ctx>, dst: LayoutValue<'hir, 'ctx>) {
+    fn emit_copy(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
         if value == LayoutValue::Zst {
             return;
         }
-        let dst = dst.as_pointer();
         match value {
             LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(value))
             | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(value))
@@ -701,14 +647,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                     .build_call(self.closure_copy(), &[dst.into(), ptr.into()], "")
                     .unwrap();
             }
-            LayoutValue::Record(id, ptr) => {
+            LayoutValue::Fields(fields, ptr) => {
                 self.builder
-                    .build_call(self.record_copy(id), &[dst.into(), ptr.into()], "")
-                    .unwrap();
-            }
-            LayoutValue::Tuple(ty, ptr) => {
-                self.builder
-                    .build_call(self.tuple_copy(ty), &[dst.into(), ptr.into()], "")
+                    .build_call(self.fields_copy(fields), &[dst.into(), ptr.into()], "")
                     .unwrap();
             }
             LayoutValue::Zst => {}
@@ -717,8 +658,8 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
 
     fn emit_equals(
         &self,
-        lhs: LayoutValue<'hir, 'ctx>,
-        rhs: LayoutValue<'hir, 'ctx>,
+        lhs: LayoutValue<'mir, 'ctx>,
+        rhs: LayoutValue<'mir, 'ctx>,
     ) -> IntValue<'ctx> {
         match (lhs, rhs) {
             (
@@ -838,16 +779,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 .try_as_basic_value()
                 .unwrap_basic()
                 .into_int_value(),
-            (LayoutValue::Record(id, lhs), LayoutValue::Record(_, rhs)) => self
+            (LayoutValue::Fields(fields, lhs), LayoutValue::Fields(_, rhs)) => self
                 .builder
-                .build_call(self.record_equals(id), &[lhs.into(), rhs.into()], "")
-                .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
-                .into_int_value(),
-            (LayoutValue::Tuple(ty, lhs), LayoutValue::Tuple(_, rhs)) => self
-                .builder
-                .build_call(self.tuple_equals(ty), &[lhs.into(), rhs.into()], "equals")
+                .build_call(self.fields_equals(fields), &[lhs.into(), rhs.into()], "")
                 .unwrap()
                 .try_as_basic_value()
                 .unwrap_basic()
@@ -869,8 +803,8 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
         self.builder.build_unreachable().unwrap();
     }
 
-    fn emit_move(&self, value: LayoutValue<'hir, 'ctx>, to: LayoutValue<'hir, 'ctx>) {
-        self.emit_copy(value, to);
+    fn emit_move(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
+        self.emit_copy(value, dst);
         self.emit_drop(value);
     }
 
@@ -911,14 +845,9 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
             Ty::UInt => "u".to_string(),
             Ty::Byte => "h".to_string(),
             Ty::Float => "f".to_string(),
-            Ty::Char => "c".to_string(),
             Ty::Bool => "b".to_string(),
-            Ty::Tuple(tys) => format!(
-                "T{}E",
-                tys.iter().map(|ty| self.mangle_ty(ty)).collect::<String>()
-            ),
             Ty::Array(elem_ty) => self.mangle_array_ty(elem_ty),
-            Ty::Func(params, ret_ty) => {
+            Ty::FuncPtr(params, ret_ty) => {
                 let param_names = params.iter().fold(String::new(), |mut s, p| {
                     let prefix = if p.mutable { "M" } else { "P" };
                     let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
@@ -926,8 +855,26 @@ impl<'hir, 'handler, 'ctx> Codegen<'hir, 'handler, 'ctx> {
                 });
                 format!("F{param_names}R{}", self.mangle_ty(ret_ty))
             }
-            Ty::Named(id) => Self::mangle_name(self.hir.ty_ident(*id).ident.to_string()),
+            Ty::Closure(params, ret_ty) => {
+                let param_names = params.iter().fold(String::new(), |mut s, p| {
+                    let prefix = if p.mutable { "M" } else { "P" };
+                    let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
+                    s
+                });
+                format!("C{param_names}R{}", self.mangle_ty(ret_ty))
+            }
+            Ty::Fields(fields) => self.mangle_fields_ty(fields),
         }
+    }
+
+    fn mangle_fields_ty(&self, fields: &[Ty]) -> String {
+        format!(
+            "({})",
+            fields
+                .iter()
+                .map(|ty| self.mangle_ty(ty))
+                .collect::<String>()
+        )
     }
 
     fn mangle_array_ty(&self, elem_ty: &Ty) -> String {

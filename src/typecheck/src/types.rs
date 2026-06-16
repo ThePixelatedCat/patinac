@@ -88,12 +88,6 @@ impl From<&Ty> for PartialTy {
     }
 }
 
-impl From<Ty> for PartialTy {
-    fn from(value: Ty) -> Self {
-        Self::from(&value)
-    }
-}
-
 impl Display for PartialTy {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self {

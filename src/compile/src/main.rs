@@ -7,7 +7,7 @@ use package::ModuleId;
 use slotmap::SecondaryMap;
 use yansi::Paint as _;
 
-use codegen_llvm::{Codegen, CodegenMode, OptLevel};
+use codegen::{Codegen, CodegenMode, OptLevel};
 use errors::{DiagnosticKind, ErrorHandler, HandlerCallback};
 use parse::Parser;
 
@@ -93,9 +93,12 @@ fn main() -> ExitCode {
     };
 
     eprintln!("Typechecking...");
-    let Ok(ty_map) = typecheck::type_hir(&mut hir, handler.clone()) else {
+    let Ok(expr_tys) = typecheck::type_hir(&mut hir, handler.clone()) else {
         return ExitCode::FAILURE;
     };
+
+    eprintln!("Lowering...");
+    let mir = lower::lower(handler.clone(), hir, expr_tys);
 
     eprintln!("Compiling...");
     let mode = if args.dump {
@@ -103,11 +106,9 @@ fn main() -> ExitCode {
     } else {
         CodegenMode::Emit(args.src_path.with_extension("o"))
     };
-    let ctx = codegen_llvm::create_ctx();
+    let ctx = codegen::create_ctx();
     Codegen::new(
-        &hir,
-        &ty_map,
-        handler,
+        &mir,
         &ctx,
         &args
             .src_path

@@ -4,10 +4,9 @@ use crate::{Codegen, CodegenMode, OptLevel};
 
 fn check(src: &str, opt_level: OptLevel) {
     let mut hir = nameres::test_resolve_ast(src).unwrap();
-    let ty_map = typecheck::type_hir(&mut hir, ErrorHandler::TEST).unwrap();
-    let ctx = crate::create_ctx();
-    Codegen::new(&hir, &ty_map, ErrorHandler::TEST, &ctx, "test")
-        .codegen(opt_level, CodegenMode::Silent);
+    let expr_tys = typecheck::type_hir(&mut hir, ErrorHandler::TEST).unwrap();
+    let mir = lower::lower(ErrorHandler::TEST, hir, expr_tys);
+    Codegen::new(&mir, &crate::create_ctx(), "test").codegen(opt_level, CodegenMode::Silent);
 }
 
 #[test]

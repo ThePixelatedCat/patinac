@@ -1,22 +1,23 @@
 [package]
-name = "codegen_cl"
+name = "lower"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 # Internal
 ident.path = "../ident"
-hir.path = "../hir"
 errors.path = "../errors"
+package.path = "../package"
+hir.path = "../hir"
+mir.path = "../mir"
 # External
-cranelift = { version = "0.132.1", features = ["module", "object", "native"] }
 slotmap = "1.1.1"
 
 [dev-dependencies]
 # Internal
-parse.path = "../parse"
-nameres.path = "../nameres"
-typecheck.path = "../typecheck"
+# External
 
 [lints]
 workspace = true
+
+[features]

@@ -4,7 +4,6 @@ use std::{range::Range, result};
 
 use derive_more::{Display, Error};
 use package::ModuleId;
-use smallvec::SmallVec;
 use smol_str::SmolStr;
 
 /// The [`Result`][result::Result] type alias used throughout most of the compiler. Defaults to [`HandledError`] for it's `Err` variant.
@@ -29,7 +28,7 @@ impl<E> Error<E> {
             kind,
             span: span.into(),
             module,
-            ctx: SmallVec::new(),
+            ctx: Vec::new(),
         }))
     }
 
@@ -84,7 +83,7 @@ struct ErrorInner<E> {
     kind: E,
     span: Range<u32>,
     module: ModuleId,
-    ctx: SmallVec<[SmolStr; 1]>,
+    ctx: Vec<SmolStr>,
 }
 
 /// Extension trait to provide an easy method to construct an [`Error`].

@@ -2,7 +2,7 @@ use inkwell::{IntPredicate, module::Linkage, types::BasicType as _, values::Func
 
 use crate::Codegen;
 
-impl<'ctx> Codegen<'_, '_, 'ctx> {
+impl<'ctx> Codegen<'_, 'ctx> {
     pub(crate) fn printf(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("printf") {
             return func;

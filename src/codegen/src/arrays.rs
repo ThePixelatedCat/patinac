@@ -1,4 +1,3 @@
-use hir::Ty;
 use inkwell::{
     AtomicOrdering, AtomicRMWBinOp, IntPredicate,
     module::Linkage,
@@ -6,9 +5,11 @@ use inkwell::{
     values::{FunctionValue, PointerValue},
 };
 
+use mir::Ty;
+
 use crate::{Codegen, layout::LayoutValue};
 
-impl<'hir, 'ctx> Codegen<'hir, '_, 'ctx> {
+impl<'hir, 'ctx> Codegen<'hir, 'ctx> {
     pub fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
         let header = unsafe {
             self.builder

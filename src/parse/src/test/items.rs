@@ -1,7 +1,6 @@
 use std::range::Range;
 
 use pretty_assertions::assert_eq;
-use smallvec::smallvec;
 
 use ast::{
     ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
@@ -34,18 +33,20 @@ fn vis_items() {
 #[test]
 fn record_items() {
     assert_eq!(
-        Parser::new_test("record Point(x: Int, y: Int)",).item(),
+        Parser::new_test("record Point(x: Int, pub y: Int)",).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Point").span(7..12),
-            generics: smallvec![],
+            generics: vec![],
             kind: TyItemKind::Record(vec![
                 Field {
+                    public: false,
                     ident: Ident::new("x").span(13..14),
                     ty: TyKind::Int.span(16..19),
                 },
                 Field {
-                    ident: Ident::new("y").span(21..22),
-                    ty: TyKind::Int.span(24..27),
+                    public: true,
+                    ident: Ident::new("y").span(25..26),
+                    ty: TyKind::Int.span(28..31),
                 }
             ])
         }))
@@ -60,13 +61,15 @@ record Foo[T, U](
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(8..11),
-            generics: smallvec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
+            generics: vec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
             kind: TyItemKind::Record(vec![
                 Field {
+                    public: false,
                     ident: Ident::new("x").span(23..24),
                     ty: TyKind::Char.span(26..30),
                 },
                 Field {
+                    public: false,
                     ident: Ident::new("bar").span(38..41),
                     ty: TyKind::Named(
                         Path::single(Ident::new("Bar")),
@@ -99,7 +102,7 @@ enum Foo {
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
             ident: Ident::new("Foo").span(6..9),
-            generics: smallvec![],
+            generics: vec![],
             kind: TyItemKind::Enum(vec![
                 Variant {
                     ident: Ident::new("X").span(16..17),
@@ -108,6 +111,7 @@ enum Foo {
                 Variant {
                     ident: Ident::new("Y").span(25..26),
                     fields: vec![Field {
+                        public: false,
                         ident: Ident::new("v").span(27..28),
                         ty: TyKind::named("Bar").span(30..33),
                     }],
@@ -116,10 +120,12 @@ enum Foo {
                     ident: Ident::new("Z").span(40..41),
                     fields: vec![
                         Field {
+                            public: false,
                             ident: Ident::new("baz").span(42..45),
                             ty: TyKind::named("Baz").span(47..50),
                         },
                         Field {
+                            public: false,
                             ident: Ident::new("fizz").span(52..56),
                             ty: TyKind::named("Buzz").span(58..62),
                         },
@@ -151,7 +157,7 @@ fn function_items() {
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Fn {
-                generics: smallvec![],
+                generics: vec![],
                 params: vec![
                     Param {
                         pat: PatKind::ident("a").span(11..12),

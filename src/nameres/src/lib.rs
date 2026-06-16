@@ -6,11 +6,11 @@ mod scope;
 #[cfg(test)]
 mod test;
 
-use itertools::Itertools as _;
+use foldhash::{HashMap, HashMapExt};
 
 use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem};
-use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
-use hir::{ExprId, Hir, Param, TyInfo, VarId};
+use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
+use hir::{ExprId, Field, Hir, Param, TyInfo, VarId};
 use package::{ModuleId, Package};
 
 use crate::{error::ErrorKind, scope::Scope};
@@ -143,26 +143,32 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
     }
 
     match item.kind {
-        TyItemKind::Record(fields) => {
-            let fields: Vec<_> = fields
-                .into_iter()
-                .flat_map(|field| {
-                    Ok::<_, HandledError>((field.ident, resolve_ty(scope, handler, field.ty)?))
-                })
-                .collect();
-
-            if let Some((dup, _)) = fields.iter().duplicates_by(|(id, _)| id).next() {
-                handler.err(ErrorKind::DupFields(dup.ident).span(item.ident.span, scope.module()));
-                return;
+        TyItemKind::Record(old_fields) => {
+            let mut fields = HashMap::new();
+            for old_field in old_fields {
+                let Ok(ty) = resolve_ty(scope, handler, old_field.ty) else {
+                    continue;
+                };
+                let field = Field {
+                    public: old_field.public,
+                    span: old_field.ident.span,
+                    ty,
+                };
+                if let Some(_) = fields.insert(old_field.ident.ident, field) {
+                    handler.err(
+                        ErrorKind::DupFields(old_field.ident.ident)
+                            .span(item.ident.span, scope.module()),
+                    );
+                }
             }
 
             let constructor_ty = hir::Ty::Func(
                 fields
                     .iter()
-                    .map(|(ident, ty)| Param {
-                        ty: ty.clone(),
+                    .map(|(_, field)| Param {
+                        ty: field.ty.clone(),
                         mutable: false,
-                        span: ident.span,
+                        span: field.span,
                     })
                     .collect(),
                 Box::new(hir::Ty::Named(id)),
@@ -176,7 +182,7 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 id,
                 TyInfo {
                     fields: fields.into(),
-                    constructor_id,
+                    ctor: constructor_id,
                 },
             );
         }
@@ -203,8 +209,8 @@ fn resolve_exec_item(
 
             Ok(hir::ExecItem {
                 module: scope.module(),
-                id,
-                kind: hir::ExecKind::Const { val: val? },
+                var: id,
+                kind: hir::ExecKind::Const(val?),
             })
         }
         ast::ExecKind::Fn {
@@ -247,8 +253,8 @@ fn resolve_exec_item(
 
             Ok(hir::ExecItem {
                 module: scope.module(),
-                id,
-                kind: hir::ExecKind::Fn {
+                var: id,
+                kind: hir::ExecKind::Func {
                     params,
                     body: body?,
                 },

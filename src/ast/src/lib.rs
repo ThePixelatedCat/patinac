@@ -8,7 +8,6 @@ use std::{
 
 use package::ModuleId;
 use slotmap::SecondaryMap;
-use smallvec::SmallVec;
 
 use ident::{Ident, SpanIdent};
 
@@ -49,7 +48,7 @@ pub struct Ast {
 /// A path made of one or more identifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
-    head: SmallVec<[Ident; 4]>,
+    head: Vec<Ident>,
     tail: Ident,
 }
 
@@ -69,7 +68,7 @@ impl Path {
     /// Create a path made of a single identifier.
     pub const fn single(ident: Ident) -> Self {
         Self {
-            head: SmallVec::new_const(),
+            head: Vec::new(),
             tail: ident,
         }
     }
@@ -90,7 +89,7 @@ impl Path {
     pub fn new_const<const N: usize>(path: [Ident; N]) -> Self {
         const { assert!(N > 0, "path must be non-empty") }
         Self {
-            head: SmallVec::from_slice(&path[0..N - 1]),
+            head: Vec::from(&path[0..N - 1]),
             tail: path[N - 1],
         }
     }
@@ -146,7 +145,7 @@ pub struct TyItem {
     /// The name of the type.
     pub ident: SpanIdent,
     /// The declared generic parameters.
-    pub generics: SmallVec<[SpanIdent; 4]>,
+    pub generics: Vec<SpanIdent>,
     /// The kind of type (`record` or `enum`).
     pub kind: TyItemKind,
 }
@@ -172,6 +171,8 @@ pub struct Variant {
 #[derive(Debug, PartialEq)]
 /// A field of a `record` or of an `enum` variant.
 pub struct Field {
+    /// Whether the field is public.
+    pub public: bool,
     /// The name of the field.
     pub ident: SpanIdent,
     /// The type of the field.
@@ -200,7 +201,7 @@ pub enum ExecKind {
     /// A function item.
     Fn {
         /// The generic parameters.
-        generics: SmallVec<[SpanIdent; 4]>,
+        generics: Vec<SpanIdent>,
         /// The value parameters.
         params: Vec<Param>,
         /// Whether the return type is mutable (i.e. a projection).
@@ -282,7 +283,7 @@ impl Expr {
 #[derive(Debug, PartialEq)]
 /// The kinds of expressions.
 pub enum ExprKind {
-    /// A reference to a named value..
+    /// A reference to a named value.
     Var(Path),
     /// A scalar literal value. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),

@@ -12,11 +12,6 @@ ast.path = "../ast"
 # External
 itertools = "0.14.0"
 derive_more = { version = "2.1.1", features = ["from", "display"] }
-smallvec = { version = "1.15.1", features = [
-    "union",
-    "const_generics",
-    "const_new",
-] }
 logos = "0.16.1"
 
 [dev-dependencies]
