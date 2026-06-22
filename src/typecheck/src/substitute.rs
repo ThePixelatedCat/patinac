@@ -50,7 +50,6 @@ fn sub_ty(table: &mut Table, ty: &PartialTy) -> Result<Ty, ()> {
         PartialTy::Byte => Ok(Ty::Byte),
         PartialTy::Float => Ok(Ty::Float),
         PartialTy::Bool => Ok(Ty::Bool),
-        PartialTy::Char => Ok(Ty::Char),
         PartialTy::Tuple(tys) => Ok(Ty::Tuple(
             tys.iter().map(|ty| sub_ty(table, ty)).try_collect_eager()?,
         )),

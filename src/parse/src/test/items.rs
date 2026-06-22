@@ -33,20 +33,19 @@ fn vis_items() {
 #[test]
 fn record_items() {
     assert_eq!(
-        Parser::new_test("record Point(x: Int, pub y: Int)",).item(),
+        Parser::new_test("opaque record Point(x: Int, y: Int)",).item(),
         Ok(Item::TyItem(TyItem {
-            ident: Ident::new("Point").span(7..12),
+            opaque: true,
+            ident: Ident::new("Point").span(14..19),
             generics: vec![],
             kind: TyItemKind::Record(vec![
                 Field {
-                    public: false,
-                    ident: Ident::new("x").span(13..14),
-                    ty: TyKind::Int.span(16..19),
+                    ident: Ident::new("x").span(20..21),
+                    ty: TyKind::Int.span(23..26),
                 },
                 Field {
-                    public: true,
-                    ident: Ident::new("y").span(25..26),
-                    ty: TyKind::Int.span(28..31),
+                    ident: Ident::new("y").span(28..29),
+                    ty: TyKind::Int.span(31..34),
                 }
             ])
         }))
@@ -54,22 +53,21 @@ fn record_items() {
 
     let input = "
 record Foo[T, U](
-    x: Char , 
+    x: Bool , 
     bar: Bar[Baz[T]]
     )";
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
+            opaque: false,
             ident: Ident::new("Foo").span(8..11),
             generics: vec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
             kind: TyItemKind::Record(vec![
                 Field {
-                    public: false,
                     ident: Ident::new("x").span(23..24),
-                    ty: TyKind::Char.span(26..30),
+                    ty: TyKind::Bool.span(26..30),
                 },
                 Field {
-                    public: false,
                     ident: Ident::new("bar").span(38..41),
                     ty: TyKind::Named(
                         Path::single(Ident::new("Bar")),
@@ -89,45 +87,35 @@ record Foo[T, U](
 }
 
 #[test]
-fn enum_items() {
+fn union_items() {
     let input = "
-enum Foo {
+union XY {
     X(),
-    Y(v: Bar),
-    Z(baz: Baz, fizz: Buzz),
+    Y(baz: Baz, fizz: Buzz),
 }
 ";
 
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
-            ident: Ident::new("Foo").span(6..9),
+            opaque: false,
+            ident: Ident::new("XY").span(7..9),
             generics: vec![],
-            kind: TyItemKind::Enum(vec![
+            kind: TyItemKind::Union(vec![
                 Variant {
                     ident: Ident::new("X").span(16..17),
                     fields: vec![]
                 },
                 Variant {
                     ident: Ident::new("Y").span(25..26),
-                    fields: vec![Field {
-                        public: false,
-                        ident: Ident::new("v").span(27..28),
-                        ty: TyKind::named("Bar").span(30..33),
-                    }],
-                },
-                Variant {
-                    ident: Ident::new("Z").span(40..41),
                     fields: vec![
                         Field {
-                            public: false,
-                            ident: Ident::new("baz").span(42..45),
-                            ty: TyKind::named("Baz").span(47..50),
+                            ident: Ident::new("baz").span(27..30),
+                            ty: TyKind::named("Baz").span(32..35),
                         },
                         Field {
-                            public: false,
-                            ident: Ident::new("fizz").span(52..56),
-                            ty: TyKind::named("Buzz").span(58..62),
+                            ident: Ident::new("fizz").span(37..41),
+                            ty: TyKind::named("Buzz").span(43..47),
                         },
                     ]
                 },

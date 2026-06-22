@@ -139,7 +139,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
     /// # Panics
     /// Panics if any functions are invalid, or if writing to the output file fails.
     pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
-        for exec in self.mir.execs() {
+        for exec in self.mir.items() {
             match &exec.kind {
                 ItemKind::Const { .. } => todo!("Constants"),
                 ItemKind::Func { .. } => {
@@ -167,11 +167,11 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             assert!(func.verify(true));
         }
 
-        for exec in self.mir.execs() {
+        for exec in self.mir.items() {
             match &exec.kind {
                 ItemKind::Const { .. } => todo!("Constants"),
                 ItemKind::Func { params, body } => {
-                    let Ty::FuncPtr(_, ret_ty) = &self.mir.var(exec.var).ty else {
+                    let Ty::Func(_, ret_ty) = &self.mir.var(exec.var).ty else {
                         unreachable!("ICE")
                     };
                     self.build_func(self.funcs[exec.var], params, ret_ty, *body);
@@ -205,7 +205,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
     }
 
     fn create_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
-        let Ty::FuncPtr(params, ret_ty) = &self.mir.var(id).ty else {
+        let Ty::Func(params, ret_ty) = &self.mir.var(id).ty else {
             unreachable!("ICE")
         };
         let name = Self::mangle_name(self.mir.var(id).ident.to_string());
@@ -218,33 +218,6 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         );
         func
     }
-
-    // fn build_ctor(&mut self, ctor: VarId, ty: TyId) {
-    //     let info = self.mir.ty(ty);
-
-    //     let func = self.create_func(ctor);
-    //     let entry_block = self.ctx.append_basic_block(func, "entry");
-    //     self.builder.position_at_end(entry_block);
-
-    //     let ty = self.fields_ty(&info.fields);
-    //     let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-    //     for (idx, (arg, field_ty)) in
-    //         iter::zip(func.get_param_iter().skip(1), &info.fields).enumerate()
-    //     {
-    //         let field_ptr = self
-    //             .builder
-    //             .build_struct_gep(ty, out_ptr, u32::try_from(idx).unwrap(), "")
-    //             .unwrap();
-    //         self.emit_copy(
-    //             self.layout(field_ty, arg),
-    //             self.layout_indirect(field_ty, field_ptr),
-    //         );
-    //     }
-
-    //     self.builder.build_return(None).unwrap();
-
-    //     assert!(func.verify(true));
-    // }
 
     fn build_func(
         &mut self,
@@ -303,16 +276,33 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
     }
 
     fn lower_ty(&self, ty: &Ty) -> BasicTypeEnum<'ctx> {
-        match ty {
+        let lowered_ty = match ty {
             Ty::Int | Ty::UInt => self.ctx.i64_type().as_basic_type_enum(),
             Ty::Byte => self.ctx.i8_type().as_basic_type_enum(),
             Ty::Float => self.ctx.f64_type().as_basic_type_enum(),
             Ty::Bool => self.ctx.bool_type().as_basic_type_enum(),
             Ty::Fields(fields) => self.fields_ty(fields),
             Ty::Array(_) => self.array_ty(),
-            Ty::FuncPtr(..) => self.ptr_ty(),
-            Ty::Closure(..) => self.closure_ty(),
-        }
+            // FIXME: Account for non-capturing functions.
+            Ty::Func(..) => self.closure_ty(),
+        };
+
+        assert_eq!(
+            self.target.get_target_data().get_store_size(&lowered_ty),
+            ty.size(),
+            "ty: {ty:?}"
+        );
+        assert_eq!(
+            u64::from(
+                self.target
+                    .get_target_data()
+                    .get_preferred_alignment(&lowered_ty)
+            ),
+            ty.alignment(),
+            "ty: {ty:?}"
+        );
+
+        lowered_ty
     }
 
     fn array_ty(&self) -> BasicTypeEnum<'ctx> {
@@ -429,11 +419,8 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             Ty::Byte | Ty::Bool => LayoutValue::int(IntSize::Bits8, value),
             Ty::Float => LayoutValue::float(value),
             Ty::Array(elem_ty) => LayoutValue::array(elem_ty, value),
-            Ty::FuncPtr(params, ret_ty) => LayoutValue::func_ptr(
-                self.func_ty(params, ret_ty, true),
-                value.into_pointer_value(),
-            ),
-            Ty::Closure(params, ret_ty) => LayoutValue::Closure(
+            // FIXME: Account for non-capturing functions.
+            Ty::Func(params, ret_ty) => LayoutValue::Closure(
                 self.func_ty(params, ret_ty, true),
                 value.into_pointer_value(),
             ),
@@ -468,14 +455,8 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 let array = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
                 LayoutValue::array(elem_ty, array)
             }
-            Ty::FuncPtr(params, ret_ty) => {
-                let func_ptr = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
-                LayoutValue::func_ptr(
-                    self.func_ty(params, ret_ty, true),
-                    func_ptr.into_pointer_value(),
-                )
-            }
-            Ty::Closure(params, ret_ty) => {
+            // FIXME: Account for non-capturing functions.
+            Ty::Func(params, ret_ty) => {
                 LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
             }
             Ty::Fields(fields) => LayoutValue::Fields(fields, ptr),
@@ -488,10 +469,8 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             Ty::Byte | Ty::Bool => LayoutValue::indirect_int(IntSize::Bits8, ptr),
             Ty::Float => LayoutValue::indirect_float(ptr),
             Ty::Array(elem_ty) => LayoutValue::indirect_array(elem_ty, ptr),
-            Ty::FuncPtr(params, ret_ty) => {
-                LayoutValue::indirect_func_ptr(self.func_ty(params, ret_ty, true), ptr)
-            }
-            Ty::Closure(params, ret_ty) => {
+            // FIXME: Account for non-capturing functions.
+            Ty::Func(params, ret_ty) => {
                 LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
             }
             Ty::Fields(fields) => LayoutValue::Fields(fields, ptr),
@@ -847,21 +826,13 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             Ty::Float => "f".to_string(),
             Ty::Bool => "b".to_string(),
             Ty::Array(elem_ty) => self.mangle_array_ty(elem_ty),
-            Ty::FuncPtr(params, ret_ty) => {
+            Ty::Func(params, ret_ty) => {
                 let param_names = params.iter().fold(String::new(), |mut s, p| {
                     let prefix = if p.mutable { "M" } else { "P" };
                     let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
                     s
                 });
                 format!("F{param_names}R{}", self.mangle_ty(ret_ty))
-            }
-            Ty::Closure(params, ret_ty) => {
-                let param_names = params.iter().fold(String::new(), |mut s, p| {
-                    let prefix = if p.mutable { "M" } else { "P" };
-                    let _ = write!(s, "{prefix}{}", self.mangle_ty(&p.ty));
-                    s
-                });
-                format!("C{param_names}R{}", self.mangle_ty(ret_ty))
             }
             Ty::Fields(fields) => self.mangle_fields_ty(fields),
         }

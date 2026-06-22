@@ -12,6 +12,7 @@ hir.path = "../hir"
 mir.path = "../mir"
 # External
 slotmap = "1.1.1"
+foldhash = "0.2.0"
 
 [dev-dependencies]
 # Internal

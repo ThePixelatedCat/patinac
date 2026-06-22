@@ -20,7 +20,6 @@ impl Parser<'_> {
             TokKind::Byte => primitive!(self, Byte),
             TokKind::Float => primitive!(self, Float),
             TokKind::Bool => primitive!(self, Bool),
-            TokKind::Char => primitive!(self, Char),
             TokKind::LBracket => {
                 let start = self.consume(TokKind::LBracket)?.span.start;
                 let inner_ty = Box::new(self.ty()?);

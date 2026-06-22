@@ -19,8 +19,18 @@ impl Parser<'_> {
         match self.peek()? {
             TokKind::Import => self.import_item().map(Item::from),
             TokKind::Export => self.export_item().map(Item::from),
-            TokKind::Record => self.record_item().map(Item::from),
-            TokKind::Enum => self.enum_item().map(Item::from),
+            TokKind::Opaque => {
+                self.consume(TokKind::Opaque)?;
+                match self.peek()? {
+                    TokKind::Record => self.record_item(true).map(Item::from),
+                    TokKind::Union => self.union_item(true).map(Item::from),
+                    _ => {
+                        Err(self.err_next(ErrorKind::Unexpected, &["expected `record` or `union`"]))
+                    }
+                }
+            }
+            TokKind::Record => self.record_item(false).map(Item::from),
+            TokKind::Union => self.union_item(false).map(Item::from),
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
             _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
@@ -39,7 +49,7 @@ impl Parser<'_> {
         Ok(VisItem::Export(idents))
     }
 
-    fn record_item(&mut self) -> Result<TyItem> {
+    fn record_item(&mut self, opaque: bool) -> Result<TyItem> {
         self.consume(TokKind::Record)?;
 
         let ident = self.ident();
@@ -49,14 +59,15 @@ impl Parser<'_> {
         let ident = ident?;
 
         Ok(TyItem {
+            opaque,
             ident,
             generics,
             kind: TyItemKind::Record(fields),
         })
     }
 
-    fn enum_item(&mut self) -> Result<TyItem> {
-        self.consume(TokKind::Enum)?;
+    fn union_item(&mut self, opaque: bool) -> Result<TyItem> {
+        self.consume(TokKind::Union)?;
 
         let ident = self.ident();
         let generics = self.generic_params();
@@ -73,21 +84,20 @@ impl Parser<'_> {
         let ident = ident?;
 
         Ok(TyItem {
+            opaque,
             ident,
             generics,
-            kind: TyItemKind::Enum(variants),
+            kind: TyItemKind::Union(variants),
         })
     }
 
     fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
         self.delimited_list(
             |this| {
-                let public = this.consume_at(TokKind::Pub).is_some();
                 let ident = this.ident()?;
                 this.consume(TokKind::Colon)?;
                 let ty = this.ty()?;
-
-                Ok(Field { public, ident, ty })
+                Ok(Field { ident, ty })
             },
             TokKind::LParen,
             TokKind::RParen,

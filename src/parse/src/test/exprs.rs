@@ -39,8 +39,8 @@ fn lit_expressions() {
     );
 
     assert_eq!(
-        Parser::new_test(r"'\''").expr(),
-        Ok(ExprKind::char('\'').span(0..4))
+        Parser::new_test(r#""\"""#).expr(),
+        Ok(ExprKind::string("\"").span(0..4))
     );
 
     assert_eq!(
@@ -49,8 +49,8 @@ fn lit_expressions() {
     );
 
     assert_eq!(
-        Parser::new_test(r"'\u{1f308}'").expr(),
-        Ok(ExprKind::char('🌈').span(0..11))
+        Parser::new_test(r#""\u{1f308}""#).expr(),
+        Ok(ExprKind::string("🌈").span(0..11))
     );
 
     assert_eq!(

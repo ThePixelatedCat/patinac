@@ -1,53 +1,47 @@
-use package::ModuleId;
-
 use crate::LowerInfo;
 
-impl LowerInfo<'_> {
+impl LowerInfo<'_, '_> {
     #[allow(
         clippy::too_many_lines,
         reason = "Any given arm is readable on it's own"
     )]
-    pub fn lower_expr(&mut self, module: ModuleId, expr: hir::ExprId) -> mir::ExprId {
-        let new_expr = match self.hir.take_expr(expr) {
-            hir::Expr::Var(var) => mir::Expr::Var(self.var_map[var]),
-            hir::Expr::Lit(lit) => mir::Expr::Lit(self.lower_lit(module, expr, lit)),
-            hir::Expr::Array(elems) => mir::Expr::Array(self.lower_exprs(module, &elems)),
-            hir::Expr::Tuple(elems) => {
-                // FIXME: Reorder optimally.
-                let (field_tys, field_values) = elems
-                    .into_iter()
-                    .map(|elem| {
-                        (
-                            self.lower_ty(&self.expr_tys[elem]),
-                            self.lower_expr(module, elem),
-                        )
-                    })
-                    .unzip();
-                mir::Expr::Construct {
-                    field_tys,
-                    field_values,
-                }
+    pub fn lower_expr(&mut self, expr: hir::ExprId) -> mir::ExprId {
+        let new_expr = match self.hir.expr(expr) {
+            hir::Expr::Var(var) => mir::Expr::Var(self.lower_var(*var)),
+            hir::Expr::Lit(lit) => mir::Expr::Lit(self.lower_lit(expr, lit)),
+            hir::Expr::Array(elems) => {
+                mir::Expr::Array(elems.iter().map(|&elem| self.lower_expr(elem)).collect())
             }
-            hir::Expr::Infix { op, lhs, rhs } => mir::Expr::Infix {
+            hir::Expr::Tuple(elems) => {
+                mir::Expr::Construct(elems.iter().map(|&elem| self.lower_expr(elem)).collect())
+            }
+            &hir::Expr::Infix { op, lhs, rhs } => mir::Expr::Infix {
                 op: convert_infix_op(op),
-                lhs: self.lower_expr(module, lhs),
-                rhs: self.lower_expr(module, rhs),
+                lhs: self.lower_expr(lhs),
+                rhs: self.lower_expr(rhs),
             },
-            hir::Expr::Prefix { op, expr } => mir::Expr::Prefix {
+            &hir::Expr::Prefix { op, expr } => mir::Expr::Prefix {
                 op: convert_prefix_op(op),
-                expr: self.lower_expr(module, expr),
+                expr: self.lower_expr(expr),
             },
-            hir::Expr::Field { base, field } => todo!(),
-            hir::Expr::Index { array, index } => mir::Expr::Index {
-                array: self.lower_expr(module, array),
-                index: self.lower_expr(module, index),
+            &hir::Expr::Field { base, field } => {
+                let hir::Ty::Named(ty) = self.expr_ty(base) else {
+                    unreachable!("field access of non-record type")
+                };
+                let base = self.lower_expr(base);
+                let field = self.field_index(*ty, field.ident);
+                mir::Expr::Field { base, field }
+            }
+            &hir::Expr::Index { array, index } => mir::Expr::Index {
+                array: self.lower_expr(array),
+                index: self.lower_expr(index),
             },
             hir::Expr::Call { func, args } => {
-                let func = self.lower_expr(module, func);
+                let func = self.lower_expr(*func);
                 let args = args
-                    .into_iter()
+                    .iter()
                     .map(|arg| mir::Arg {
-                        value: self.lower_expr(module, arg.value),
+                        value: self.lower_expr(arg.value),
                         mutable: arg.mutable,
                     })
                     .collect();
@@ -58,38 +52,31 @@ impl LowerInfo<'_> {
                 body,
                 captures,
             } => todo!(),
-            hir::Expr::Assign { place, value } => mir::Expr::Assign {
-                place: self.lower_expr(module, place),
-                value: self.lower_expr(module, value),
+            &hir::Expr::Assign { place, value } => mir::Expr::Assign {
+                place: self.lower_expr(place),
+                value: self.lower_expr(value),
             },
-            hir::Expr::If { cond, th, el } => todo!(),
+            hir::Expr::If { cond, th, el } => mir::Expr::If {
+                cond: self.lower_expr(*cond),
+                th: self.lower_block_expr(th),
+                el: el.as_ref().map(|el| self.lower_block_expr(el)),
+            },
             hir::Expr::For { .. } => todo!("Traits"),
-            hir::Expr::Loop(body) => todo!(),
+            hir::Expr::Loop(body) => mir::Expr::Loop(self.lower_block_expr(body)),
             hir::Expr::Break => todo!("Unconditional Control Flow"),
             hir::Expr::Continue => todo!("Unconditional Control Flow"),
             hir::Expr::Return(_) => todo!("Unconditional Control Flow"),
-            hir::Expr::Block(block) => todo!(),
+            hir::Expr::Block(block) => mir::Expr::Block(self.lower_block_expr(block)),
 
-            hir::Expr::Print(expr) => mir::Expr::Print(self.lower_expr(module, expr)),
+            hir::Expr::Print(expr) => mir::Expr::Print(self.lower_expr(*expr)),
         };
-        self.mir
-            .add_expr(new_expr, self.lower_ty(&self.expr_tys[expr]))
+        let ty = self.lower_ty(self.expr_ty(expr));
+        self.mir.add_expr(new_expr, ty)
     }
 
-    fn lower_exprs<V: FromIterator<mir::ExprId>>(
-        &mut self,
-        module: ModuleId,
-        exprs: &[hir::ExprId],
-    ) -> V {
-        exprs
-            .iter()
-            .map(|expr| self.lower_expr(module, *expr))
-            .collect()
-    }
-
-    fn lower_lit(&self, module: ModuleId, expr: hir::ExprId, lit: hir::LitExpr) -> mir::LitExpr {
+    fn lower_lit(&self, expr: hir::ExprId, lit: &hir::LitExpr) -> mir::LitExpr {
         match lit {
-            hir::LitExpr::Int(value) => match self.expr_tys[expr] {
+            &hir::LitExpr::Int(value) => match self.expr_ty(expr) {
                 hir::Ty::Int => {
                     let i = i64::try_from(value).unwrap_or_else(|_| {
                         self.handler.warn(
@@ -98,7 +85,7 @@ impl LowerInfo<'_> {
                                 i64::MAX
                             ),
                             self.hir.expr_span(expr),
-                            module,
+                            self.module,
                         );
                         i64::MAX
                     });
@@ -113,7 +100,7 @@ impl LowerInfo<'_> {
                                 u8::MAX
                             ),
                             self.hir.expr_span(expr),
-                            module,
+                            self.module,
                         );
                         u8::MAX
                     });
@@ -121,11 +108,25 @@ impl LowerInfo<'_> {
                 }
                 _ => unreachable!("not an int type"),
             },
-            hir::LitExpr::Float(value) => mir::LitExpr::Float(value),
-            hir::LitExpr::Char(_) => todo!("Strings"),
+            &hir::LitExpr::Float(value) => mir::LitExpr::Float(value),
             hir::LitExpr::String(_) => todo!("Strings"),
-            hir::LitExpr::Bool(value) => mir::LitExpr::Bool(value),
+            &hir::LitExpr::Bool(value) => mir::LitExpr::Bool(value),
         }
+    }
+
+    fn lower_block_expr(&mut self, block: &hir::BlockExpr) -> mir::BlockExpr {
+        let stmts = block
+            .stmts
+            .iter()
+            .map(|stmt| match stmt {
+                hir::Stmt::Decl { id, val, .. } => mir::Stmt::Decl {
+                    id: self.lower_var(*id),
+                    val: self.lower_expr(*val),
+                },
+                hir::Stmt::Expr(expr) => mir::Stmt::Expr(self.lower_expr(*expr)),
+            })
+            .collect();
+        mir::BlockExpr(stmts)
     }
 }
 

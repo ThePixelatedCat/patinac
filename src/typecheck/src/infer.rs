@@ -18,7 +18,6 @@ impl TypeChecker<'_> {
                 LitExpr::Int(_) => PartialTy::int_var(&mut self.table),
                 LitExpr::Float(_) => PartialTy::Float,
                 LitExpr::String(_) => todo!("String type"),
-                LitExpr::Char(_) => PartialTy::Char,
                 LitExpr::Bool(_) => PartialTy::Bool,
             },
             Expr::Array(exprs) => {

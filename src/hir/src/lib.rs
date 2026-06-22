@@ -145,10 +145,8 @@ pub struct TyInfo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-/// A field of a `record` or of an `enum` variant.
+/// A field of a `record` or of a `union` variant.
 pub struct Field {
-    /// Whether the field is public.
-    pub public: bool,
     /// The type of the field.
     pub ty: Ty,
     /// The span of the field.
@@ -184,7 +182,6 @@ pub enum Ty {
     UInt,
     Byte,
     Float,
-    Char,
     Bool,
     Tuple(Vec<Self>),
     Array(Box<Self>),

@@ -2,110 +2,134 @@
 //! This involves the following:
 //! - Unifying records and tuples, and rearranging their fields for best packing.
 //! - Lowering field access to a numeric field number.
+//! - Seperating integer literals into specific types, and emitting warnings if the literal overflows the type.
 
 mod exprs;
 
-use errors::ErrorHandler;
-use hir::{ExecItem, ExecKind, Hir};
-use mir::{Item, ItemKind, Mir};
-use slotmap::SecondaryMap;
+use std::cmp::Reverse;
 
-struct LowerInfo<'err> {
+use slotmap::{Key, SecondaryMap};
+
+use errors::ErrorHandler;
+use hir::{ExecItem, ExecKind, Hir, TyId};
+use ident::Ident;
+use mir::{Item, ItemKind, Mir, VarInfo};
+use package::ModuleId;
+
+struct LowerInfo<'hir, 'err> {
+    hir: &'hir Hir,
+    expr_tys: &'hir SecondaryMap<hir::ExprId, hir::Ty>,
     handler: ErrorHandler<'err>,
-    hir: Hir,
-    expr_tys: SecondaryMap<hir::ExprId, hir::Ty>,
     mir: Mir,
     var_map: SecondaryMap<hir::VarId, mir::VarId>,
+    field_map: SecondaryMap<TyId, Vec<Ident>>,
+    module: ModuleId,
 }
 
 /// Resolves and lowers the provided [`Package`] into a single [`Hir`].
 ///
 /// # Errors
 /// Returns an error if there are any unbound variables, undefined types, or multiple items with the same name.
-pub fn lower(handler: ErrorHandler, hir: Hir, expr_tys: SecondaryMap<hir::ExprId, hir::Ty>) -> Mir {
+pub fn lower(
+    handler: ErrorHandler,
+    hir: &Hir,
+    expr_tys: &SecondaryMap<hir::ExprId, hir::Ty>,
+) -> Mir {
     LowerInfo {
-        handler,
         hir,
         expr_tys,
+        handler,
         mir: Mir::default(),
         var_map: SecondaryMap::new(),
+        field_map: SecondaryMap::new(),
+        module: ModuleId::null(),
     }
     .lower()
 }
 
-impl LowerInfo<'_> {
+impl<'hir> LowerInfo<'hir, '_> {
     fn lower(mut self) -> Mir {
-        for item in self.hir.execs() {
-            let ty = match item.kind {
-                ExecKind::Const(_) => self.lower_ty(self.hir.var_ty(item.var)),
-                ExecKind::Func { .. } => {
-                    let hir::Ty::Func(params, ret_ty) = self.hir.var_ty(item.var) else {
-                        unreachable!("function with non-function type")
-                    };
-                    let params = params
-                        .into_iter()
-                        .map(|param| mir::Param {
-                            ty: self.lower_ty(&param.ty),
-                            mutable: param.mutable,
-                        })
-                        .collect();
-                    let ret_ty = Box::new(self.lower_ty(&ret_ty));
-                    mir::Ty::FuncPtr(params, ret_ty)
-                }
-            };
-            let var_info = self.hir.var_info(item.var);
-            let new_var = self.mir.add_var(var_info.ident, ty, var_info.mutable);
-            self.var_map.insert(item.var, new_var);
+        // Build constructors, populating the field map along the way.
+        for (id, _) in self.hir.tys() {
+            self.lower_ctor(id);
         }
 
-        for item in self.hir.take_execs() {
+        for item in self.hir.execs() {
             let item = self.lower_item(item);
-            self.mir.add_exec(item);
+            self.mir.add_item(item);
         }
 
         self.mir
     }
 
     fn lower_var(&mut self, var: hir::VarId) -> mir::VarId {
-        let var_info = self.hir.var_info(var);
-        let new_var = self.mir.add_var(
-            var_info.ident,
-            self.lower_ty(self.hir.var_ty(var)),
-            var_info.mutable,
-        );
-        self.var_map.insert(var, new_var);
-        new_var
-    }
-
-    fn lower_item(&mut self, item: ExecItem) -> Item {
-        match item.kind {
-            ExecKind::Const(val) => Item {
-                var: self.var_map[item.var],
-                kind: ItemKind::Const(self.lower_expr(item.module, val)),
-            },
-            ExecKind::Func { params, body } => {
-                let params = params.iter().map(|var| self.lower_var(*var)).collect();
-                let body = self.lower_expr(item.module, body);
-                Item {
-                    var: self.var_map[item.var],
-                    kind: ItemKind::Func { params, body },
-                }
+        match self.var_map.get(var) {
+            Some(var) => *var,
+            None => {
+                let var_info = self.hir.var_info(var);
+                let ty = self.lower_ty(self.hir.var_ty(var));
+                let new_var = self.mir.add_var(VarInfo {
+                    ident: var_info.ident,
+                    ty,
+                    mutable: var_info.mutable,
+                });
+                self.var_map.insert(var, new_var);
+                new_var
             }
         }
     }
 
-    fn lower_ty(&self, ty: &hir::Ty) -> mir::Ty {
+    fn lower_ctor(&mut self, ty: TyId) {
+        let var = self.lower_var(self.hir.ty_info(ty).ctor);
+
+        let field_tys = self.layout_record_fields(ty);
+        let (params, values) = field_tys
+            .iter()
+            .map(|ty| {
+                let var = self.mir.add_var(VarInfo {
+                    ident: Ident::new("f"),
+                    ty: ty.clone(),
+                    mutable: false,
+                });
+                let expr = self.mir.add_expr(mir::Expr::Var(var), ty.clone());
+                (var, expr)
+            })
+            .unzip();
+        let body = self
+            .mir
+            .add_expr(mir::Expr::Construct(values), mir::Ty::Fields(field_tys));
+
+        self.mir.add_item(Item {
+            var,
+            kind: ItemKind::Func { params, body },
+        });
+    }
+
+    fn lower_item(&mut self, item: &ExecItem) -> Item {
+        self.module = item.module;
+        let kind = match &item.kind {
+            ExecKind::Const(val) => ItemKind::Const(self.lower_expr(*val)),
+            ExecKind::Func { params, body } => {
+                let params = params.iter().map(|var| self.lower_var(*var)).collect();
+                let body = self.lower_expr(*body);
+                ItemKind::Func { params, body }
+            }
+        };
+        Item {
+            var: self.lower_var(item.var),
+            kind,
+        }
+    }
+
+    fn lower_ty(&mut self, ty: &'hir hir::Ty) -> mir::Ty {
         match ty {
             hir::Ty::Int => mir::Ty::Int,
             hir::Ty::UInt => mir::Ty::UInt,
             hir::Ty::Byte => mir::Ty::Byte,
             hir::Ty::Float => mir::Ty::Float,
-            hir::Ty::Char => todo!("Strings"),
             hir::Ty::Bool => mir::Ty::Bool,
             hir::Ty::Array(elem_ty) => mir::Ty::Array(Box::new(self.lower_ty(elem_ty))),
-            hir::Ty::Tuple(elem_tys) => {
-                mir::Ty::Fields(elem_tys.into_iter().map(|ty| self.lower_ty(ty)).collect())
-            }
+            hir::Ty::Tuple(elem_tys) => mir::Ty::Fields(self.layout_fields(elem_tys)),
             hir::Ty::Func(params, ret_ty) => {
                 let params = params
                     .into_iter()
@@ -115,67 +139,74 @@ impl LowerInfo<'_> {
                     })
                     .collect();
                 let ret_ty = Box::new(self.lower_ty(ret_ty));
-                // Assume it's a closure. Special handling for function pointers will be done elsewhere.
-                mir::Ty::Closure(params, ret_ty)
+                mir::Ty::Func(params, ret_ty)
             }
-            hir::Ty::Named(id) => {
-                let fields = self
-                    .hir
-                    .ty_info(*id)
-                    .fields
-                    .iter()
-                    .map(|(_, field)| self.lower_ty(&field.ty))
-                    .collect();
-                mir::Ty::Fields(fields)
-            }
+            hir::Ty::Named(id) => mir::Ty::Fields(self.layout_record_fields(*id)),
         }
     }
 
-    // fn lower_pat(
-    //     scope: &mut Scope,
-    //     hir: &mut Hir,
-    //     pat: Pat,
-    //     mutable: bool,
-    //     ty: Option<hir::Ty>,
-    // ) -> VarId {
-    //     match pat.kind {
-    //         PatKind::Ident(ident) => {
-    //             let id = hir.add_var(ident, mutable, pat.span, scope.module());
-    //             if let Some(ty) = ty {
-    //                 hir.add_var_ty(id, ty);
-    //             }
-    //             scope.add_var(ident, id);
-    //             id
-    //         }
-    //         _ => todo!("Pattern Matching"),
-    //     }
-    // }
+    fn layout_fields(
+        &mut self,
+        field_tys: impl IntoIterator<Item = &'hir hir::Ty>,
+    ) -> Vec<mir::Ty> {
+        let mut field_tys: Vec<_> = field_tys.into_iter().map(|ty| self.lower_ty(ty)).collect();
+        field_tys.sort_by_cached_key(|ty| Reverse(ty.alignment()));
+        field_tys
+    }
+
+    fn layout_record_fields(&mut self, ty: TyId) -> Vec<mir::Ty> {
+        let mut fields: Vec<_> = self
+            .hir
+            .ty_info(ty)
+            .fields
+            .iter()
+            .map(|(ident, f)| (*ident, self.lower_ty(&f.ty)))
+            .collect();
+        fields.sort_by_cached_key(|(_, ty)| Reverse(ty.alignment()));
+        let (field_names, field_tys): (Vec<_>, Vec<_>) = fields.into_iter().unzip();
+        self.field_map.insert(ty, field_names);
+        field_tys
+    }
+
+    fn field_index(&mut self, ty: TyId, ident: Ident) -> u32 {
+        self.field_map[ty]
+            .iter()
+            .copied()
+            .position(|ident_b| ident_b == ident)
+            .expect("type does not have that field")
+            .try_into()
+            .expect("too many fields")
+    }
+
+    fn expr_ty(&self, expr: hir::ExprId) -> &'hir hir::Ty {
+        &self.expr_tys[expr]
+    }
 }
 
 // #[cfg(any(test, feature = "test"))]
 // #[allow(clippy::unwrap_used, reason = "test utility")]
-// pub fn test_resolve_expr(input: &str) -> Result<(ExprId, Hir)> {
+// pub fn test_resolve_expr(input: &str) -> Result<(ExprId, self.hir)> {
 //     let expr = parse::Parser::parse_expr(input).unwrap();
-//     let mut hir = Hir::default();
+//     let mut self.hir = self.hir::default();
 //     let mut handler = ErrorHandler::TEST;
 //     let expr = exprs::resolve_expr(
 //         &Scope::new(ModuleId::default()),
-//         &mut hir,
+//         &mut self.hir,
 //         &mut handler,
 //         expr,
 //     )?;
-//     Ok((expr, hir))
+//     Ok((expr, self.hir))
 // }
 
 // #[cfg(any(test, feature = "test"))]
 // #[allow(clippy::unwrap_used, reason = "test utility")]
 // pub fn test_resolve_ast(src: &str) -> Result<Hir> {
-//     let mut hir = Hir::default();
+//     let mut self.hir = self.hir::default();
 //     let mut handler = ErrorHandler::TEST;
 //     resolve_ast(
 //         &mut Scope::new(ModuleId::default()),
 //         parse::Parser::new_test(src).parse().unwrap(),
-//         &mut hir,
+//         &mut self.hir,
 //         &mut handler,
 //         true,
 //     );

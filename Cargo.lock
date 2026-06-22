@@ -516,6 +516,7 @@ name = "lower"
 version = "0.1.0"
 dependencies = [
  "errors",
+ "foldhash 0.2.0",
  "hir",
  "ident",
  "mir",

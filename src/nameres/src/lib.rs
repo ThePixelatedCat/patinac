@@ -142,6 +142,10 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
         todo!("Generics")
     }
 
+    if item.opaque {
+        todo!("Opaque Types")
+    }
+
     match item.kind {
         TyItemKind::Record(old_fields) => {
             let mut fields = HashMap::new();
@@ -150,7 +154,6 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                     continue;
                 };
                 let field = Field {
-                    public: old_field.public,
                     span: old_field.ident.span,
                     ty,
                 };
@@ -186,7 +189,7 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 },
             );
         }
-        TyItemKind::Enum(_) => {
+        TyItemKind::Union(_) => {
             todo!("Pattern Matching");
         }
     }
@@ -282,7 +285,6 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
         TyKind::UInt => Ok(hir::Ty::UInt),
         TyKind::Byte => Ok(hir::Ty::Byte),
         TyKind::Float => Ok(hir::Ty::Float),
-        TyKind::Char => Ok(hir::Ty::Char),
         TyKind::Bool => Ok(hir::Ty::Bool),
         TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(resolve_ty(scope, handler, *ty)?))),
         TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(resolve_tys(scope, handler, tys)?)),
@@ -344,16 +346,6 @@ fn resolve_pat(
             id
         }
         _ => todo!("Pattern Matching"),
-    }
-}
-
-fn convert_lit(lit: ast::LitExpr) -> hir::LitExpr {
-    match lit {
-        ast::LitExpr::Int(i) => hir::LitExpr::Int(i),
-        ast::LitExpr::Float(f) => hir::LitExpr::Float(f),
-        ast::LitExpr::Char(c) => hir::LitExpr::Char(c),
-        ast::LitExpr::String(s) => hir::LitExpr::String(s),
-        ast::LitExpr::Bool(b) => hir::LitExpr::Bool(b),
     }
 }
 

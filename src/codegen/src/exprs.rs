@@ -18,10 +18,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             Expr::Var(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(lit),
             Expr::Array(elems) => self.emit_array(self.mir.expr_ty(expr), elems),
-            Expr::Construct {
-                field_tys,
-                field_values,
-            } => self.emit_construct(field_tys, field_values),
+            Expr::Construct(values) => self.emit_construct(self.mir.expr_ty(expr), values),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
@@ -55,7 +52,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             Ty::Bool => "%hhd\n",
             Ty::Fields(_) => todo!(),
             Ty::Array(_) => todo!(),
-            Ty::Closure(_, _) | Ty::FuncPtr(_, _) => panic!("can't print this type"),
+            Ty::Func(_, _) => panic!("can't print this type"),
         };
         let format = self
             .builder
@@ -69,6 +66,16 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             .unwrap();
 
         LayoutValue::Zst
+    }
+
+    fn is_place(&self, expr: ExprId) -> bool {
+        match self.mir.expr(expr) {
+            Expr::Var(_) => true,
+            Expr::Field { base, .. } => self.is_place(*base),
+            Expr::Index { array, .. } => self.is_place(*array),
+            Expr::Call { .. } => todo!("Projections"),
+            _ => unreachable!("not a place"),
+        }
     }
 
     fn emit_place(&mut self, expr: ExprId) -> LayoutValue<'mir, 'ctx> {
@@ -170,19 +177,19 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         array
     }
 
-    fn emit_construct(
-        &mut self,
-        field_tys: &'mir [Ty],
-        field_values: &[ExprId],
-    ) -> LayoutValue<'mir, 'ctx> {
+    fn emit_construct(&mut self, ty: &'mir Ty, values: &[ExprId]) -> LayoutValue<'mir, 'ctx> {
+        let Ty::Fields(tys) = ty else {
+            unreachable!("construction of non-field type")
+        };
+
         // Unit.
-        if field_tys.is_empty() {
+        if tys.is_empty() {
             return LayoutValue::Zst;
         }
 
-        let lowered_ty = self.fields_ty(field_tys);
+        let lowered_ty = self.fields_ty(tys);
         let out = self.emit_alloca_entry(lowered_ty, "");
-        for (idx, value) in field_values.iter().enumerate() {
+        for (idx, value) in values.iter().enumerate() {
             let value = self.emit_expr(*value);
             let ptr = self
                 .builder
@@ -190,7 +197,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 .unwrap();
             self.emit_move(value, ptr);
         }
-        LayoutValue::Fields(field_tys, out)
+        LayoutValue::Fields(tys, out)
     }
 
     #[allow(
@@ -325,19 +332,16 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             .filter_map(|a| {
                 let arg_ty = &self.mir.expr_ty(a.value);
                 if layout::zst(arg_ty) {
+                    // Erase ZSTs.
                     None
-                } else if let Expr::Var(id) = self.mir.expr(a.value)
-                    && !a.mutable
-                    && layout::indirect(arg_ty)
-                    && self.funcs.get(*id).is_none()
-                {
-                    Some(self.vars[*id].as_value().into())
+                } else if a.mutable {
+                    // Mutable arguments.
+                    Some(self.emit_unique_place(a.value).as_pointer().into())
+                } else if layout::indirect(arg_ty) && self.is_place(a.value) {
+                    // Immutable aliasing optimisation.
+                    Some(self.emit_place(a.value).as_pointer().into())
                 } else {
-                    let tmp = if a.mutable {
-                        self.emit_unique_place(a.value)
-                    } else {
-                        self.emit_expr(a.value)
-                    };
+                    let tmp = self.emit_expr(a.value);
                     tmps.push(tmp);
                     Some(tmp.as_value().into())
                 }
@@ -465,7 +469,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
 
         // Create the defunctionalised function
         let func = {
-            let Ty::Closure(param_tys, ret_ty) = ty else {
+            let Ty::Func(param_tys, ret_ty) = ty else {
                 unreachable!("ICE")
             };
             let func = self.module.add_function(
@@ -587,9 +591,16 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
     fn emit_assign(&mut self, place: ExprId, value: ExprId) -> LayoutValue<'mir, 'ctx> {
         let place = self.emit_unique_place(place);
         let value = self.emit_expr(value);
+
+        // Don't have to do anything further if it's a ZST.
+        if let LayoutValue::Zst = place {
+            return LayoutValue::Zst;
+        }
+
         // Drop the current value in the assigned-to variable
         self.emit_drop(place);
         // Move the temporary value into the variable
+        // FIXME: properly move here, don't copy and drop
         self.emit_move(value, place.as_pointer());
         LayoutValue::Zst
     }

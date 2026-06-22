@@ -84,7 +84,7 @@ fn maybe_multiple_char_tokens() {
 
 #[test]
 fn keywords() {
-    let src = "if Int record Byte let mut UInt enum Float = match Bool else Char fn";
+    let src = "if Int record Byte let mut UInt union Float = match Bool else Char fn";
     assert_eq!(
         test_lex(src),
         Ok(vec![
@@ -102,21 +102,21 @@ fn keywords() {
             T::Whitespace.span(26..27),
             T::UInt.span(27..31),
             T::Whitespace.span(31..32),
-            T::Enum.span(32..36),
-            T::Whitespace.span(36..37),
-            T::Float.span(37..42),
-            T::Whitespace.span(42..43),
-            T::Eq.span(43..44),
-            T::Whitespace.span(44..45),
-            T::Match.span(45..50),
-            T::Whitespace.span(50..51),
-            T::Bool.span(51..55),
-            T::Whitespace.span(55..56),
-            T::Else.span(56..60),
-            T::Whitespace.span(60..61),
-            T::Char.span(61..65),
-            T::Whitespace.span(65..66),
-            T::Fn.span(66..68),
+            T::Union.span(32..37),
+            T::Whitespace.span(37..38),
+            T::Float.span(38..43),
+            T::Whitespace.span(43..44),
+            T::Eq.span(44..45),
+            T::Whitespace.span(45..46),
+            T::Match.span(46..51),
+            T::Whitespace.span(51..52),
+            T::Bool.span(52..56),
+            T::Whitespace.span(56..57),
+            T::Else.span(57..61),
+            T::Whitespace.span(61..62),
+            T::Char.span(62..66),
+            T::Whitespace.span(66..67),
+            T::Fn.span(67..69),
         ]),
     );
 }
@@ -137,7 +137,7 @@ fn comment() {
 
 #[test]
 fn literals() {
-    let src = r#"1 0.21 1.5E-2true"test"'\n''\''"#;
+    let src = r#"1 0.21 1.5E-2true"test\n\"""#;
     assert_eq!(
         test_lex(src),
         Ok(vec![
@@ -147,9 +147,7 @@ fn literals() {
             T::Whitespace.span(6..7),
             T::FloatLit.span(7..13),
             T::True.span(13..17),
-            T::StringLit.span(17..23),
-            T::CharLit.span(23..27),
-            T::CharLit.span(27..31),
+            T::StringLit.span(17..27),
         ]),
     );
 }
@@ -161,7 +159,7 @@ fn function() {
 // this is a comment!
 fn test(var: Type, var2_: Bool): Int -> {
  
-    let x = '\n' + "String content \"\\ test" + 7 / 27.3e-2 ** 4
+    let x = "\n" + "String content \"\\ test" + 7 / 27.3e-2 ** 4
     let mut chars = x.chars()
     if let Some(c) = chars.next() 
         x = x + c
@@ -206,7 +204,7 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Whitespace.span(76..77),
             T::Eq.span(77..78),
             T::Whitespace.span(78..79),
-            T::CharLit.span(79..83),
+            T::StringLit.span(79..83),
             T::Whitespace.span(83..84),
             T::Plus.span(84..85),
             T::Whitespace.span(85..86),

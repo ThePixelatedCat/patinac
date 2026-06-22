@@ -96,8 +96,7 @@ fn unify_ty_ty(
         | (PartialTy::UInt, PartialTy::UInt)
         | (PartialTy::Byte, PartialTy::Byte)
         | (PartialTy::Float, PartialTy::Float)
-        | (PartialTy::Bool, PartialTy::Bool)
-        | (PartialTy::Char, PartialTy::Char) => Ok(()),
+        | (PartialTy::Bool, PartialTy::Bool) => Ok(()),
         (PartialTy::Tuple(lhs_elems), PartialTy::Tuple(rhs_elems)) => {
             if lhs_elems.len() != rhs_elems.len() {
                 return Err(ErrorKind::TypesNotEqual(
@@ -167,12 +166,9 @@ fn unify_var_value(
 
 fn normalize_ty(table: &mut Table, ty: &PartialTy) -> PartialTy {
     match ty {
-        PartialTy::Int
-        | PartialTy::UInt
-        | PartialTy::Byte
-        | PartialTy::Float
-        | PartialTy::Bool
-        | PartialTy::Char => ty.clone(),
+        PartialTy::Int | PartialTy::UInt | PartialTy::Byte | PartialTy::Float | PartialTy::Bool => {
+            ty.clone()
+        }
         PartialTy::Tuple(tys) => {
             PartialTy::Tuple(tys.iter().map(|ty| normalize_ty(table, ty)).collect())
         }
@@ -208,7 +204,6 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> bool {
         | PartialTy::Byte
         | PartialTy::Float
         | PartialTy::Bool
-        | PartialTy::Char
         | PartialTy::Named(_) => false,
         PartialTy::Tuple(tys) => tys.iter().any(|ty| occurs_check(ty, var)),
         PartialTy::Array(ty) => occurs_check(ty, var),

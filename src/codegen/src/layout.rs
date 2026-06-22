@@ -8,11 +8,8 @@ use mir::Ty;
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum LayoutValue<'mir, 'ctx> {
     Scalar(ScalarKind<'mir, 'ctx>, ScalarLayout<'ctx>),
-
     Closure(FunctionType<'ctx>, PointerValue<'ctx>),
     Fields(&'mir [Ty], PointerValue<'ctx>),
-    // Record(TyId, PointerValue<'ctx>),
-    // Tuple(&'hir Ty, PointerValue<'ctx>),
     Zst,
 }
 
@@ -169,10 +166,9 @@ pub enum StorageClass {
 
 pub fn storage_class(ty: &Ty) -> StorageClass {
     match ty {
-        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Array(_) | Ty::FuncPtr(_, _) => {
-            StorageClass::Scalar
-        }
-        Ty::Closure(_, _) => StorageClass::Indirect,
+        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Array(_) => StorageClass::Scalar,
+        // FIXME: Account for non-capturing functions.
+        Ty::Func(_, _) => StorageClass::Indirect,
         Ty::Fields(elem_tys) => {
             if elem_tys.is_empty() {
                 StorageClass::Zst
@@ -193,8 +189,8 @@ pub fn zst(ty: &Ty) -> bool {
 
 pub fn trivial(ty: &Ty) -> bool {
     match ty {
-        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::FuncPtr(_, _) => true,
-        Ty::Array(_) | Ty::Closure(_, _) => false,
+        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => true,
+        Ty::Array(_) | Ty::Func(_, _) => false, // FIXME: Account for non-capturing functions.
         Ty::Fields(fields) => all_trivial(fields),
     }
 }

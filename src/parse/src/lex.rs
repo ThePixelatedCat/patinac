@@ -30,7 +30,7 @@ pub struct Tok {
 #[derive(Logos, PartialEq, Eq, Debug, Display, Clone, Copy)]
 #[logos(skip(r"//.*", allow_greedy = true))]
 #[logos(subpattern dec_int = "([0-9][0-9_]*)")]
-#[logos(subpattern escape = r#"((\\\\)|(\\')|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
+#[logos(subpattern escape = r#"((\\\\)|(\\")|(\\0)|(\\t)|(\\n)|(\\r)|(\\u\{[0-9a-fA-F]{1,6}\}))"#)]
 pub enum TokKind {
     /* LITERALS */
     /// integer literal.
@@ -42,9 +42,6 @@ pub enum TokKind {
     /// string literal.
     #[regex(r##"("([^"\\]|(?&escape))*")|((?s)#".*"#)"##, allow_greedy = true)]
     StringLit,
-    /// character literal.
-    #[regex(r"'([^\t\n\r'\\]|(?&escape))'")]
-    CharLit,
 
     /* DELIMITERS */
     /// `(`.
@@ -225,18 +222,18 @@ pub enum TokKind {
     #[display("export")]
     #[token("export")]
     Export,
-    /// `pub`.
-    #[display("pub")]
-    #[token("pub")]
-    Pub,
+    /// `opaque`.
+    #[display("opaque")]
+    #[token("opaque")]
+    Opaque,
     /// `record`.
     #[display("record")]
     #[token("record")]
     Record,
-    /// `enum`.
-    #[display("enum")]
-    #[token("enum")]
-    Enum,
+    /// `union`.
+    #[display("union")]
+    #[token("union")]
+    Union,
     /// `const`.
     #[display("const")]
     #[token("const")]
@@ -327,7 +324,6 @@ impl TokKind {
             Self::IntLit => String::from("1"),
             Self::FloatLit => String::from("1.1"),
             Self::StringLit => String::from(r#""Hello, World!""#),
-            Self::CharLit => String::from("'a'"),
             Self::Ident => String::from("foo"),
             Self::Whitespace => String::from(" \t"),
             _ => self.to_string().trim_matches('`').to_string(),

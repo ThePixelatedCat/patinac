@@ -39,7 +39,7 @@ impl FromIterator<(ModuleId, Ast)> for PackageAsts {
 pub struct Ast {
     /// The `import`s and `export`s of a module.
     pub vis_items: Vec<VisItem>,
-    /// The type definitions of a module, containing both `enum` and `record` definitions.
+    /// The type definitions of a module, containing both `union` and `record` definitions.
     pub ty_items: Vec<TyItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
     pub exec_items: Vec<ExecItem>,
@@ -139,27 +139,29 @@ pub enum VisItem {
     Export(Vec<SpanIdent>),
 }
 
-/// The definition of a type, either a `record` or a `enum`.
+/// The definition of a type, either a `record` or a `union`.
 #[derive(Debug, PartialEq)]
 pub struct TyItem {
+    /// Whether the type is opaque (meaning it's fields/variants are private).
+    pub opaque: bool,
     /// The name of the type.
     pub ident: SpanIdent,
     /// The declared generic parameters.
     pub generics: Vec<SpanIdent>,
-    /// The kind of type (`record` or `enum`).
+    /// The kind of type (`record` or `union`).
     pub kind: TyItemKind,
 }
 
-/// The information of a [`TyItem`] specific to whether it's a `record` or an `enum`.
+/// The information of a [`TyItem`] specific to whether it's a `record` or an `union`.
 #[derive(Debug, PartialEq)]
 pub enum TyItemKind {
     /// A `record` type.
     Record(Vec<Field>),
-    /// An `enum` type.
-    Enum(Vec<Variant>),
+    /// A `union` type.
+    Union(Vec<Variant>),
 }
 
-/// A variant of an `enum`.
+/// A variant of a `union`.
 #[derive(Debug, PartialEq)]
 pub struct Variant {
     /// The name of the variant.
@@ -169,10 +171,8 @@ pub struct Variant {
 }
 
 #[derive(Debug, PartialEq)]
-/// A field of a `record` or of an `enum` variant.
+/// A field of a `record` or of a `union` variant.
 pub struct Field {
-    /// Whether the field is public.
-    pub public: bool,
     /// The name of the field.
     pub ident: SpanIdent,
     /// The type of the field.
@@ -400,11 +400,6 @@ impl ExprKind {
         Self::Lit(LitExpr::Float(f))
     }
 
-    /// Constructs a character literal.
-    pub const fn char(c: char) -> Self {
-        Self::Lit(LitExpr::Char(c))
-    }
-
     /// Constructs a string literal.
     pub fn string(s: &str) -> Self {
         Self::Lit(LitExpr::String(String::from(s)))
@@ -423,8 +418,6 @@ pub enum LitExpr {
     Int(u64),
     /// A float. Can include sign and exponent.
     Float(f64),
-    /// A character. May be removed.
-    Char(char),
     /// A string. Common escape sequences and raw strings are supported.
     String(String),
     /// A boolean.
@@ -571,8 +564,6 @@ pub enum TyKind {
     Byte,
     /// Double-precision floating point number (binary64).
     Float,
-    /// TODO
-    Char,
     /// Truth value (`true`/`false``).
     Bool,
     /// A dynamic homogenous array.
@@ -581,7 +572,7 @@ pub enum TyKind {
     Tuple(Vec<Ty>),
     /// A first-class function value, implemented as a closure.
     Func(Vec<FuncTy>, Box<FuncTy>),
-    /// A user-defined type, such as a `record` or `enum`.
+    /// A user-defined type, such as a `record` or `union`.
     Named(Path, Vec<Ty>),
 }
 

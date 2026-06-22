@@ -25,7 +25,15 @@ pub fn resolve_expr(
                 return Err(handler.err(error.span(expr.span, scope.module())));
             }
         },
-        ExprKind::Lit(lit) => hir::Expr::Lit(crate::convert_lit(lit)),
+        ExprKind::Lit(lit) => {
+            let lit = match lit {
+                ast::LitExpr::Int(i) => hir::LitExpr::Int(i),
+                ast::LitExpr::Float(f) => hir::LitExpr::Float(f),
+                ast::LitExpr::String(s) => hir::LitExpr::String(s),
+                ast::LitExpr::Bool(b) => hir::LitExpr::Bool(b),
+            };
+            hir::Expr::Lit(lit)
+        }
         ExprKind::Array(exprs) => hir::Expr::Array(resolve_exprs(scope, hir, handler, exprs)?),
         ExprKind::Tuple(exprs) => hir::Expr::Tuple(resolve_exprs(scope, hir, handler, exprs)?),
         ExprKind::Infix { op, lhs, rhs } => {

@@ -35,7 +35,6 @@ pub enum PartialTy {
     Byte,
     Float,
     Bool,
-    Char,
     Tuple(Vec<Self>),
     Array(Box<Self>),
     Fn(Vec<Param>, Box<Self>),
@@ -68,7 +67,6 @@ impl From<&Ty> for PartialTy {
             Ty::Byte => Self::Byte,
             Ty::Float => Self::Float,
             Ty::Bool => Self::Bool,
-            Ty::Char => Self::Char,
             Ty::Tuple(tys) => Self::Tuple(tys.iter().map(Self::from).collect()),
             Ty::Array(ty) => Self::Array(Box::new(ty.as_ref().into())),
             Ty::Func(params, ret) => {
@@ -96,7 +94,6 @@ impl Display for PartialTy {
             Self::Byte => "Byte".fmt(f),
             Self::Float => "Float".fmt(f),
             Self::Bool => "Bool".fmt(f),
-            Self::Char => "Char".fmt(f),
             Self::Tuple(tys) => write!(f, "#({})", itertools::join(tys, ", ")),
             Self::Array(ty) => write!(f, "Array[{ty}]"),
             Self::Fn(params, result_ty) => {

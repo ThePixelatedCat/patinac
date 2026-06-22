@@ -14,16 +14,12 @@ pub struct Mir {
 }
 
 impl Mir {
-    pub fn execs(&self) -> &[Item] {
+    pub fn items(&self) -> &[Item] {
         &self.items
     }
 
-    pub fn add_exec(&mut self, item: Item) {
+    pub fn add_item(&mut self, item: Item) {
         self.items.push(item);
-    }
-
-    pub fn add_execs(&mut self, items: impl IntoIterator<Item = Item>) {
-        self.items.extend(items);
     }
 
     pub const fn main(&self) -> Option<&Item> {
@@ -54,8 +50,8 @@ impl Mir {
 
 // Var-related functions
 impl Mir {
-    pub fn add_var(&mut self, ident: Ident, ty: Ty, mutable: bool) -> VarId {
-        self.vars.insert(VarInfo { ident, ty, mutable })
+    pub fn add_var(&mut self, info: VarInfo) -> VarId {
+        self.vars.insert(info)
     }
 
     pub fn var(&self, id: VarId) -> &VarInfo {
@@ -76,7 +72,7 @@ pub enum ItemKind {
 }
 
 new_key_type! { pub struct VarId; }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct VarInfo {
     pub ident: Ident,
     pub ty: Ty,
@@ -90,15 +86,12 @@ pub enum Stmt {
 }
 
 new_key_type! { pub struct ExprId; }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Var(VarId),
     Lit(LitExpr),
     Array(Vec<ExprId>),
-    Construct {
-        field_tys: Vec<Ty>,
-        field_values: Vec<ExprId>,
-    },
+    Construct(Vec<ExprId>),
     Infix {
         op: InfixOp,
         lhs: ExprId,
@@ -186,8 +179,8 @@ pub enum PrefixOp {
     Neg,
 }
 
-/// The kinds of types
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// The kinds of types.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ty {
     Int,
     UInt,
@@ -196,12 +189,56 @@ pub enum Ty {
     Bool,
     Fields(Vec<Self>),
     Array(Box<Self>),
-    FuncPtr(Vec<Param>, Box<Self>),
-    Closure(Vec<Param>, Box<Self>),
+    Func(Vec<Param>, Box<Self>),
+}
+
+impl Ty {
+    /// Size of a pointer in bytes. FIXME: Support for non-64 bit architectures?
+    const PTR_SIZE: u64 = 8;
+
+    /// Returns the inline size of this type, in bytes.
+    pub fn size(&self) -> u64 {
+        match self {
+            Self::Int | Self::UInt | Self::Float => 8,
+            Self::Byte | Self::Bool => 1,
+            Self::Fields(field_tys) => {
+                let align = self.alignment();
+                if align == 0 {
+                    return 0;
+                }
+
+                let base_size = field_tys.iter().fold(0, |sum, ty| {
+                    let align = ty.alignment();
+                    let padding = if align == 0 {
+                        0
+                    } else {
+                        (align - (sum % align)) % align
+                    };
+                    sum + padding + ty.size()
+                });
+
+                let end_padding = (align - (base_size % align)) % align;
+                base_size + end_padding
+            }
+            Self::Array(_) => Self::PTR_SIZE,
+            Self::Func(_, _) => Self::PTR_SIZE * 5, // Function, environment, drop, copy, equality.
+        }
+    }
+
+    /// Returns the alignment of this type, in bytes.
+    pub fn alignment(&self) -> u64 {
+        match self {
+            Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool | Self::Array(_) => {
+                self.size()
+            }
+            Self::Fields(field_tys) => field_tys.iter().map(Ty::alignment).max().unwrap_or(0),
+            Self::Func(_, _) => Self::PTR_SIZE,
+        }
+    }
 }
 
 /// A parameter of a function type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Param {
     pub ty: Ty,
     pub mutable: bool,

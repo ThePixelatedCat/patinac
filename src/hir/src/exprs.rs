@@ -77,7 +77,6 @@ pub enum Expr {
 pub enum LitExpr {
     Int(u64),
     Float(f64),
-    Char(char),
     String(String),
     Bool(bool),
 }

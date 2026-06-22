@@ -98,7 +98,7 @@ fn main() -> ExitCode {
     };
 
     eprintln!("Lowering...");
-    let mir = lower::lower(handler.clone(), hir, expr_tys);
+    let mir = lower::lower(handler.clone(), &hir, &expr_tys);
 
     eprintln!("Compiling...");
     let mode = if args.dump {

@@ -9,7 +9,6 @@ impl Parser<'_> {
             TokKind::Minus
             | TokKind::IntLit
             | TokKind::FloatLit
-            | TokKind::CharLit
             | TokKind::StringLit
             | TokKind::True
             | TokKind::False => {

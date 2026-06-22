@@ -32,7 +32,6 @@ impl Parser<'_> {
             TokKind::Ident => self.var_expr(),
             TokKind::IntLit
             | TokKind::FloatLit
-            | TokKind::CharLit
             | TokKind::StringLit
             | TokKind::True
             | TokKind::False => self
@@ -232,12 +231,6 @@ impl Parser<'_> {
             TokKind::FloatLit => LitExpr::Float(
                 src.parse()
                     .expect("ICE: lexer produced invalid float token"),
-            ),
-            TokKind::CharLit => LitExpr::Char(
-                self.process_escapes(&src[1..src.len() - 1], tok.span.start + 1)?
-                    .chars()
-                    .exactly_one()
-                    .expect("ICE: lexer produced char token with multiple characters"),
             ),
             TokKind::StringLit => {
                 if src.starts_with('#') {
