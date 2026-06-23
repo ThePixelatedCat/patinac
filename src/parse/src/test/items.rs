@@ -3,8 +3,8 @@ use std::range::Range;
 use pretty_assertions::assert_eq;
 
 use ast::{
-    ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem, TyItemKind, TyKind,
-    Variant, VisItem,
+    ExecItem, ExecKind, ExprKind, Field, Impl, InfixOp, Param, PatKind, Path, TyItem, TyItemKind,
+    TyKind, Variant, VisItem,
 };
 use ident::Ident;
 
@@ -31,7 +31,7 @@ fn vis_items() {
 }
 
 #[test]
-fn record_items() {
+fn records() {
     assert_eq!(
         Parser::new_test("opaque record Point(x: Int, y: Int)",).item(),
         Ok(Item::TyItem(TyItem {
@@ -87,7 +87,7 @@ record Foo[T, U](
 }
 
 #[test]
-fn union_items() {
+fn unions() {
     let input = "
 union XY {
     X(),
@@ -125,7 +125,42 @@ union XY {
 }
 
 #[test]
-fn const_items() {
+fn impls() {
+    let input = "
+    impl Foo {
+        fn bar(): () = ()
+        const BAZ: () = ()
+    }
+";
+    assert_eq!(
+        Parser::new_test(input).item(),
+        Ok(Item::Impl(Impl {
+            ty: Ident::new("Foo").span(10..13),
+            items: vec![
+                ExecItem {
+                    ident: Ident::new("bar").span(27..30),
+                    kind: ExecKind::Func {
+                        generics: vec![],
+                        params: vec![],
+                        ret_mut: false,
+                        ret_ty: TyKind::unit().span(34..36),
+                        body: ExprKind::unit().span(39..41)
+                    }
+                },
+                ExecItem {
+                    ident: Ident::new("BAZ").span(56..59),
+                    kind: ExecKind::Const {
+                        ty: TyKind::unit().span(61..63),
+                        val: ExprKind::unit().span(66..68)
+                    }
+                }
+            ]
+        }))
+    )
+}
+
+#[test]
+fn consts() {
     assert_eq!(
         Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
         Ok(Item::ExecItem(ExecItem {
@@ -139,12 +174,12 @@ fn const_items() {
 }
 
 #[test]
-fn function_items() {
+fn functions() {
     assert_eq!(
         Parser::new_test("fn sum(mut a: Byte, b: Byte): () = a = a + b").item(),
         Ok(Item::ExecItem(ExecItem {
             ident: Ident::new("sum").span(3..6),
-            kind: ExecKind::Fn {
+            kind: ExecKind::Func {
                 generics: vec![],
                 params: vec![
                     Param {

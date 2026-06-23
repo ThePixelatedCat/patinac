@@ -230,6 +230,10 @@ pub enum TokKind {
     #[display("union")]
     #[token("union")]
     Union,
+    /// `impl`.
+    #[display("impl")]
+    #[token("impl")]
+    Impl,
     /// `const`.
     #[display("const")]
     #[token("const")]

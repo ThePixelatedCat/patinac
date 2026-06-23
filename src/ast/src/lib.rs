@@ -41,6 +41,8 @@ pub struct Ast {
     pub vis_items: Vec<VisItem>,
     /// The type definitions of a module, containing both `union` and `record` definitions.
     pub ty_items: Vec<TyItem>,
+    /// The type implementations of a module.
+    pub impls: Vec<Impl>,
     /// The "executable items" of a module. These are the items that contain expressions.
     pub exec_items: Vec<ExecItem>,
 }
@@ -175,6 +177,14 @@ pub struct Field {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Impl {
+    /// The type this implementation is for.
+    pub ty: SpanIdent,
+    /// The items within the implementation.
+    pub items: Vec<ExecItem>,
+}
+
+#[derive(Debug, PartialEq)]
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
 pub struct ExecItem {
     /// The name of the item.
@@ -194,7 +204,7 @@ pub enum ExecKind {
         val: Expr,
     },
     /// A function item.
-    Fn {
+    Func {
         /// The generic parameters.
         generics: Vec<SpanIdent>,
         /// The value parameters.
@@ -403,6 +413,11 @@ impl ExprKind {
     /// Constructs a boolean literal.
     pub const fn bool(b: bool) -> Self {
         Self::Lit(LitExpr::Bool(b))
+    }
+
+    /// Constructs an empty [`ExprKind::Tuple`] for representing the Unit value.
+    pub const fn unit() -> Self {
+        Self::Tuple(Vec::new())
     }
 }
 

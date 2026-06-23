@@ -125,7 +125,7 @@ fn find_main(
     execs: &[ast::ExecItem],
 ) -> Result<Option<usize>> {
     for (idx, item) in execs.iter().enumerate() {
-        if let ast::ExecKind::Fn { params, ret_ty, .. } = &item.kind
+        if let ast::ExecKind::Func { params, ret_ty, .. } = &item.kind
             && item.ident.ident == "main"
         {
             return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
@@ -221,7 +221,7 @@ fn resolve_exec_item(
                 kind: hir::ExecKind::Const(val?),
             })
         }
-        ast::ExecKind::Fn {
+        ast::ExecKind::Func {
             generics,
             params,
             ret_mut,

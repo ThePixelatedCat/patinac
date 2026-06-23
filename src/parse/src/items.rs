@@ -2,7 +2,7 @@ use std::range::Range;
 
 use derive_more::From;
 
-use ast::{ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant, VisItem};
+use ast::{ExecItem, ExecKind, Field, Impl, Param, TyItem, TyItemKind, Variant, VisItem};
 use ident::SpanIdent;
 
 use crate::{ErrorKind, Parser, Result, TokKind};
@@ -12,6 +12,7 @@ pub enum Item {
     VisItem(VisItem),
     TyItem(TyItem),
     ExecItem(ExecItem),
+    Impl(Impl),
 }
 
 impl Parser<'_> {
@@ -24,13 +25,12 @@ impl Parser<'_> {
                 match self.peek()? {
                     TokKind::Record => self.record_item(true).map(Item::from),
                     TokKind::Union => self.union_item(true).map(Item::from),
-                    _ => {
-                        Err(self.err_next(ErrorKind::Unexpected, &["expected `record` or `union`"]))
-                    }
+                    _ => Err(self.err_next(ErrorKind::Unexpected, &["expected a record or union"])),
                 }
             }
             TokKind::Record => self.record_item(false).map(Item::from),
             TokKind::Union => self.union_item(false).map(Item::from),
+            TokKind::Impl => self.impl_item().map(Item::from),
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
             _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
@@ -104,6 +104,27 @@ impl Parser<'_> {
         )
     }
 
+    fn impl_item(&mut self) -> Result<Impl> {
+        self.consume(TokKind::Impl)?;
+
+        let ty = self.ident()?;
+
+        self.consume(TokKind::LBrace)?.span.start;
+        let mut items = vec![];
+        while !self.at(TokKind::RBrace) {
+            let item = match self.peek()? {
+                TokKind::Const => self.const_item(),
+                TokKind::Fn => self.func_item(),
+                _ => {
+                    Err(self.err_next(ErrorKind::Unexpected, &["expected a function or constant"]))
+                }
+            }?;
+            items.push(item);
+        }
+
+        Ok(Impl { ty, items })
+    }
+
     fn const_item(&mut self) -> Result<ExecItem> {
         self.consume(TokKind::Const)?;
 
@@ -152,7 +173,7 @@ impl Parser<'_> {
 
         Ok(ExecItem {
             ident,
-            kind: ExecKind::Fn {
+            kind: ExecKind::Func {
                 generics,
                 params,
                 ret_mut,
