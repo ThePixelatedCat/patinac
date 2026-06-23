@@ -7,7 +7,7 @@ use package::ModuleId;
 use slotmap::SecondaryMap;
 use yansi::Paint as _;
 
-use codegen::{Codegen, CodegenMode, OptLevel};
+use codegen::{CodegenMode, OptLevel, Target};
 use errors::{DiagnosticKind, ErrorHandler, HandlerCallback};
 use parse::Parser;
 
@@ -28,10 +28,24 @@ struct Args {
     #[argh(switch)]
     /// dump LLVM IR to stderr rather than emitting a binary
     dump: bool,
+    // #[argh(option, short = 'T')]
+    // /// the target platform to compile for, defaulting to the host platform
+    // target: Option<Target>,
 }
 
 fn main() -> ExitCode {
     let args: Args = from_env();
+    let target = match Target::host() {
+        Some(target) => target,
+        None => {
+            eprintln!(
+                "{}{}",
+                "error".bright_red().bold(),
+                ": host platform is not a supported target".white().bold()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
 
     let start = Instant::now();
 
@@ -74,7 +88,7 @@ fn main() -> ExitCode {
         &|msg, span, module, kind| print_diagnostic(msg, span, kind, &sources[module]);
     let handler = ErrorHandler::new(handler_inner);
 
-    //eprintln!("Parsing...");
+    eprintln!("Parsing...");
     let Ok(asts) = sources
         .iter()
         .map(|(id, src)| {
@@ -100,23 +114,24 @@ fn main() -> ExitCode {
     eprintln!("Lowering...");
     let mir = lower::lower(handler.clone(), &hir, &expr_tys);
 
-    eprintln!("Compiling...");
+    eprintln!("Emitting...");
     let mode = if args.dump {
         CodegenMode::IRDump
     } else {
         CodegenMode::Emit(args.src_path.with_extension("o"))
     };
-    let ctx = codegen::create_ctx();
-    Codegen::new(
+
+    codegen::emit(
         &mir,
-        &ctx,
+        args.opt_level,
+        mode,
+        target,
         &args
             .src_path
             .file_name()
             .expect("we read from the file earlier, so we know it is a file")
             .to_string_lossy(),
-    )
-    .codegen(args.opt_level, mode);
+    );
 
     eprintln!(
         "{} in {}ms",

@@ -103,16 +103,21 @@ pub fn resolve_expr(
         ExprKind::Lambda { params, body } => {
             let mut scope = Scope::clone(scope);
 
-            // Rebind all mutable captures as immutable within the lambda body.
+            // Rebind all captures within the lambda body, making them all immutable.
             let mut captures = HashSet::default();
-            collect_captures(&scope, &mut captures, &body);
-            for capture in &captures {
-                let info = hir.var_info(*capture);
-                if info.mutable {
-                    let id = hir.add_var(info.ident, false, info.span, scope.module());
-                    scope.add_var(info.ident, id);
-                }
-            }
+            collect_captures(&scope, hir, &mut captures, &body);
+            let captures = captures
+                .into_iter()
+                .map(|capture| {
+                    let info = hir.var_info(capture);
+                    let rebinding = hir.add_var(hir::VarInfo {
+                        mutable: false,
+                        ..info
+                    });
+                    scope.add_var(info.ident, rebinding);
+                    (capture, rebinding)
+                })
+                .collect();
 
             let params = params
                 .into_iter()
@@ -123,7 +128,7 @@ pub fn resolve_expr(
             hir::Expr::Lambda {
                 params: params?,
                 body: body?,
-                captures: captures.into_iter().collect(),
+                captures,
             }
         }
         ExprKind::If { cond, th, el } => {
@@ -189,7 +194,7 @@ fn resolve_block_expr(
                 let val = resolve_expr(&scope, hir, handler, val);
                 let id = crate::resolve_binding(&mut scope, hir, handler, binding);
                 Ok(hir::Stmt::Decl {
-                    id: id?,
+                    var: id?,
                     val: val?,
                     span,
                 })
@@ -265,13 +270,13 @@ fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
     }
 }
 
-fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &ast::Expr) {
+fn collect_captures(scope: &Scope, hir: &Hir, captures: &mut HashSet<VarId>, expr: &ast::Expr) {
     match &expr.kind {
         ExprKind::Var(path) => {
-            // Only add capture if it's a single identifier, meaning it's a local variable, and it's bound.
+            // Only add capture if it's bound.
             // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
-            if path.is_single_ident()
-                && let Some(id) = scope.get_var(path.start())
+            if let Some(id) = scope.get_var(path.start())
+                && !hir.var_info(id).global
             {
                 captures.insert(id);
             }
@@ -279,54 +284,59 @@ fn collect_captures(scope: &Scope, captures: &mut HashSet<VarId>, expr: &ast::Ex
         ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
         ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
             for e in exprs {
-                collect_captures(scope, captures, e);
+                collect_captures(scope, hir, captures, e);
             }
         }
         ExprKind::Lambda { body: e, .. }
         | ExprKind::Field { base: e, .. }
         | ExprKind::Prefix { expr: e, .. }
         | ExprKind::Print(e)
-        | ExprKind::Return(e) => collect_captures(scope, captures, e),
+        | ExprKind::Return(e) => collect_captures(scope, hir, captures, e),
         ExprKind::Infix {
             lhs: e1, rhs: e2, ..
         }
         | ExprKind::Index { arr: e1, idx: e2 } => {
-            collect_captures(scope, captures, e1);
-            collect_captures(scope, captures, e2);
+            collect_captures(scope, hir, captures, e1);
+            collect_captures(scope, hir, captures, e2);
         }
         ExprKind::Call { func, args } => {
-            collect_captures(scope, captures, func);
+            collect_captures(scope, hir, captures, func);
             for a in args {
-                collect_captures(scope, captures, &a.val);
+                collect_captures(scope, hir, captures, &a.val);
             }
         }
         ExprKind::Match { scrutinee, arms } => {
-            collect_captures(scope, captures, scrutinee);
+            collect_captures(scope, hir, captures, scrutinee);
             for a in arms {
-                collect_captures(scope, captures, &a.body);
+                collect_captures(scope, hir, captures, &a.body);
             }
         }
         ExprKind::If { cond, th, el } => {
-            collect_captures(scope, captures, cond);
-            collect_block_captures(scope, captures, th);
+            collect_captures(scope, hir, captures, cond);
+            collect_block_captures(scope, hir, captures, th);
             el.as_ref()
-                .inspect(|el| collect_block_captures(scope, captures, el));
+                .inspect(|el| collect_block_captures(scope, hir, captures, el));
         }
         ExprKind::For { iter, body, .. } => {
-            collect_captures(scope, captures, iter);
-            collect_block_captures(scope, captures, body);
+            collect_captures(scope, hir, captures, iter);
+            collect_block_captures(scope, hir, captures, body);
         }
         ExprKind::Loop(stmts) | ExprKind::Block(stmts) => {
-            collect_block_captures(scope, captures, stmts);
+            collect_block_captures(scope, hir, captures, stmts);
         }
     }
 }
 
-fn collect_block_captures(scope: &Scope, captures: &mut HashSet<VarId>, block: &ast::BlockExpr) {
+fn collect_block_captures(
+    scope: &Scope,
+    hir: &Hir,
+    captures: &mut HashSet<VarId>,
+    block: &ast::BlockExpr,
+) {
     for s in &block.stmts {
         match s {
-            ast::Stmt::Decl { val, .. } => collect_captures(scope, captures, val),
-            ast::Stmt::Expr(expr) => collect_captures(scope, captures, expr),
+            ast::Stmt::Decl { val, .. } => collect_captures(scope, hir, captures, val),
+            ast::Stmt::Expr(expr) => collect_captures(scope, hir, captures, expr),
         }
     }
 }

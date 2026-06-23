@@ -126,7 +126,22 @@ impl TypeChecker<'_> {
                 );
                 field_ty
             }
-            Expr::Lambda { params, body, .. } => {
+            Expr::Lambda {
+                params,
+                body,
+                captures,
+            } => {
+                for (capture, rebinding) in captures {
+                    let capture_ty = self.var_ty(hir, *capture).clone();
+                    let rebinding_ty = self.var_ty(hir, *rebinding).clone();
+                    self.constrain_eq(
+                        capture_ty,
+                        rebinding_ty,
+                        hir.var_info(*capture).span,
+                        module,
+                    );
+                }
+
                 let param_tys = params
                     .iter()
                     .map(|id| {
@@ -197,7 +212,7 @@ impl TypeChecker<'_> {
             .stmts
             .iter()
             .map(|stmt| match stmt {
-                Stmt::Decl { id, val, .. } => {
+                Stmt::Decl { var: id, val, .. } => {
                     let val_ty = self.infer_expr(hir, module, *val);
                     let var_ty = self.var_ty(hir, *id).clone();
                     self.constrain_eq(val_ty, var_ty, hir.expr_span(*val), module);

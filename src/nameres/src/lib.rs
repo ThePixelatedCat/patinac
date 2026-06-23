@@ -6,11 +6,11 @@ mod scope;
 #[cfg(test)]
 mod test;
 
-use foldhash::{HashMap, HashMapExt};
+use foldhash::{HashMap, HashMapExt as _};
 
 use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem};
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
-use hir::{ExprId, Field, Hir, Param, TyInfo, VarId};
+use hir::{ExprId, Field, Hir, Param, TyInfo, VarId, VarInfo};
 use package::{ModuleId, Package};
 
 use crate::{error::ErrorKind, scope::Scope};
@@ -72,7 +72,13 @@ fn resolve_ast(
                 );
             }
             None => {
-                let id = hir.add_var(exec.ident.ident, false, exec.ident.span, scope.module());
+                let id = hir.add_var(VarInfo {
+                    ident: exec.ident.ident,
+                    mutable: false,
+                    global: true,
+                    span: exec.ident.span,
+                    module: scope.module(),
+                });
                 scope.add_var(exec.ident.ident, id);
             }
         }
@@ -157,7 +163,7 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                     span: old_field.ident.span,
                     ty,
                 };
-                if let Some(_) = fields.insert(old_field.ident.ident, field) {
+                if fields.insert(old_field.ident.ident, field).is_some() {
                     handler.err(
                         ErrorKind::DupFields(old_field.ident.ident)
                             .span(item.ident.span, scope.module()),
@@ -167,8 +173,8 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
 
             let constructor_ty = hir::Ty::Func(
                 fields
-                    .iter()
-                    .map(|(_, field)| Param {
+                    .values()
+                    .map(|field| Param {
                         ty: field.ty.clone(),
                         mutable: false,
                         span: field.span,
@@ -176,18 +182,17 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                     .collect(),
                 Box::new(hir::Ty::Named(id)),
             );
-            let constructor_id =
-                hir.add_var(item.ident.ident, false, item.ident.span, scope.module());
-            hir.add_var_ty(constructor_id, constructor_ty);
-            scope.add_var(item.ident.ident, constructor_id);
+            let ctor = hir.add_var(VarInfo {
+                ident: item.ident.ident,
+                mutable: false,
+                global: true,
+                span: item.ident.span,
+                module: scope.module(),
+            });
+            hir.add_var_ty(ctor, constructor_ty);
+            scope.add_var(item.ident.ident, ctor);
 
-            hir.fulfill_ty(
-                id,
-                TyInfo {
-                    fields: fields.into(),
-                    ctor: constructor_id,
-                },
-            );
+            hir.fulfill_ty(id, TyInfo { fields, ctor });
         }
         TyItemKind::Union(_) => {
             todo!("Pattern Matching");
@@ -338,7 +343,13 @@ fn resolve_pat(
 ) -> VarId {
     match pat.kind {
         PatKind::Ident(ident) => {
-            let id = hir.add_var(ident, mutable, pat.span, scope.module());
+            let id = hir.add_var(VarInfo {
+                ident,
+                mutable,
+                global: false,
+                span: pat.span,
+                module: scope.module(),
+            });
             if let Some(ty) = ty {
                 hir.add_var_ty(id, ty);
             }

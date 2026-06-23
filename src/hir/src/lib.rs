@@ -101,19 +101,8 @@ impl Hir {
 
 // Var-related functions
 impl Hir {
-    pub fn add_var(
-        &mut self,
-        ident: Ident,
-        mutable: bool,
-        span: Range<u32>,
-        module: ModuleId,
-    ) -> VarId {
-        self.vars.insert(VarInfo {
-            ident,
-            mutable,
-            span,
-            module,
-        })
+    pub fn add_var(&mut self, info: VarInfo) -> VarId {
+        self.vars.insert(info)
     }
 
     pub fn var_info(&self, id: VarId) -> VarInfo {
@@ -171,6 +160,7 @@ new_key_type! { pub struct VarId; }
 pub struct VarInfo {
     pub ident: Ident,
     pub mutable: bool,
+    pub global: bool,
     pub span: Range<u32>,
     pub module: ModuleId,
 }

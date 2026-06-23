@@ -1,0 +1,123 @@
+use std::{path::PathBuf, str::FromStr};
+
+use inkwell::targets::TargetTriple;
+
+/// What to produce, if anything.
+#[derive(PartialEq, Eq)]
+pub enum CodegenMode {
+    /// Dump the LLVM IR to stderr.
+    IRDump,
+    /// Emit an object file at the given path.
+    Emit(PathBuf),
+    /// Run verification checks but do nothing else (for testing).
+    Silent,
+}
+
+/// What level of optimisation to use.
+///
+/// Currently directly corresponds to the LLVM optimisation levels of the same names.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum OptLevel {
+    /// `-O0`. No optimisation.
+    #[default]
+    O0 = 0,
+    /// `-O1`.
+    O1 = 1,
+    /// `-O2`.
+    O2 = 2,
+    /// `-O3`. Full optimisations (minus LTO).
+    O3 = 3,
+}
+
+impl FromStr for OptLevel {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "0" => Ok(Self::O0),
+            "1" => Ok(Self::O1),
+            "2" => Ok(Self::O2),
+            "3" => Ok(Self::O3),
+            _ => Err(r#"expected "0", "1", "2", or "3""#),
+        }
+    }
+}
+
+impl OptLevel {
+    /// Converts the optimisation level into a string of LLVM optimisation passes, as expected by `opt`.
+    #[expect(clippy::as_conversions, reason = "Casting to access enum discriminant")]
+    pub fn opt_string(self) -> String {
+        match self {
+            Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
+                format!("default<O{}>", self as u8)
+            }
+        }
+    }
+}
+
+/// Supported compilation targets.
+#[derive(Debug, Clone, Copy)]
+pub enum Target {
+    /// Windows on x86_64.
+    X86_64Windows,
+    /// Linux on x86_64.
+    X86_64Linux,
+    /// Windows on Arm64/Aarch64.
+    Arm64Windows,
+    /// Linux on Arm64/Aarch64.
+    Arm64Linux,
+    /// MacOS on Arm64/Aarch64.
+    Arm64Mac,
+}
+
+impl Target {
+    /// Returns the target corresponding to the host platform, if there is one.
+    pub fn host() -> Option<Self> {
+        cfg_select! {
+            all(target_arch = "x86_64", target_os = "windows") => Some(Self::X86_64Windows),
+            all(target_arch = "x86_64", target_os = "linux") => Some(Self::X86_64Linux),
+            all(target_arch = "aarch64", target_os = "windows") => Some(Self::Arm64Windows),
+            all(target_arch = "aarch64", target_os = "linux") => Some(Self::Arm64Linux),
+            all(target_arch = "aarch64", target_os = "macos") => Some(Self::Arm64Mac),
+            _ => None
+        }
+    }
+
+    /// Returns the LLVM target triple corresponding to this target.
+    pub fn triple(self) -> TargetTriple {
+        let name = match self {
+            Self::X86_64Windows => "x86_64-pc-windows",
+            Self::X86_64Linux => "x86_64-unknown-linux",
+            Self::Arm64Windows => "aarch64-pc-windows",
+            Self::Arm64Linux => "aarch64-unknown-linux",
+            Self::Arm64Mac => "aarch64-apple-darwin",
+        };
+        TargetTriple::create(name)
+    }
+}
+
+impl Default for Target {
+    fn default() -> Self {
+        Self::host().unwrap_or(Self::X86_64Linux)
+    }
+}
+
+#[test]
+fn validate_triples() {
+    use inkwell::targets::{InitializationConfig, Target as LLVMTarget};
+
+    LLVMTarget::initialize_all(&InitializationConfig::default());
+
+    let targets = [
+        Target::X86_64Windows,
+        Target::X86_64Linux,
+        Target::Arm64Windows,
+        Target::Arm64Linux,
+        Target::Arm64Mac,
+    ];
+
+    for target in targets {
+        LLVMTarget::from_triple(&target.triple()).unwrap();
+    }
+}

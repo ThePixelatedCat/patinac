@@ -9,11 +9,11 @@ use inkwell::{
 use mir::{Ty, VarId};
 
 use crate::{
-    Codegen,
+    CodegenState,
     layout::{self, IntSize, LayoutValue},
 };
 
-impl<'ctx> Codegen<'_, 'ctx> {
+impl<'ctx> CodegenState<'_, 'ctx> {
     pub(crate) fn drop_func_ty(&self) -> FunctionType<'ctx> {
         self.ctx.void_type().fn_type(&[self.ptr_ty().into()], false)
     }

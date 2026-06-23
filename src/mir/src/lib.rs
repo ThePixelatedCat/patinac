@@ -9,7 +9,7 @@ pub struct Mir {
     main: Option<Item>,
     items: Vec<Item>,
     exprs: SlotMap<ExprId, Expr>,
-    expr_tys: SecondaryMap<ExprId, Ty>,
+    // expr_tys: SecondaryMap<ExprId, Ty>,
     vars: SlotMap<VarId, VarInfo>,
 }
 
@@ -33,18 +33,14 @@ impl Mir {
 
 // Expr-related functions
 impl Mir {
-    pub fn add_expr(&mut self, expr: Expr, ty: Ty) -> ExprId {
+    pub fn add_expr(&mut self, expr: Expr) -> ExprId {
         let id = self.exprs.insert(expr);
-        self.expr_tys.insert(id, ty);
+        //self.expr_tys.insert(id, ty);
         id
     }
 
     pub fn expr(&self, id: ExprId) -> &Expr {
         &self.exprs[id]
-    }
-
-    pub fn expr_ty(&self, id: ExprId) -> &Ty {
-        &self.expr_tys[id]
     }
 }
 
@@ -81,7 +77,7 @@ pub struct VarInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stmt {
-    Decl { id: VarId, val: ExprId },
+    Decl { var: VarId, val: ExprId },
     Expr(ExprId),
 }
 
@@ -90,8 +86,8 @@ new_key_type! { pub struct ExprId; }
 pub enum Expr {
     Var(VarId),
     Lit(LitExpr),
-    Array(Vec<ExprId>),
-    Construct(Vec<ExprId>),
+    Array(Ty, Vec<ExprId>),
+    Construct(Vec<Ty>, Vec<ExprId>),
     Infix {
         op: InfixOp,
         lhs: ExprId,
@@ -112,10 +108,10 @@ pub enum Expr {
     Call {
         func: ExprId,
         args: Vec<Arg>,
+        ret_ty: Ty,
     },
-    Lambda {
-        params: Vec<VarId>,
-        body: ExprId,
+    Closure {
+        func: VarId,
         captures: Vec<VarId>,
     },
     Assign {
@@ -123,6 +119,7 @@ pub enum Expr {
         value: ExprId,
     },
     If {
+        ty: Ty,
         cond: ExprId,
         th: BlockExpr,
         el: Option<BlockExpr>,
@@ -130,7 +127,7 @@ pub enum Expr {
     Loop(BlockExpr),
     Block(BlockExpr),
 
-    Print(ExprId),
+    Print(Ty, ExprId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +141,7 @@ pub enum LitExpr {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
+    pub ty: Ty,
     pub value: ExprId,
     pub mutable: bool,
 }

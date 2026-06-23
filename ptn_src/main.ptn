@@ -1,6 +1,11 @@
 import lib::swap
 
 fn main(): () = {
-    let mut foo = [[1], [2]]
-    swap(mut foo.[0], mut foo.[1])
+    let closure = make_closure()
+    closure(1)
+}
+
+fn make_closure(): Fn(UInt) -> () = {
+    let array = [1, 2, 3, 4, 5]
+    fn(index) -> print array.[index]
 }

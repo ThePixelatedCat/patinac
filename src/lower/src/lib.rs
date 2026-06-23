@@ -24,6 +24,7 @@ struct LowerInfo<'hir, 'err> {
     var_map: SecondaryMap<hir::VarId, mir::VarId>,
     field_map: SecondaryMap<TyId, Vec<Ident>>,
     module: ModuleId,
+    lambda_counter: u32,
 }
 
 /// Resolves and lowers the provided [`Package`] into a single [`Hir`].
@@ -43,6 +44,7 @@ pub fn lower(
         var_map: SecondaryMap::new(),
         field_map: SecondaryMap::new(),
         module: ModuleId::null(),
+        lambda_counter: 0,
     }
     .lower()
 }
@@ -57,6 +59,11 @@ impl<'hir> LowerInfo<'hir, '_> {
         for item in self.hir.execs() {
             let item = self.lower_item(item);
             self.mir.add_item(item);
+        }
+
+        if let Some(main) = self.hir.main() {
+            let main = self.lower_item(main);
+            self.mir.set_main(main);
         }
 
         self.mir
@@ -91,13 +98,11 @@ impl<'hir> LowerInfo<'hir, '_> {
                     ty: ty.clone(),
                     mutable: false,
                 });
-                let expr = self.mir.add_expr(mir::Expr::Var(var), ty.clone());
+                let expr = self.mir.add_expr(mir::Expr::Var(var));
                 (var, expr)
             })
             .unzip();
-        let body = self
-            .mir
-            .add_expr(mir::Expr::Construct(values), mir::Ty::Fields(field_tys));
+        let body = self.mir.add_expr(mir::Expr::Construct(field_tys, values));
 
         self.mir.add_item(Item {
             var,
@@ -119,6 +124,10 @@ impl<'hir> LowerInfo<'hir, '_> {
             var: self.lower_var(item.var),
             kind,
         }
+    }
+
+    fn expr_ty(&self, expr: hir::ExprId) -> &'hir hir::Ty {
+        &self.expr_tys[expr]
     }
 
     fn lower_ty(&mut self, ty: &'hir hir::Ty) -> mir::Ty {
@@ -168,6 +177,14 @@ impl<'hir> LowerInfo<'hir, '_> {
         field_tys
     }
 
+    fn lower_expr_ty(&mut self, expr: hir::ExprId) -> mir::Ty {
+        self.lower_ty(self.expr_ty(expr))
+    }
+
+    fn lower_var_ty(&mut self, var: hir::VarId) -> mir::Ty {
+        self.lower_ty(self.hir.var_ty(var))
+    }
+
     fn field_index(&mut self, ty: TyId, ident: Ident) -> u32 {
         self.field_map[ty]
             .iter()
@@ -176,10 +193,6 @@ impl<'hir> LowerInfo<'hir, '_> {
             .expect("type does not have that field")
             .try_into()
             .expect("too many fields")
-    }
-
-    fn expr_ty(&self, expr: hir::ExprId) -> &'hir hir::Ty {
-        &self.expr_tys[expr]
     }
 }
 

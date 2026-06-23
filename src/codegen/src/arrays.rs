@@ -7,9 +7,9 @@ use inkwell::{
 
 use mir::Ty;
 
-use crate::{Codegen, layout::LayoutValue};
+use crate::{CodegenState, layout::LayoutValue};
 
-impl<'hir, 'ctx> Codegen<'hir, 'ctx> {
+impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
     pub fn get_array_header(&self, array: PointerValue<'ctx>) -> PointerValue<'ctx> {
         let header = unsafe {
             self.builder

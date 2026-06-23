@@ -114,11 +114,6 @@ impl Path {
         self.tail
     }
 
-    /// Returns true if the path is made up of a single identifier.
-    pub fn is_single_ident(&self) -> bool {
-        self.head.is_empty()
-    }
-
     /// Returns the first identifier of the path, and the rest of the path if it had more than 1 segment.
     pub fn split(mut self) -> (Ident, Option<Self>) {
         if self.head.is_empty() {

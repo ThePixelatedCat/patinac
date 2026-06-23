@@ -1,8 +1,8 @@
 use inkwell::{IntPredicate, module::Linkage, types::BasicType as _, values::FunctionValue};
 
-use crate::Codegen;
+use crate::CodegenState;
 
-impl<'ctx> Codegen<'_, 'ctx> {
+impl<'ctx> CodegenState<'_, 'ctx> {
     pub(crate) fn printf(&self) -> FunctionValue<'ctx> {
         if let Some(func) = self.module.get_function("printf") {
             return func;

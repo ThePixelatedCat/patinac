@@ -1,12 +1,18 @@
 use errors::ErrorHandler;
 
-use crate::{Codegen, CodegenMode, OptLevel};
+use crate::{CodegenMode, OptLevel, Target};
 
 fn check(src: &str, opt_level: OptLevel) {
     let mut hir = nameres::test_resolve_ast(src).unwrap();
     let expr_tys = typecheck::type_hir(&mut hir, ErrorHandler::TEST).unwrap();
     let mir = lower::lower(ErrorHandler::TEST, &hir, &expr_tys);
-    Codegen::new(&mir, &crate::create_ctx(), "test").codegen(opt_level, CodegenMode::Silent);
+    crate::emit(
+        &mir,
+        opt_level,
+        CodegenMode::Silent,
+        Target::default(),
+        "test",
+    );
 }
 
 #[test]
@@ -142,12 +148,39 @@ fn tuples() {
 fn closures() {
     let input = "
     fn main(): () = {
-        let m = 3
-        let f = apply
-        f(fn(n) -> print n + m, 2)
+        let mut m = 3
+        apply(fn(n) -> print n + m, 2)
+    }
+    fn apply(f: Fn(UInt) -> (), v: UInt): () = f(v)
+";
+    check(input, OptLevel::O0);
+}
+
+#[test]
+fn closure_capture() {
+    let input = "
+    fn main(): () = {
+        let closure = make_closure()
+        closure(1)
     }
 
-    fn apply(f: Fn(UInt) -> (), v: UInt): () = f(v)
+    fn make_closure(): Fn(UInt) -> () = {
+        let array: [Int] = [1, 2, 3, 4, 5]
+        fn(index) -> print array.[index]
+    }
+";
+    check(input, OptLevel::O0)
+}
+
+#[test]
+fn func_ptr() {
+    let input = "
+    fn main(): () = {
+        let f = print_
+        apply_2(f)
+    }
+    fn print_(n: Int): () = print n
+    fn apply_2(f: Fn(Int) -> ()): () = f(2)
 ";
     check(input, OptLevel::O0);
 }

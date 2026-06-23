@@ -9,6 +9,7 @@
 )]
 
 mod arrays;
+mod config;
 mod exprs;
 mod layout;
 mod runtime;
@@ -25,7 +26,9 @@ use inkwell::{
     context::Context,
     module::Module,
     passes::PassBuilderOptions,
-    targets::{FileType, InitializationConfig, Target, TargetMachine, TargetMachineOptions},
+    targets::{
+        FileType, InitializationConfig, Target as LLVMTarget, TargetMachine, TargetMachineOptions,
+    },
     types::{BasicType, BasicTypeEnum, FunctionType},
     values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
 };
@@ -34,62 +37,16 @@ use slotmap::SecondaryMap;
 use mir::{ExprId, ItemKind, Mir, Param, Ty, VarId};
 
 use crate::layout::{IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass};
+pub use config::*;
 
-/// What to produce, if anything.
-#[derive(PartialEq, Eq)]
-pub enum CodegenMode {
-    /// Dump the LLVM IR to stderr.
-    IRDump,
-    /// Emit an object file at the given path.
-    Emit(PathBuf),
-    /// Run verification checks but do nothing else (for testing).
-    Silent,
+/// # Panics
+/// Will panic if `target` is not a valid LLVM target triple.
+pub fn emit(mir: &Mir, opt_level: OptLevel, mode: CodegenMode, target: Target, package_name: &str) {
+    let ctx = Context::create();
+    CodegenState::new(mir, &ctx, target, package_name).emit(opt_level, mode);
 }
 
-/// What level of optimisation to use.
-///
-/// Currently directly corresponds to the LLVM optimisation levels of the same names.
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum OptLevel {
-    /// `-O0`. No optimisation.
-    #[default]
-    O0 = 0,
-    /// `-O1`.
-    O1 = 1,
-    /// `-O2`.
-    O2 = 2,
-    /// `-O3`. Full optimisations (minus LTO).
-    O3 = 3,
-}
-
-impl FromStr for OptLevel {
-    type Err = &'static str;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "0" => Ok(Self::O0),
-            "1" => Ok(Self::O1),
-            "2" => Ok(Self::O2),
-            "3" => Ok(Self::O3),
-            _ => Err(r#"expected "0", "1", "2", or "3""#),
-        }
-    }
-}
-
-impl OptLevel {
-    /// Converts the optimisation level into a string of LLVM optimisation passes, as expected by `opt`.
-    #[expect(clippy::as_conversions, reason = "Casting to access enum discriminant")]
-    pub fn opt_string(self) -> String {
-        match self {
-            Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
-                format!("default<O{}>", self as u8)
-            }
-        }
-    }
-}
-
-pub struct Codegen<'mir, 'ctx> {
+struct CodegenState<'mir, 'ctx> {
     mir: &'mir Mir,
     ctx: &'ctx Context,
     builder: Builder<'ctx>,
@@ -97,29 +54,19 @@ pub struct Codegen<'mir, 'ctx> {
     target: TargetMachine,
     funcs: SecondaryMap<VarId, FunctionValue<'ctx>>,
     vars: SecondaryMap<VarId, LayoutValue<'mir, 'ctx>>,
-    lambda_counter: u32,
 }
 
-/// Creates a new [`Context`].
-///
-/// This is a direct wrapper over [`Context::create()`], and exists so that other crates don't have to depend on Inkwell directly.
-pub fn create_ctx() -> Context {
-    Context::create()
-}
-
-impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
+impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
     /// Creates a new [`Codegen`] for a package with the given name.
     ///
-    /// The context should be obtained via [`create_ctx()`].
-    ///
     /// # Panics
-    /// Panics if there is an issue initialising the target.
-    pub fn new(mir: &'mir Mir, ctx: &'ctx Context, package_name: &str) -> Self {
+    /// Panics if the target machine could not be created.
+    fn new(mir: &'mir Mir, ctx: &'ctx Context, target: Target, package_name: &str) -> Self {
         let module = ctx.create_module(package_name);
 
-        Target::initialize_native(&InitializationConfig::default()).unwrap();
-        let triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&triple).unwrap();
+        LLVMTarget::initialize_all(&InitializationConfig::default());
+        let triple = target.triple();
+        let target = LLVMTarget::from_triple(&triple).unwrap();
         let target_machine = target
             .create_target_machine_from_options(&triple, TargetMachineOptions::default())
             .unwrap();
@@ -132,13 +79,12 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             target: target_machine,
             funcs: SecondaryMap::new(),
             vars: SecondaryMap::new(),
-            lambda_counter: 0,
         }
     }
 
     /// # Panics
     /// Panics if any functions are invalid, or if writing to the output file fails.
-    pub fn codegen(&mut self, opt_level: OptLevel, mode: CodegenMode) {
+    fn emit(&mut self, opt_level: OptLevel, mode: CodegenMode) {
         for exec in self.mir.items() {
             match &exec.kind {
                 ItemKind::Const { .. } => todo!("Constants"),
@@ -789,7 +735,13 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
 
     /// # Panics
     /// Panics if the provided type is unsized.
-    fn emit_memcpy(&self, dst: PointerValue<'ctx>, src: PointerValue<'ctx>, ty: &dyn BasicType) {
+    fn emit_memcpy(
+        &self,
+        //ty: &'mir Ty,
+        dst: PointerValue<'ctx>,
+        src: PointerValue<'ctx>,
+        ty: &dyn BasicType,
+    ) {
         let align = self.target.get_target_data().get_abi_alignment(ty);
         let size = ty.size_of().expect("sized type");
         self.builder

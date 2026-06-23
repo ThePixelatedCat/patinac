@@ -11,7 +11,7 @@ new_key_type! { pub struct ExprId; }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stmt {
     Decl {
-        id: VarId,
+        var: VarId,
         val: ExprId,
         span: Range<u32>,
     },
@@ -47,8 +47,9 @@ pub enum Expr {
     },
     Lambda {
         params: Vec<VarId>,
+        /// List of external capture-local rebinding pairs.
+        captures: Vec<(VarId, VarId)>,
         body: ExprId,
-        captures: Vec<VarId>,
     },
     Assign {
         place: ExprId,

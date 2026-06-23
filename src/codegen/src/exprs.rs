@@ -8,17 +8,17 @@ use inkwell::{
 use mir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
 
 use crate::{
-    Codegen,
+    CodegenState,
     layout::{self, IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass},
 };
 
-impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
+impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
     pub(crate) fn emit_expr(&mut self, expr: ExprId) -> LayoutValue<'mir, 'ctx> {
         match self.mir.expr(expr) {
             Expr::Var(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(lit),
-            Expr::Array(elems) => self.emit_array(self.mir.expr_ty(expr), elems),
-            Expr::Construct(values) => self.emit_construct(self.mir.expr_ty(expr), values),
+            Expr::Array(elem_ty, elems) => self.emit_array(elem_ty, elems),
+            Expr::Construct(field_tys, values) => self.emit_construct(field_tys, values),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
@@ -26,25 +26,19 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 array: arr,
                 index: idx,
             } => self.emit_index(*arr, *idx),
-            Expr::Call { func, args } => self.emit_call(*func, args, self.mir.expr_ty(expr)),
-            Expr::Lambda {
-                params,
-                body,
-                captures,
-            } => self.emit_lambda(self.mir.expr_ty(expr), params, *body, captures),
+            Expr::Call { func, args, ret_ty } => self.emit_call(*func, args, ret_ty),
+            Expr::Closure { func, captures } => self.emit_lambda(*func, captures),
             Expr::Assign { place, value } => self.emit_assign(*place, *value),
-            Expr::If { cond, th, el } => {
-                self.emit_if(self.mir.expr_ty(expr), *cond, th, el.as_ref())
-            }
+            Expr::If { ty, cond, th, el } => self.emit_if(ty, *cond, th, el.as_ref()),
             Expr::Loop(body) => self.emit_loop(body),
             Expr::Block(stmts) => self.emit_block_expr(stmts),
 
-            Expr::Print(expr) => self.emit_print(*expr),
+            Expr::Print(ty, expr) => self.emit_print(ty, *expr),
         }
     }
 
-    fn emit_print(&mut self, expr: ExprId) -> LayoutValue<'mir, 'ctx> {
-        let format = match self.mir.expr_ty(expr) {
+    fn emit_print(&mut self, ty: &'mir Ty, expr: ExprId) -> LayoutValue<'mir, 'ctx> {
+        let format = match ty {
             Ty::Int => "%lld\n",
             Ty::UInt => "%llu\n",
             Ty::Byte => "%hhu\n",
@@ -70,11 +64,15 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
 
     fn is_place(&self, expr: ExprId) -> bool {
         match self.mir.expr(expr) {
-            Expr::Var(_) => true,
+            Expr::Var(id) => match self.vars[*id] {
+                LayoutValue::Scalar(_, ScalarLayout::Direct(_)) | LayoutValue::Zst => false,
+                LayoutValue::Scalar(_, ScalarLayout::Indirect(_))
+                | LayoutValue::Closure(_, _)
+                | LayoutValue::Fields(_, _) => true,
+            },
             Expr::Field { base, .. } => self.is_place(*base),
             Expr::Index { array, .. } => self.is_place(*array),
-            Expr::Call { .. } => todo!("Projections"),
-            _ => unreachable!("not a place"),
+            _ => false,
         }
     }
 
@@ -177,17 +175,17 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         array
     }
 
-    fn emit_construct(&mut self, ty: &'mir Ty, values: &[ExprId]) -> LayoutValue<'mir, 'ctx> {
-        let Ty::Fields(tys) = ty else {
-            unreachable!("construction of non-field type")
-        };
-
+    fn emit_construct(
+        &mut self,
+        field_tys: &'mir [Ty],
+        values: &[ExprId],
+    ) -> LayoutValue<'mir, 'ctx> {
         // Unit.
-        if tys.is_empty() {
+        if field_tys.is_empty() {
             return LayoutValue::Zst;
         }
 
-        let lowered_ty = self.fields_ty(tys);
+        let lowered_ty = self.fields_ty(field_tys);
         let out = self.emit_alloca_entry(lowered_ty, "");
         for (idx, value) in values.iter().enumerate() {
             let value = self.emit_expr(*value);
@@ -197,7 +195,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 .unwrap();
             self.emit_move(value, ptr);
         }
-        LayoutValue::Fields(tys, out)
+        LayoutValue::Fields(field_tys, out)
     }
 
     #[allow(
@@ -329,19 +327,18 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         let mut tmps = Vec::new();
         let mut args: Vec<_> = args
             .iter()
-            .filter_map(|a| {
-                let arg_ty = &self.mir.expr_ty(a.value);
-                if layout::zst(arg_ty) {
+            .filter_map(|arg| {
+                if layout::zst(&arg.ty) {
                     // Erase ZSTs.
                     None
-                } else if a.mutable {
+                } else if arg.mutable {
                     // Mutable arguments.
-                    Some(self.emit_unique_place(a.value).as_pointer().into())
-                } else if layout::indirect(arg_ty) && self.is_place(a.value) {
+                    Some(self.emit_unique_place(arg.value).as_pointer().into())
+                } else if layout::indirect(&arg.ty) && self.is_place(arg.value) {
                     // Immutable aliasing optimisation.
-                    Some(self.emit_place(a.value).as_pointer().into())
+                    Some(self.emit_place(arg.value).as_pointer().into())
                 } else {
-                    let tmp = self.emit_expr(a.value);
+                    let tmp = self.emit_expr(arg.value);
                     tmps.push(tmp);
                     Some(tmp.as_value().into())
                 }
@@ -422,17 +419,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         }
     }
 
-    fn emit_lambda(
-        &mut self,
-        ty: &Ty,
-        params: &[VarId],
-        body: ExprId,
-        captures: &[VarId],
-    ) -> LayoutValue<'mir, 'ctx> {
-        // Create a unique name for this lambda, used for it's witnesses and it's defunctionalised body
-        let func_name = format!("_lambda{}", self.lambda_counter);
-        self.lambda_counter += 1;
-
+    fn emit_lambda(&mut self, func: VarId, captures: &[VarId]) -> LayoutValue<'mir, 'ctx> {
         // Create the environment, if one is needed
         let (env, env_ty) = if captures.is_empty() {
             (self.const_null(), None)
@@ -456,10 +443,10 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 .into_pointer_value();
 
             // Initialize the environment
-            for (idx, capture) in captures.iter().enumerate() {
+            for (index, capture) in captures.iter().enumerate() {
                 let dst = self
                     .builder
-                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "")
+                    .build_struct_gep(env_ty, env, u32::try_from(index).unwrap(), "")
                     .unwrap();
                 self.emit_copy(self.vars[*capture], dst);
             }
@@ -467,22 +454,10 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
             (env, Some(env_ty))
         };
 
-        // Create the defunctionalised function
-        let func = {
-            let Ty::Func(param_tys, ret_ty) = ty else {
-                unreachable!("ICE")
-            };
-            let func = self.module.add_function(
-                &func_name,
-                self.func_ty(param_tys, ret_ty, true),
-                Some(Linkage::Private),
-            );
-            self.emit_lifted_body(func, body, params, ret_ty, captures, env_ty);
-            func
-        };
-
         // Create the final closure
-        let closure = self.emit_closure(&func_name, func, captures, env, env_ty);
+        let name = self.mir.var(func).ident.str();
+        let func = self.funcs[func];
+        let closure = self.emit_closure(&name, func, captures, env, env_ty);
         LayoutValue::Closure(func.get_type(), closure)
     }
 
@@ -524,68 +499,6 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
         );
 
         closure
-    }
-
-    fn emit_lifted_body(
-        &mut self,
-        func: FunctionValue<'ctx>,
-        body: ExprId,
-        params: &[VarId],
-        ret_ty: &Ty,
-        captures: &[VarId],
-        env_ty: Option<StructType<'ctx>>,
-    ) {
-        // Save the builder's current insertion block to restore at the end
-        let old_insert_block = self.builder.get_insert_block().unwrap();
-
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        self.builder.position_at_end(entry_block);
-
-        // Skip the first argument if it's an out-pointer.
-        let offset = if layout::indirect(ret_ty) { 1 } else { 0 };
-        self.bind_params(params.iter().copied(), func.get_param_iter().skip(offset));
-
-        // Bind the captures, saving the original values to restore later
-        let mut overwritten_vars = Vec::new();
-        if let Some(env_ty) = env_ty {
-            let env = func.get_last_param().unwrap().into_pointer_value();
-            for (idx, id) in captures.iter().enumerate() {
-                let capture_ptr = self
-                    .builder
-                    .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "captureptr")
-                    .unwrap();
-                let capture = self.layout_direct(&self.mir.var(*id).ty, capture_ptr);
-                if let Some(old_ptr) = self.vars.insert(*id, capture) {
-                    overwritten_vars.push((*id, old_ptr));
-                }
-            }
-        }
-
-        // Emit the body and return
-        let body = self.emit_expr(body);
-
-        match layout::storage_class(ret_ty) {
-            StorageClass::Zst => self.builder.build_return(None).unwrap(),
-            StorageClass::Indirect => {
-                let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-                self.emit_move(body, out_ptr);
-                self.builder.build_return(None).unwrap()
-            }
-            StorageClass::Scalar => self.builder.build_return(Some(&body.as_scalar())).unwrap(),
-        };
-
-        assert!(func.verify(true));
-
-        // Clear the parameters to keep the variable map small.
-        for id in params {
-            self.vars.remove(*id);
-        }
-
-        // Restore the insert block and the vars overwritten by captures
-        for (id, ptr) in overwritten_vars {
-            self.vars.insert(id, ptr);
-        }
-        self.builder.position_at_end(old_insert_block);
     }
 
     fn emit_assign(&mut self, place: ExprId, value: ExprId) -> LayoutValue<'mir, 'ctx> {
@@ -737,7 +650,7 @@ impl<'mir, 'ctx> Codegen<'mir, 'ctx> {
                 self.emit_drop(expr);
             }
             match stmt {
-                Stmt::Decl { id, val, .. } => {
+                Stmt::Decl { var: id, val, .. } => {
                     let ty = &self.mir.var(*id).ty;
                     let val_tmp = self.emit_expr(*val);
 
