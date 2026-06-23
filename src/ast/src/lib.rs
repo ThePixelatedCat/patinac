@@ -482,25 +482,23 @@ pub enum InfixOp {
     Div,
     /// TEMPORARY, until we have traits. `/.`.
     DivF,
-    /// `**`.
+    /// `^`.
     Exp,
-    /// `&&`
+    /// `&&`.
     And,
-    /// `||`
+    /// `||`.
     Or,
-    /// `^`
-    Xor,
-    /// `==`
+    /// `==`.
     Eqq,
-    /// `!=`
+    /// `!=`.
     Neq,
-    /// `>`
+    /// `>`.
     Gt,
-    /// `<`
+    /// `<`.
     Lt,
-    /// `>=`
+    /// `>=`.
     Geq,
-    /// `<=`
+    /// `<=`.
     Leq,
 }
 
@@ -513,7 +511,6 @@ impl InfixOp {
             Self::And => (5, 6),
             Self::Eqq | Self::Neq => (7, 8),
             Self::Gt | Self::Lt | Self::Leq | Self::Geq => (9, 10),
-            Self::Xor => (13, 14),
             Self::Add | Self::AddF | Self::Sub | Self::SubF => (17, 18),
             Self::Mul | Self::MulF | Self::Div | Self::DivF => (19, 20),
             Self::Exp => (22, 21),
@@ -559,7 +556,7 @@ pub enum TyKind {
     Byte,
     /// Double-precision floating point number (binary64).
     Float,
-    /// Truth value (`true`/`false``).
+    /// Truth value (`true`/`false`).
     Bool,
     /// A dynamic homogenous array.
     Array(Box<Ty>),
@@ -572,7 +569,7 @@ pub enum TyKind {
 }
 
 impl TyKind {
-    /// Constructs an [`Ty`] wrapping `self` with the provided span.
+    /// Constructs a [`Ty`] wrapping `self` with the provided span.
     pub fn span(self, span: impl Into<Range<u32>>) -> Ty {
         Ty {
             kind: self,
@@ -604,22 +601,39 @@ pub struct FuncTy {
     pub span: Range<u32>,
 }
 
+/// A spanned [pattern][PatKind].
 #[derive(Debug, PartialEq)]
 pub struct Pat {
+    /// The kind of the pattern.
     pub kind: PatKind,
+    /// The span of the pattern.
     pub span: Range<u32>,
 }
 
+/// The kinds of patterns.
 #[derive(Debug, PartialEq)]
 pub enum PatKind {
-    Literal { negate: bool, lit: LitExpr },
+    /// A literal pattern. Binds nothing, compares for equality.
+    Literal {
+        /// Whether the literal is negated.
+        /// Only allowed for [`int`][LitExpr::Int] and [`float`][LitExpr::Float] literals.
+        /// Necessary because literals do not normally allow negation.
+        negate: bool,
+        /// The literal itself.
+        lit: LitExpr,
+    },
+    /// `_`. Discards the assignee.
     Wildcard,
+    /// A variable name.
     Ident(Ident),
+    /// A record or union destructuring.
     Constructor(Ident, Vec<Pat>),
+    /// A tuple destructuring.
     Tuple(Vec<Pat>),
 }
 
 impl PatKind {
+    /// Constructs a [`Pat`] wrapping `self` with the provided span.
     pub fn span(self, span: impl Into<Range<u32>>) -> Pat {
         Pat {
             kind: self,
@@ -627,6 +641,7 @@ impl PatKind {
         }
     }
 
+    /// Constructs an [`ident`][Self::Ident] literal from the given string.
     pub fn ident(name: &str) -> Self {
         Self::Ident(Ident::new(name))
     }

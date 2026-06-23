@@ -132,9 +132,9 @@ pub enum TokKind {
     #[display("/.")]
     #[token("/.")]
     DivideF,
-    /// `**`.
-    #[display("**")]
-    #[token("**")]
+    /// `^`.
+    #[display("^")]
+    #[token("^")]
     Exponent,
     /// `&&`.
     #[display("&&")]
@@ -144,10 +144,6 @@ pub enum TokKind {
     #[display("||")]
     #[token("||")]
     Or,
-    /// `^`.
-    #[display("^")]
-    #[token("^")]
-    Xor,
     /// `!`.
     #[display("!")]
     #[token("!")]

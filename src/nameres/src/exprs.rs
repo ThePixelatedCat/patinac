@@ -363,7 +363,6 @@ const fn convert_infix_op(op: ast::InfixOp) -> Option<hir::InfixOp> {
         ast::InfixOp::Exp => Some(hir::InfixOp::Exp),
         ast::InfixOp::And => Some(hir::InfixOp::And),
         ast::InfixOp::Or => Some(hir::InfixOp::Or),
-        ast::InfixOp::Xor => Some(hir::InfixOp::Xor),
         ast::InfixOp::Eqq => Some(hir::InfixOp::Eqq),
         ast::InfixOp::Neq => Some(hir::InfixOp::Neq),
         ast::InfixOp::Gt => Some(hir::InfixOp::Gt),

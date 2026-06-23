@@ -17,14 +17,15 @@ mod runtime;
 mod test;
 mod witnesses;
 
-use std::{fmt::Write as _, path::PathBuf, str::FromStr};
+use std::fmt::Write as _;
 
 use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
-    module::Module,
+    llvm_sys::LLVMCallConv,
+    module::{Linkage, Module},
     passes::PassBuilderOptions,
     targets::{
         FileType, InitializationConfig, Target as LLVMTarget, TargetMachine, TargetMachineOptions,
@@ -34,7 +35,7 @@ use inkwell::{
 };
 use slotmap::SecondaryMap;
 
-use mir::{ExprId, ItemKind, Mir, Param, Ty, VarId};
+use mir::{ItemKind, Mir, Param, Ty, VarId};
 
 use crate::layout::{IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass};
 pub use config::*;
@@ -89,7 +90,17 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             match &exec.kind {
                 ItemKind::Const { .. } => todo!("Constants"),
                 ItemKind::Func { .. } => {
-                    self.create_func(exec.var);
+                    let Ty::Func(params, ret_ty) = &self.mir.var(exec.var).ty else {
+                        unreachable!("ICE")
+                    };
+                    let name = Self::mangle_name(self.mir.var(exec.var).ident.to_string());
+                    let func_ty = self.func_ty(params, ret_ty, false);
+                    let func = self.add_func(&name, func_ty, false);
+                    self.funcs.insert(exec.var, func);
+                    self.vars.insert(
+                        exec.var,
+                        LayoutValue::func_ptr(func_ty, func.as_global_value().as_pointer_value()),
+                    );
                 }
             }
         }
@@ -120,7 +131,50 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     let Ty::Func(_, ret_ty) = &self.mir.var(exec.var).ty else {
                         unreachable!("ICE")
                     };
-                    self.build_func(self.funcs[exec.var], params, ret_ty, *body);
+                    let func = self.funcs[exec.var];
+
+                    let entry_block = self.ctx.append_basic_block(func, "entry");
+                    self.builder.position_at_end(entry_block);
+
+                    // Skip the first argument if it's an out-pointer.
+                    let offset = if layout::indirect(ret_ty) { 1 } else { 0 };
+                    let mut args = func.get_param_iter().skip(offset);
+                    for id in params {
+                        let info = self.mir.var(*id);
+                        // We don't actually pass ZSTs.
+                        if layout::zst(&info.ty) {
+                            self.vars.insert(*id, LayoutValue::Zst);
+                            continue;
+                        }
+                        let value = args.next().expect("there should be enough args");
+                        let value = if info.mutable {
+                            self.layout_indirect(&info.ty, value.into_pointer_value())
+                        } else {
+                            self.layout(&info.ty, value)
+                        };
+                        self.vars.insert(*id, value);
+                    }
+
+                    let body = self.emit_expr(*body);
+
+                    match layout::storage_class(ret_ty) {
+                        StorageClass::Zst => self.builder.build_return(None).unwrap(),
+                        StorageClass::Indirect => {
+                            let out_ptr = func.get_first_param().unwrap().into_pointer_value();
+                            self.emit_move(body, out_ptr);
+                            self.builder.build_return(None).unwrap()
+                        }
+                        StorageClass::Scalar => {
+                            self.builder.build_return(Some(&body.as_scalar())).unwrap()
+                        }
+                    };
+
+                    // Clear the parameters to keep the variable map small.
+                    for id in params {
+                        self.vars.remove(*id);
+                    }
+
+                    assert!(func.verify(true));
                 }
             }
         }
@@ -150,75 +204,16 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
     }
 
-    fn create_func(&mut self, id: VarId) -> FunctionValue<'ctx> {
-        let Ty::Func(params, ret_ty) = &self.mir.var(id).ty else {
-            unreachable!("ICE")
+    #[expect(clippy::as_conversions, reason = "accessing enum discriminant")]
+    fn add_func(&self, name: &str, ty: FunctionType<'ctx>, external: bool) -> FunctionValue<'ctx> {
+        let (linkage, call_conv) = if external {
+            (Linkage::External, LLVMCallConv::LLVMCCallConv)
+        } else {
+            (Linkage::Private, LLVMCallConv::LLVMFastCallConv)
         };
-        let name = Self::mangle_name(self.mir.var(id).ident.to_string());
-        let func_ty = self.func_ty(params, ret_ty, false);
-        let func = self.module.add_function(&name, func_ty, None);
-        self.funcs.insert(id, func);
-        self.vars.insert(
-            id,
-            LayoutValue::func_ptr(func_ty, func.as_global_value().as_pointer_value()),
-        );
+        let func = self.module.add_function(name, ty, Some(linkage));
+        func.set_call_conventions(call_conv as u32);
         func
-    }
-
-    fn build_func(
-        &mut self,
-        func: FunctionValue<'ctx>,
-        params: &[VarId],
-        ret_ty: &Ty,
-        body: ExprId,
-    ) {
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        self.builder.position_at_end(entry_block);
-
-        // Skip the first argument if it's an out-pointer.
-        let offset = if layout::indirect(ret_ty) { 1 } else { 0 };
-        self.bind_params(params.iter().copied(), func.get_param_iter().skip(offset));
-
-        let body = self.emit_expr(body);
-
-        match layout::storage_class(ret_ty) {
-            StorageClass::Zst => self.builder.build_return(None).unwrap(),
-            StorageClass::Indirect => {
-                let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-                self.emit_move(body, out_ptr);
-                self.builder.build_return(None).unwrap()
-            }
-            StorageClass::Scalar => self.builder.build_return(Some(&body.as_scalar())).unwrap(),
-        };
-
-        // Clear the parameters to keep the variable map small.
-        for id in params {
-            self.vars.remove(*id);
-        }
-
-        assert!(func.verify(true));
-    }
-
-    fn bind_params<P: IntoIterator<Item = VarId>, A: Iterator<Item = BasicValueEnum<'ctx>>>(
-        &mut self,
-        params: P,
-        mut args: A,
-    ) {
-        for id in params {
-            let info = self.mir.var(id);
-            // We don't actually pass ZSTs.
-            if layout::zst(&info.ty) {
-                self.vars.insert(id, LayoutValue::Zst);
-                continue;
-            }
-            let value = args.next().expect("there should be enough args");
-            let value = if info.mutable {
-                self.layout_indirect(&info.ty, value.into_pointer_value())
-            } else {
-                self.layout(&info.ty, value)
-            };
-            self.vars.insert(id, value);
-        }
     }
 
     fn lower_ty(&self, ty: &Ty) -> BasicTypeEnum<'ctx> {
@@ -447,10 +442,11 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
 
     fn emit_drop(&self, value: LayoutValue<'mir, 'ctx>) {
         match value {
-            LayoutValue::Scalar(ScalarKind::Int(_), _)
-            | LayoutValue::Scalar(ScalarKind::Float, _)
-            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), _)
-            | LayoutValue::Zst => return, // Trivial types
+            LayoutValue::Scalar(
+                ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
+                _,
+            )
+            | LayoutValue::Zst => (), // Trivial types
             LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) => {
                 self.builder
                     .build_call(self.array_drop(elem_ty), &[ptr.into()], "")
@@ -477,9 +473,10 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
 
     fn emit_dup(&self, value: LayoutValue<'mir, 'ctx>) -> LayoutValue<'mir, 'ctx> {
         match value {
-            LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(_))
-            | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(_))
-            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), _) => value, // Trivial types
+            LayoutValue::Scalar(
+                ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
+                ScalarLayout::Direct(_),
+            ) => value, // Trivial types
             LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(ptr)) => {
                 let ty = match size {
                     IntSize::Bits8 => self.ctx.i8_type(),
@@ -492,6 +489,12 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     self.builder
                         .build_load(self.ctx.f64_type(), ptr, "")
                         .unwrap(),
+                )
+            }
+            LayoutValue::Scalar(ScalarKind::FuncPtr(func_ty), ScalarLayout::Indirect(ptr)) => {
+                LayoutValue::func_ptr(
+                    func_ty,
+                    self.builder.build_load(self.ptr_ty(), ptr, "").unwrap(),
                 )
             }
             LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
@@ -530,9 +533,10 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             return;
         }
         match value {
-            LayoutValue::Scalar(ScalarKind::Int(_), ScalarLayout::Direct(value))
-            | LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Direct(value))
-            | LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Direct(value)) => {
+            LayoutValue::Scalar(
+                ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
+                ScalarLayout::Direct(value),
+            ) => {
                 self.builder.build_store(dst, value).unwrap();
             }
             LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(ptr)) => {

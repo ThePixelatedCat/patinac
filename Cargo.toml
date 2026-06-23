@@ -7,6 +7,7 @@ exclude = ["src/codegen_cl"]
 must_use_candidate = "allow"
 single_match_else = "allow"
 bool_to_int_with_if = "allow"
+match_bool = "allow"
 as_conversions = "deny"
 allow_attributes_without_reason = "deny"
 absolute_paths = "deny"

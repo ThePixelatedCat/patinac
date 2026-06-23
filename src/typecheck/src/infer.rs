@@ -69,7 +69,7 @@ impl TypeChecker<'_> {
                         self.constrain_eq(rhs_ty, int_var, hir.expr_span(rhs), module);
                         PartialTy::Float
                     }
-                    InfixOp::And | InfixOp::Or | InfixOp::Xor => {
+                    InfixOp::And | InfixOp::Or => {
                         self.constrain_eq(lhs_ty, PartialTy::Bool, hir.expr_span(lhs), module);
                         self.constrain_eq(rhs_ty, PartialTy::Bool, hir.expr_span(rhs), module);
                         PartialTy::Bool

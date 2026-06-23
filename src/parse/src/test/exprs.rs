@@ -197,22 +197,6 @@ fn precedence() {
     );
 
     assert_eq!(
-        Parser::new_test("4 ^ 2 ^ 3").expr(),
-        Ok(ExprKind::Infix {
-            op: InfixOp::Xor,
-            lhs: ExprKind::Infix {
-                op: InfixOp::Xor,
-                lhs: ExprKind::int(4).span(0..1).into(),
-                rhs: ExprKind::int(2).span(4..5).into()
-            }
-            .span(0..5)
-            .into(),
-            rhs: ExprKind::int(3).span(8..9).into(),
-        }
-        .span(0..9))
-    );
-
-    assert_eq!(
         Parser::new_test("true || false && true").expr(),
         Ok(ExprKind::Infix {
             op: InfixOp::Or,

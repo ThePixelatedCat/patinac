@@ -46,7 +46,7 @@ impl FromStr for OptLevel {
 
 impl OptLevel {
     /// Converts the optimisation level into a string of LLVM optimisation passes, as expected by `opt`.
-    #[expect(clippy::as_conversions, reason = "Casting to access enum discriminant")]
+    #[expect(clippy::as_conversions, reason = "accessing enum discriminant")]
     pub fn opt_string(self) -> String {
         match self {
             Self::O0 | Self::O1 | Self::O2 | Self::O3 => {
@@ -58,22 +58,23 @@ impl OptLevel {
 
 /// Supported compilation targets.
 #[derive(Debug, Clone, Copy)]
+#[expect(clippy::doc_markdown, reason = "false positive")]
 pub enum Target {
-    /// Windows on x86_64.
+    /// Windows on `x86_64`.
     X86_64Windows,
-    /// Linux on x86_64.
+    /// Linux on `x86_64`.
     X86_64Linux,
-    /// Windows on Arm64/Aarch64.
+    /// Windows on `ARM64`/`aarch64`.
     Arm64Windows,
-    /// Linux on Arm64/Aarch64.
+    /// Linux on `ARM64`/`aarch64`.
     Arm64Linux,
-    /// MacOS on Arm64/Aarch64.
+    /// MacOS on `ARM64`/`aarch64`.
     Arm64Mac,
 }
 
 impl Target {
     /// Returns the target corresponding to the host platform, if there is one.
-    pub fn host() -> Option<Self> {
+    pub const fn host() -> Option<Self> {
         cfg_select! {
             all(target_arch = "x86_64", target_os = "windows") => Some(Self::X86_64Windows),
             all(target_arch = "x86_64", target_os = "linux") => Some(Self::X86_64Linux),

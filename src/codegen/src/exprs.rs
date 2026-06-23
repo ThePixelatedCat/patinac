@@ -1,8 +1,6 @@
 use inkwell::{
     FloatPredicate,
-    module::Linkage,
-    types::StructType,
-    values::{BasicMetadataValueEnum, BasicValue, CallSiteValue, FunctionValue, PointerValue},
+    values::{BasicMetadataValueEnum, BasicValue as _, CallSiteValue, PointerValue},
 };
 
 use mir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
@@ -27,7 +25,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 index: idx,
             } => self.emit_index(*arr, *idx),
             Expr::Call { func, args, ret_ty } => self.emit_call(*func, args, ret_ty),
-            Expr::Closure { func, captures } => self.emit_lambda(*func, captures),
+            Expr::Closure { func, captures } => self.emit_closure(*func, captures),
             Expr::Assign { place, value } => self.emit_assign(*place, *value),
             Expr::If { ty, cond, th, el } => self.emit_if(ty, *cond, th, el.as_ref()),
             Expr::Loop(body) => self.emit_loop(body),
@@ -244,9 +242,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             InfixOp::Or => {
                 LayoutValue::int_op(lhs, rhs, |l, r| self.builder.build_or(l, r, "").unwrap())
             }
-            InfixOp::Xor => {
-                LayoutValue::int_op(lhs, rhs, |l, r| self.builder.build_xor(l, r, "").unwrap())
-            }
             op @ (InfixOp::Eqq | InfixOp::Neq) => {
                 let equals = self.emit_equals(lhs, rhs);
                 if op == InfixOp::Neq {
@@ -419,7 +414,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
     }
 
-    fn emit_lambda(&mut self, func: VarId, captures: &[VarId]) -> LayoutValue<'mir, 'ctx> {
+    fn emit_closure(&self, func: VarId, captures: &[VarId]) -> LayoutValue<'mir, 'ctx> {
         // Create the environment, if one is needed
         let (env, env_ty) = if captures.is_empty() {
             (self.const_null(), None)
@@ -457,18 +452,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         // Create the final closure
         let name = self.mir.var(func).ident.str();
         let func = self.funcs[func];
-        let closure = self.emit_closure(&name, func, captures, env, env_ty);
-        LayoutValue::Closure(func.get_type(), closure)
-    }
-
-    fn emit_closure(
-        &self,
-        name: &str,
-        func: FunctionValue<'ctx>,
-        captures: &[VarId],
-        env: PointerValue<'ctx>,
-        env_ty: Option<StructType<'ctx>>,
-    ) -> PointerValue<'ctx> {
         let ty = self.closure_ty();
         let closure = self.emit_alloca_entry(ty, "");
 
@@ -481,24 +464,24 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         store(1, env);
         store(
             2,
-            self.emit_closure_drop(name, captures, env_ty)
+            self.emit_closure_drop(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store(
             3,
-            self.emit_closure_copy(name, captures, env_ty)
+            self.emit_closure_copy(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store(
             4,
-            self.emit_closure_equals(name, captures, env_ty)
+            self.emit_closure_equals(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
 
-        closure
+        LayoutValue::Closure(func.get_type(), closure)
     }
 
     fn emit_assign(&mut self, place: ExprId, value: ExprId) -> LayoutValue<'mir, 'ctx> {
@@ -506,7 +489,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         let value = self.emit_expr(value);
 
         // Don't have to do anything further if it's a ZST.
-        if let LayoutValue::Zst = place {
+        if place == LayoutValue::Zst {
             return LayoutValue::Zst;
         }
 

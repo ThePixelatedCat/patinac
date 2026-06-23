@@ -128,7 +128,6 @@ impl Parser<'_> {
             TokKind::Neq => Some(InfixOp::Neq),
             TokKind::And => Some(InfixOp::And),
             TokKind::Or => Some(InfixOp::Or),
-            TokKind::Xor => Some(InfixOp::Xor),
             TokKind::Lt => Some(InfixOp::Lt),
             TokKind::Leq => Some(InfixOp::Leq),
             TokKind::Gt => Some(InfixOp::Gt),

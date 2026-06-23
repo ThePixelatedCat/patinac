@@ -149,25 +149,42 @@ pub struct Arg {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockExpr(pub Vec<Stmt>);
 
+/// An infix operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfixOp {
+    /// `+`.
     Add,
+    /// TEMPORARY, until we have traits. `+.`.
     AddF,
+    /// `-`.
     Sub,
+    /// TEMPORARY, until we have traits. `-.`.
     SubF,
+    /// `*`.
     Mul,
+    /// TEMPORARY, until we have traits. `*.`.
     MulF,
+    /// `/`.
     Div,
+    /// TEMPORARY, until we have traits. `/.`.
     DivF,
+    /// `^`.
     Exp,
+    /// `&&`.
     And,
+    /// `||`.
     Or,
-    Xor,
+    /// `==`.
     Eqq,
+    /// `!=`.
     Neq,
+    /// `>`.
     Gt,
+    /// `<`.
     Lt,
+    /// `>=`.
     Geq,
+    /// `<=`.
     Leq,
 }
 

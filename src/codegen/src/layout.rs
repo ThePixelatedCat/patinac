@@ -14,7 +14,7 @@ pub enum LayoutValue<'mir, 'ctx> {
 }
 
 impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
-    pub fn int<B: BasicValue<'ctx>>(size: IntSize, int: B) -> Self {
+    pub fn int<B: BasicValue<'ctx> + Copy>(size: IntSize, int: B) -> Self {
         assert!(int.as_basic_value_enum().is_int_value());
         Self::Scalar(
             ScalarKind::Int(size),
@@ -22,14 +22,14 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
         )
     }
 
-    pub fn indirect_int<B: BasicValue<'ctx>>(size: IntSize, int: B) -> Self {
+    pub fn indirect_int<B: BasicValue<'ctx> + Copy>(size: IntSize, int: B) -> Self {
         Self::Scalar(
             ScalarKind::Int(size),
             ScalarLayout::Indirect(int.as_basic_value_enum().into_pointer_value()),
         )
     }
 
-    pub fn float<B: BasicValue<'ctx>>(float: B) -> Self {
+    pub fn float<B: BasicValue<'ctx> + Copy>(float: B) -> Self {
         assert!(float.as_basic_value_enum().is_float_value());
         Self::Scalar(
             ScalarKind::Float,
@@ -37,14 +37,14 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
         )
     }
 
-    pub fn indirect_float<B: BasicValue<'ctx>>(float: B) -> Self {
+    pub fn indirect_float<B: BasicValue<'ctx> + Copy>(float: B) -> Self {
         Self::Scalar(
             ScalarKind::Float,
             ScalarLayout::Indirect(float.as_basic_value_enum().into_pointer_value()),
         )
     }
 
-    pub fn array<B: BasicValue<'ctx>>(elem_ty: &'mir Ty, ptr: B) -> Self {
+    pub fn array<B: BasicValue<'ctx> + Copy>(elem_ty: &'mir Ty, ptr: B) -> Self {
         assert!(ptr.as_basic_value_enum().is_pointer_value());
         Self::Scalar(
             ScalarKind::Array(elem_ty),
@@ -52,21 +52,21 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
         )
     }
 
-    pub fn indirect_array<B: BasicValue<'ctx>>(elem_ty: &'mir Ty, ptr: B) -> Self {
+    pub fn indirect_array<B: BasicValue<'ctx> + Copy>(elem_ty: &'mir Ty, ptr: B) -> Self {
         Self::Scalar(
             ScalarKind::Array(elem_ty),
             ScalarLayout::Indirect(ptr.as_basic_value_enum().into_pointer_value()),
         )
     }
 
-    pub fn func_ptr<B: BasicValue<'ctx>>(ty: FunctionType<'ctx>, ptr: B) -> Self {
+    pub fn func_ptr<B: BasicValue<'ctx> + Copy>(ty: FunctionType<'ctx>, ptr: B) -> Self {
         Self::Scalar(
             ScalarKind::FuncPtr(ty),
             ScalarLayout::Direct(ptr.as_basic_value_enum()),
         )
     }
 
-    pub fn indirect_func_ptr<B: BasicValue<'ctx>>(ty: FunctionType<'ctx>, ptr: B) -> Self {
+    pub fn indirect_func_ptr<B: BasicValue<'ctx> + Copy>(ty: FunctionType<'ctx>, ptr: B) -> Self {
         Self::Scalar(
             ScalarKind::FuncPtr(ty),
             ScalarLayout::Indirect(ptr.as_basic_value_enum().into_pointer_value()),
@@ -76,8 +76,9 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
     pub fn as_value(&self) -> BasicValueEnum<'ctx> {
         match self {
             Self::Scalar(_, ScalarLayout::Direct(value)) => *value,
-            Self::Scalar(_, ScalarLayout::Indirect(ptr)) => ptr.as_basic_value_enum(),
-            Self::Closure(_, ptr) | Self::Fields(_, ptr) => ptr.as_basic_value_enum(),
+            Self::Scalar(_, ScalarLayout::Indirect(ptr))
+            | Self::Closure(_, ptr)
+            | Self::Fields(_, ptr) => ptr.as_basic_value_enum(),
             Self::Zst => panic!("not a value"),
         }
     }
@@ -164,7 +165,7 @@ pub enum StorageClass {
     Scalar,
 }
 
-pub fn storage_class(ty: &Ty) -> StorageClass {
+pub const fn storage_class(ty: &Ty) -> StorageClass {
     match ty {
         Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Array(_) => StorageClass::Scalar,
         // FIXME: Account for non-capturing functions.

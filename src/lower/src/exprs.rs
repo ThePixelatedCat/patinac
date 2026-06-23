@@ -240,7 +240,7 @@ const fn convert_prefix_op(op: hir::PrefixOp) -> mir::PrefixOp {
 
 const fn convert_infix_op(op: hir::InfixOp) -> mir::InfixOp {
     convert_op!(
-        op, InfixOp, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Xor, Eqq, Neq, Gt,
-        Lt, Geq, Leq
+        op, InfixOp, Add, AddF, Sub, SubF, Mul, MulF, Div, DivF, Exp, And, Or, Eqq, Neq, Gt, Lt,
+        Geq, Leq
     )
 }

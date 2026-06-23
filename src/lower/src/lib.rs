@@ -8,7 +8,7 @@ mod exprs;
 
 use std::cmp::Reverse;
 
-use slotmap::{Key, SecondaryMap};
+use slotmap::{Key as _, SecondaryMap};
 
 use errors::ErrorHandler;
 use hir::{ExecItem, ExecKind, Hir, TyId};
@@ -141,7 +141,7 @@ impl<'hir> LowerInfo<'hir, '_> {
             hir::Ty::Tuple(elem_tys) => mir::Ty::Fields(self.layout_fields(elem_tys)),
             hir::Ty::Func(params, ret_ty) => {
                 let params = params
-                    .into_iter()
+                    .iter()
                     .map(|param| mir::Param {
                         ty: self.lower_ty(&param.ty),
                         mutable: param.mutable,
@@ -181,11 +181,7 @@ impl<'hir> LowerInfo<'hir, '_> {
         self.lower_ty(self.expr_ty(expr))
     }
 
-    fn lower_var_ty(&mut self, var: hir::VarId) -> mir::Ty {
-        self.lower_ty(self.hir.var_ty(var))
-    }
-
-    fn field_index(&mut self, ty: TyId, ident: Ident) -> u32 {
+    fn field_index(&self, ty: TyId, ident: Ident) -> u32 {
         self.field_map[ty]
             .iter()
             .copied()
