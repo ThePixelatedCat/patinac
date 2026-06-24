@@ -100,7 +100,7 @@ impl Display for PartialTy {
                 write!(f, "fn({}) -> {result_ty}", itertools::join(params, ", "))
             }
             Self::Named(name) => {
-                write!(f, "temp{name:?}") //TODO properly print
+                write!(f, "temp{name:?}") // TODO properly print
             }
             Self::Var(_) => "{var}".fmt(f),
             Self::IntVar(_) => "{integer}".fmt(f),

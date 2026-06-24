@@ -78,10 +78,7 @@ impl Path {
     /// Attempts to create a path, returning None if the provided `Vec` is empty.
     pub fn new(mut path: Vec<Ident>) -> Option<Self> {
         let tail = path.pop()?;
-        Some(Self {
-            head: path.into(),
-            tail,
-        })
+        Some(Self { head: path, tail })
     }
 
     /// Creates a path of a constant length.
@@ -112,7 +109,7 @@ impl Path {
     }
 
     /// Returns the last identifier of the path, which is the name of the referenced item.
-    pub fn end(&self) -> Ident {
+    pub const fn end(&self) -> Ident {
         self.tail
     }
 
@@ -128,7 +125,7 @@ impl Path {
 }
 
 /// An `import` or `export`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum VisItem {
     /// An `import` item, abbreviating the path required to refer to an item.
     Import(Path, Range<u32>),
@@ -168,7 +165,7 @@ pub struct Variant {
 }
 
 /// A field of a `record` or of a `union` variant.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Field {
     /// The name of the field.
     pub ident: SpanIdent,
@@ -378,7 +375,7 @@ pub enum ExprKind {
     /// Blocks evaluates the value of the last statement, or unit if the last statement is not an expression.
     Block(BlockExpr),
 
-    /// TEMPORARY, until we have stdlib + FFI
+    /// TEMPORARY, until we have stdlib + FFI.
     Print(Box<Expr>),
 }
 
@@ -459,7 +456,7 @@ pub struct Arg {
     pub span: Range<u32>,
 }
 
-/// A single arm of a [match][ExprKind::Match] expression
+/// A single arm of a [match][ExprKind::Match] expression.
 #[derive(Debug, PartialEq)]
 pub struct MatchArm {
     /// The pattern to attempt to match the scrutinee against.
@@ -534,7 +531,7 @@ impl InfixOp {
     }
 }
 
-/// A prefix operator
+/// A prefix operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixOp {
     /// `!`. Logical negation.

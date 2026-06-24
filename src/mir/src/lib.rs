@@ -1,6 +1,6 @@
-//! The high-level intermediate representation of Patina. Produced after name resolution, and used for typechecking.
+//! The mid-level intermediate representation of Patina. Lowered from the HIR, and used for code generation.
 
-use slotmap::{SecondaryMap, SlotMap, new_key_type};
+use slotmap::{SlotMap, new_key_type};
 
 use ident::Ident;
 
@@ -9,7 +9,6 @@ pub struct Mir {
     main: Option<Item>,
     items: Vec<Item>,
     exprs: SlotMap<ExprId, Expr>,
-    // expr_tys: SecondaryMap<ExprId, Ty>,
     vars: SlotMap<VarId, VarInfo>,
 }
 
@@ -246,7 +245,7 @@ impl Ty {
             Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool | Self::Array(_) => {
                 self.size()
             }
-            Self::Fields(field_tys) => field_tys.iter().map(Ty::alignment).max().unwrap_or(0),
+            Self::Fields(field_tys) => field_tys.iter().map(Self::alignment).max().unwrap_or(0),
             Self::Func(_, _) => Self::PTR_SIZE,
         }
     }

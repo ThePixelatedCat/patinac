@@ -20,7 +20,7 @@ pub struct Package {
 
 impl Package {
     /// Returns the id for the root module.
-    pub fn root(&self) -> ModuleId {
+    pub const fn root(&self) -> ModuleId {
         self.root_id
     }
 

@@ -120,7 +120,7 @@ pub enum Expr {
     /// Blocks evaluates the value of the last statement, or unit if the last statement is not an expression.
     Block(BlockExpr),
 
-    /// TEMPORARY, until we have stdlib + FFI
+    /// TEMPORARY, until we have stdlib + FFI.
     Print(ExprId),
 }
 
@@ -137,7 +137,7 @@ pub enum LitExpr {
     Bool(bool),
 }
 /// An argument in a [ function call][ExprKind::Call], consisting of an expression that may have a mutability annotation.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Arg {
     /// The value of the function argument.
     pub value: ExprId,

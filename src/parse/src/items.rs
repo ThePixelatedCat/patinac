@@ -109,7 +109,7 @@ impl Parser<'_> {
 
         let ty = self.ident()?;
 
-        self.consume(TokKind::LBrace)?.span.start;
+        self.consume(TokKind::LBrace)?;
         let mut items = vec![];
         while !self.at(TokKind::RBrace) {
             let item = match self.peek()? {

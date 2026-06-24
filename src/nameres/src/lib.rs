@@ -113,7 +113,7 @@ fn resolve_ast(
 
     for exec in ast.exec_items {
         if let Ok(exec) = resolve_exec_item(scope, hir, handler, exec) {
-            hir.add_exec(exec)
+            hir.add_exec(exec);
         }
     }
 }

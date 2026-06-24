@@ -157,7 +157,7 @@ impl<'callback> ErrorHandler<'callback> {
         reason = "This handler is for use in tests, where debug output is desirable"
     )]
     pub const TEST: Self = ErrorHandler::new(&|str, span, module, kind| {
-        eprintln!("{kind:?}: {str} (mod: {module:?}, span: {span:?})")
+        eprintln!("{kind:?}: {str} (mod: {module:?}, span: {span:?})");
     });
     /// An error handler that discards the errors. Primarily for tests intended to produce errors, to avoid clogging the terminal.
     pub const DUMMY: Self = ErrorHandler::new(&|_, _, _, _| {});

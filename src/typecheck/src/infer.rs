@@ -212,14 +212,10 @@ impl TypeChecker<'_> {
             .stmts
             .iter()
             .map(|stmt| match stmt {
-                Stmt::Decl {
-                    var: id,
-                    value: val,
-                    ..
-                } => {
-                    let val_ty = self.infer_expr(hir, module, *val);
-                    let var_ty = self.var_ty(hir, *id).clone();
-                    self.constrain_eq(val_ty, var_ty, hir.expr_span(*val), module);
+                Stmt::Decl { var, value, .. } => {
+                    let var_ty = self.var_ty(hir, *var).clone();
+                    let value_ty = self.infer_expr(hir, module, *value);
+                    self.constrain_eq(value_ty, var_ty, hir.expr_span(*value), module);
                     PartialTy::unit()
                 }
                 Stmt::Expr(expr) => self.infer_expr(hir, module, *expr),
