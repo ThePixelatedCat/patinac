@@ -137,7 +137,7 @@ impl TypeChecker<'_> {
                     self.constrain_eq(
                         capture_ty,
                         rebinding_ty,
-                        hir.var_info(*capture).span,
+                        hir.var_info(*capture).ident.span,
                         module,
                     );
                 }
@@ -149,7 +149,7 @@ impl TypeChecker<'_> {
                         Param {
                             ty: self.var_ty(hir, *id).clone(),
                             mutable: info.mutable,
-                            span: info.span,
+                            span: info.ident.span,
                         }
                     })
                     .collect();
@@ -212,7 +212,11 @@ impl TypeChecker<'_> {
             .stmts
             .iter()
             .map(|stmt| match stmt {
-                Stmt::Decl { var: id, val, .. } => {
+                Stmt::Decl {
+                    var: id,
+                    value: val,
+                    ..
+                } => {
                     let val_ty = self.infer_expr(hir, module, *val);
                     let var_ty = self.var_ty(hir, *id).clone();
                     self.constrain_eq(val_ty, var_ty, hir.expr_span(*val), module);

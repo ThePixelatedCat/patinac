@@ -261,17 +261,17 @@ fn compound_expressions() {
             func: ExprKind::ident("bar").span(0..3).into(),
             args: vec![
                 Arg {
-                    val: ExprKind::ident("x").span(11..12),
+                    value: ExprKind::ident("x").span(11..12),
                     mutable: true,
                     span: Range::from(7..12)
                 },
                 Arg {
-                    val: ExprKind::int(2).span(14..15),
+                    value: ExprKind::int(2).span(14..15),
                     mutable: false,
                     span: Range::from(14..15)
                 },
                 Arg {
-                    val: ExprKind::ident("bar").span(17..20),
+                    value: ExprKind::ident("bar").span(17..20),
                     mutable: false,
                     span: Range::from(17..20)
                 },
@@ -312,12 +312,12 @@ fn compound_expressions() {
             .into(),
             args: vec![
                 Arg {
-                    val: ExprKind::int(1).span(33..34),
+                    value: ExprKind::int(1).span(33..34),
                     mutable: true,
                     span: Range::from(29..34)
                 },
                 Arg {
-                    val: ExprKind::int(2).span(36..37),
+                    value: ExprKind::int(2).span(36..37),
                     mutable: false,
                     span: Range::from(36..37)
                 },
@@ -329,14 +329,14 @@ fn compound_expressions() {
     assert_eq!(
         Parser::new_test("[1, 2, 3].[1-1]").expr(),
         Ok(ExprKind::Index {
-            arr: ExprKind::Array(vec![
+            array: ExprKind::Array(vec![
                 ExprKind::int(1).span(1..2),
                 ExprKind::int(2).span(4..5),
                 ExprKind::int(3).span(7..8)
             ])
             .span(0..9)
             .into(),
-            idx: ExprKind::Infix {
+            index: ExprKind::Infix {
                 op: InfixOp::Sub,
                 lhs: ExprKind::int(1).span(11..12).into(),
                 rhs: ExprKind::int(1).span(13..14).into()
@@ -388,7 +388,7 @@ fn tuple_or_call() {
             ExprKind::Call {
                 func: ExprKind::ident("foo").span(1..4).into(),
                 args: vec![Arg {
-                    val: ExprKind::int(1).span(9..10),
+                    value: ExprKind::int(1).span(9..10),
                     mutable: true,
                     span: Range::from(5..10)
                 }]
@@ -452,13 +452,13 @@ fn var_expressions() {
                 pat: PatKind::ident("x").span(4..5),
                 ty: None
             },
-            val: ExprKind::Infix {
+            value: ExprKind::Infix {
                 op: InfixOp::Add,
                 lhs: ExprKind::int(7).span(8..9).into(),
                 rhs: ExprKind::Call {
                     func: ExprKind::ident("sin").span(12..15).into(),
                     args: vec![Arg {
-                        val: ExprKind::float(3.0).span(16..19),
+                        value: ExprKind::float(3.0).span(16..19),
                         mutable: false,
                         span: Range::from(16..19)
                     }]
@@ -479,7 +479,7 @@ fn var_expressions() {
                 pat: PatKind::ident("y").span(8..9),
                 ty: Some(TyKind::Float.span(11..16))
             },
-            val: ExprKind::float(7.0).span(19..22),
+            value: ExprKind::float(7.0).span(19..22),
             span: Range::from(0..22)
         })
     );
@@ -631,7 +631,7 @@ if y < 3 {
                         pat: PatKind::ident("y").span(9..10),
                         ty: None
                     },
-                    val: ExprKind::int(5).span(13..14),
+                    value: ExprKind::int(5).span(13..14),
                     span: Range::from(1..14)
                 },
                 Stmt::Expr(
@@ -673,7 +673,7 @@ if y < 3 {
                                         pat: PatKind::ident("a").span(50..51),
                                         ty: None
                                     },
-                                    val: ExprKind::int(5).span(54..55),
+                                    value: ExprKind::int(5).span(54..55),
                                     span: Range::from(46..55)
                                 },
                                 Stmt::Expr(ExprKind::ident("a").span(60..61))

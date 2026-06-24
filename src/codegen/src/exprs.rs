@@ -633,27 +633,27 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 self.emit_drop(expr);
             }
             match stmt {
-                Stmt::Decl { var: id, val, .. } => {
-                    let ty = &self.mir.var(*id).ty;
-                    let val_tmp = self.emit_expr(*val);
+                Stmt::Decl { var, value, .. } => {
+                    let ty = &self.mir.var(*var).ty;
+                    let val_tmp = self.emit_expr(*value);
 
                     // ZSTs and non-mutable values can be referenced directly, without a pointer.
                     // Sized, mutable values must be behind pointers for SSA reasons.
                     // Indirect values are already behind pointers, so they don't need a new allocation.
                     let val = if layout::zst(ty)
                         || layout::indirect(ty)
-                        || !self.mir.var(*id).mutable
+                        || !self.mir.var(*var).mutable
                     {
                         val_tmp
                     } else {
                         let alloc = self
-                            .emit_alloca_entry(self.lower_ty(ty), &self.mir.var(*id).ident.str());
+                            .emit_alloca_entry(self.lower_ty(ty), &self.mir.var(*var).ident.str());
                         self.emit_move(val_tmp, alloc);
                         self.layout_indirect(ty, alloc)
                     };
 
-                    self.vars.insert(*id, val);
-                    locals.push(*id);
+                    self.vars.insert(*var, val);
+                    locals.push(*var);
                 }
                 Stmt::Expr(expr) => {
                     last_expr = Some(self.emit_expr(*expr));

@@ -167,8 +167,8 @@ pub struct Variant {
     pub fields: Vec<Field>,
 }
 
-#[derive(Debug, PartialEq)]
 /// A field of a `record` or of a `union` variant.
+#[derive(Debug, PartialEq)]
 pub struct Field {
     /// The name of the field.
     pub ident: SpanIdent,
@@ -176,25 +176,26 @@ pub struct Field {
     pub ty: Ty,
 }
 
+/// An `impl` block, providing methods, associated functions, and associated constants for a type.
 #[derive(Debug, PartialEq)]
 pub struct Impl {
-    /// The type this implementation is for.
+    /// The type this impl block is for.
     pub ty: SpanIdent,
-    /// The items within the implementation.
+    /// The items within the block.
     pub items: Vec<ExecItem>,
 }
 
-#[derive(Debug, PartialEq)]
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
+#[derive(Debug, PartialEq)]
 pub struct ExecItem {
     /// The name of the item.
     pub ident: SpanIdent,
-    /// The kind of the item (`const` or `fn`).
+    /// The kind of the item (constant or function).
     pub kind: ExecKind,
 }
 
+/// The information of an [`ExecItem`] specific to whether it's a constant or function.
 #[derive(Debug, PartialEq)]
-/// The information of an [`ExecItem`] specific to whether it's a `const` or a `fn`.
 pub enum ExecKind {
     /// A constant item.
     Const {
@@ -239,8 +240,8 @@ pub enum Stmt {
         /// The binding information for the variable.
         binding: Binding,
         /// The initial value for the variable.
-        val: Expr,
-        /// The span of the declaration, starting from the `let` and ending after the [`val`][`Stmt::Decl::val`].
+        value: Expr,
+        /// The span of the declaration, starting from the `let` and ending after the [`value`][`Stmt::Decl::value`].
         span: Range<u32>,
     },
     /// An expression used as a statement. Evaluated purely for side-effects.
@@ -309,22 +310,22 @@ pub enum ExprKind {
     Prefix {
         /// The prefix operator used.
         op: PrefixOp,
-        /// The base expression the operator is attached to.
+        /// The base expression the operator is applied to.
         expr: Box<Expr>,
     },
     /// Record field access.
     Field {
         /// The base expression from which the field is being accessed.
         base: Box<Expr>,
-        /// The name of the field.
+        /// The name of the field being accessed.
         field: SpanIdent,
     },
     /// Array indexing.
     Index {
         /// The base expression being indexed into.
-        arr: Box<Expr>,
+        array: Box<Expr>,
         /// The index to access.
-        idx: Box<Expr>,
+        index: Box<Expr>,
     },
     /// A function call.
     Call {
@@ -449,7 +450,7 @@ pub struct Binding {
 #[derive(Debug, PartialEq)]
 pub struct Arg {
     /// The value of the function argument.
-    pub val: Expr,
+    pub value: Expr,
     /// Whether this argument is mutable. If it is, the value must be a place expression.
     pub mutable: bool,
     /// The total span of the argument.
@@ -467,7 +468,7 @@ pub struct MatchArm {
     pub body: Expr,
 }
 
-/// A block of statements. Used by [`ExprKind::Block`], [`ExprKind::If`], [`ExprKind::For`], and [`ExprKind::Loop`].
+/// A block of statements.
 #[derive(Debug, PartialEq)]
 pub struct BlockExpr {
     /// The statements within the block.

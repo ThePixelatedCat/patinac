@@ -77,7 +77,7 @@ pub struct VarInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stmt {
-    Decl { var: VarId, val: ExprId },
+    Decl { var: VarId, value: ExprId },
     Expr(ExprId),
 }
 

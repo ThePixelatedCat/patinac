@@ -58,12 +58,12 @@ pub fn resolve_expr(
             base: resolve_expr(scope, hir, handler, *base)?,
             field,
         },
-        ExprKind::Index { arr, idx } => {
-            let arr = resolve_expr(scope, hir, handler, *arr);
-            let idx = resolve_expr(scope, hir, handler, *idx);
+        ExprKind::Index { array, index } => {
+            let array = resolve_expr(scope, hir, handler, *array);
+            let index = resolve_expr(scope, hir, handler, *index);
             hir::Expr::Index {
-                array: arr?,
-                index: idx?,
+                array: array?,
+                index: index?,
             }
         }
         ExprKind::Call { func, args } => {
@@ -71,7 +71,7 @@ pub fn resolve_expr(
             let args: Vec<Arg> = args
                 .into_iter()
                 .map(|arg| {
-                    let val = resolve_expr(scope, hir, handler, arg.val)?;
+                    let val = resolve_expr(scope, hir, handler, arg.value)?;
                     if arg.mutable {
                         check_is_place(hir, scope.module(), handler, val)?;
                     }
@@ -114,7 +114,7 @@ pub fn resolve_expr(
                         mutable: false,
                         ..info
                     });
-                    scope.add_var(info.ident, rebinding);
+                    scope.add_var(info.ident.ident, rebinding);
                     (capture, rebinding)
                 })
                 .collect();
@@ -189,13 +189,17 @@ fn resolve_block_expr(
         .stmts
         .into_iter()
         .map(|stmt| match stmt {
-            ast::Stmt::Decl { binding, val, span } => {
+            ast::Stmt::Decl {
+                binding,
+                value,
+                span,
+            } => {
                 // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
-                let val = resolve_expr(&scope, hir, handler, val);
-                let id = crate::resolve_binding(&mut scope, hir, handler, binding);
+                let value = resolve_expr(&scope, hir, handler, value);
+                let var = crate::resolve_binding(&mut scope, hir, handler, binding);
                 Ok(hir::Stmt::Decl {
-                    var: id?,
-                    val: val?,
+                    var: var?,
+                    value: value?,
                     span,
                 })
             }
@@ -295,14 +299,17 @@ fn collect_captures(scope: &Scope, hir: &Hir, captures: &mut HashSet<VarId>, exp
         ExprKind::Infix {
             lhs: e1, rhs: e2, ..
         }
-        | ExprKind::Index { arr: e1, idx: e2 } => {
+        | ExprKind::Index {
+            array: e1,
+            index: e2,
+        } => {
             collect_captures(scope, hir, captures, e1);
             collect_captures(scope, hir, captures, e2);
         }
         ExprKind::Call { func, args } => {
             collect_captures(scope, hir, captures, func);
             for a in args {
-                collect_captures(scope, hir, captures, &a.val);
+                collect_captures(scope, hir, captures, &a.value);
             }
         }
         ExprKind::Match { scrutinee, arms } => {
@@ -335,7 +342,7 @@ fn collect_block_captures(
 ) {
     for s in &block.stmts {
         match s {
-            ast::Stmt::Decl { val, .. } => collect_captures(scope, hir, captures, val),
+            ast::Stmt::Decl { value, .. } => collect_captures(scope, hir, captures, value),
             ast::Stmt::Expr(expr) => collect_captures(scope, hir, captures, expr),
         }
     }

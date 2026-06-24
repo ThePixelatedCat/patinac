@@ -73,10 +73,9 @@ fn resolve_ast(
             }
             None => {
                 let id = hir.add_var(VarInfo {
-                    ident: exec.ident.ident,
+                    ident: exec.ident,
                     mutable: false,
                     global: true,
-                    span: exec.ident.span,
                     module: scope.module(),
                 });
                 scope.add_var(exec.ident.ident, id);
@@ -111,12 +110,12 @@ fn resolve_ast(
     {
         hir.set_main(main);
     }
-    let execs: Vec<_> = ast
-        .exec_items
-        .into_iter()
-        .flat_map(|exec| resolve_exec_item(scope, hir, handler, exec))
-        .collect();
-    hir.add_execs(execs);
+
+    for exec in ast.exec_items {
+        if let Ok(exec) = resolve_exec_item(scope, hir, handler, exec) {
+            hir.add_exec(exec)
+        }
+    }
 }
 
 fn find_main(
@@ -183,10 +182,9 @@ fn resolve_ty_item(scope: &mut Scope, hir: &mut Hir, handler: &mut ErrorHandler,
                 Box::new(hir::Ty::Named(id)),
             );
             let ctor = hir.add_var(VarInfo {
-                ident: item.ident.ident,
+                ident: item.ident,
                 mutable: false,
                 global: true,
-                span: item.ident.span,
                 module: scope.module(),
             });
             hir.add_var_ty(ctor, constructor_ty);
@@ -344,10 +342,9 @@ fn resolve_pat(
     match pat.kind {
         PatKind::Ident(ident) => {
             let id = hir.add_var(VarInfo {
-                ident,
+                ident: ident.span(pat.span),
                 mutable,
                 global: false,
-                span: pat.span,
                 module: scope.module(),
             });
             if let Some(ty) = ty {

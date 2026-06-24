@@ -14,10 +14,14 @@ impl Parser<'_> {
 
                 let binding = self.binding()?;
                 self.consume(TokKind::Eq)?;
-                let val = self.expr()?;
+                let value = self.expr()?;
 
-                let span = Range::from(start..val.span.end);
-                Ok(Stmt::Decl { binding, val, span })
+                let span = Range::from(start..value.span.end);
+                Ok(Stmt::Decl {
+                    binding,
+                    value,
+                    span,
+                })
             }
             _ => self.expr().map(Stmt::Expr),
         }
@@ -378,12 +382,12 @@ impl Parser<'_> {
             }
             TokKind::LBracket => {
                 self.consume(TokKind::LBracket)?;
-                let idx = Box::new(self.expr()?);
+                let index = Box::new(self.expr()?);
 
                 let span = lhs.span.start..self.consume(TokKind::RBracket)?.span.end;
                 Ok(ExprKind::Index {
-                    arr: Box::new(lhs),
-                    idx,
+                    array: Box::new(lhs),
+                    index,
                 }
                 .span(span))
             }
@@ -430,14 +434,14 @@ impl Parser<'_> {
 
     fn arg(&mut self) -> Result<Arg> {
         let mut_tok = self.consume_at(TokKind::Mut);
-        let val = self.expr()?;
+        let value = self.expr()?;
 
-        let start = mut_tok.map_or(val.span.start, |tok| tok.span.start);
-        let span = Range::from(start..val.span.end);
+        let start = mut_tok.map_or(value.span.start, |tok| tok.span.start);
+        let span = Range::from(start..value.span.end);
 
         Ok(Arg {
             mutable: mut_tok.is_some(),
-            val,
+            value,
             span,
         })
     }

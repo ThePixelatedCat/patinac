@@ -32,9 +32,9 @@ impl TypeChecker<'_> {
                 }
                 Err(()) => {
                     let var_info = hir.var_info(var);
-                    Err(self
-                        .handler
-                        .err(ErrorKind::UninferredVarType.span(var_info.span, var_info.module)))
+                    Err(self.handler.err(
+                        ErrorKind::UninferredVarType.span(var_info.ident.span, var_info.module),
+                    ))
                 }
             })
             .try_collect_eager()?;

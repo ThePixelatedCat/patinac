@@ -52,7 +52,7 @@ pub fn lower(
 impl<'hir> LowerInfo<'hir, '_> {
     fn lower(mut self) -> Mir {
         // Build constructors, populating the field map along the way.
-        for (id, _) in self.hir.tys() {
+        for id in self.hir.tys() {
             self.lower_ctor(id);
         }
 
@@ -76,7 +76,7 @@ impl<'hir> LowerInfo<'hir, '_> {
                 let var_info = self.hir.var_info(var);
                 let ty = self.lower_ty(self.hir.var_ty(var));
                 let new_var = self.mir.add_var(VarInfo {
-                    ident: var_info.ident,
+                    ident: var_info.ident.ident,
                     ty,
                     mutable: var_info.mutable,
                 });

@@ -189,8 +189,8 @@ impl LowerInfo<'_, '_> {
             .enumerate()
             .map(|(index, var)| {
                 let field = u32::try_from(index).expect("too many captures");
-                let val = self.mir.add_expr(mir::Expr::Field { base: env, field });
-                mir::Stmt::Decl { var: *var, val }
+                let value = self.mir.add_expr(mir::Expr::Field { base: env, field });
+                mir::Stmt::Decl { var: *var, value }
             })
             .collect();
         stmts.push(mir::Stmt::Expr(self.lower_expr(body)));
@@ -215,9 +215,9 @@ impl LowerInfo<'_, '_> {
             .stmts
             .iter()
             .map(|stmt| match stmt {
-                hir::Stmt::Decl { var: id, val, .. } => mir::Stmt::Decl {
-                    var: self.lower_var(*id),
-                    val: self.lower_expr(*val),
+                hir::Stmt::Decl { var, value, .. } => mir::Stmt::Decl {
+                    var: self.lower_var(*var),
+                    value: self.lower_expr(*value),
                 },
                 hir::Stmt::Expr(expr) => mir::Stmt::Expr(self.lower_expr(*expr)),
             })
