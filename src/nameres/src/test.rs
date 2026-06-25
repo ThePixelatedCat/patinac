@@ -1,7 +1,5 @@
 use std::assert_matches;
 
-use parse::Parser;
-
 #[test]
 fn lambda() {
     let input = "{
@@ -136,27 +134,4 @@ fn rebinding() {
     record Foo(val: UInt)
 ";
     assert_matches!(crate::test_resolve_ast(input), Err(_));
-}
-
-#[test]
-#[allow(clippy::unwrap_used, reason = "test function")]
-fn modules() {
-    let root_ast = Parser::new_test("fn main(): () = print foo::sum(1, 1)")
-        .parse()
-        .unwrap();
-    let foo_ast = Parser::new_test("fn sum(a: Int, b: Int): Int = a + b")
-        .parse()
-        .unwrap();
-
-    todo!()
-    // let tree = ModuleTree {
-    //     name: String::from("main"),
-    //     contents: root_ast,
-    //     children: vec![ModuleTree {
-    //         name: String::from("foo"),
-    //         contents: foo_ast,
-    //         children: vec![],
-    //     }],
-    // };
-    // assert_matches!(crate::resolve(tree.into(), ErrorHandler::TEST), Err(_));
 }
