@@ -90,7 +90,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 let index = self.emit_expr(*index);
                 self.emit_array_indexing(array, index)
             }
-            Expr::Call { .. } => todo!("Projections"),
             _ => unreachable!("not a place"),
         }
     }
@@ -115,7 +114,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .unwrap();
                 self.emit_array_indexing(array, index)
             }
-            Expr::Call { .. } => todo!("Projections"),
             _ => unreachable!("not a place"),
         }
     }
@@ -196,10 +194,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         LayoutValue::Fields(field_tys, out)
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Any given arm is readable on it's own"
-    )]
     fn emit_infix(&mut self, op: InfixOp, lhs: ExprId, rhs: ExprId) -> LayoutValue<'mir, 'ctx> {
         let lhs = self.emit_expr(lhs);
         let rhs = self.emit_expr(rhs);

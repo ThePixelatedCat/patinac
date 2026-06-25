@@ -1,0 +1,4 @@
+too-many-lines-threshold = 200
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "prefer the faster foldhash algorithm, as we don't need hashDoS protection", replacement = "foldhash::HashMap" },
+]

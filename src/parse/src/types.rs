@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use ast::{FuncTy, Ty, TyKind};
+use ast::{ParamTy, Ty, TyKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -33,9 +33,9 @@ impl Parser<'_> {
                 let start = self.consume(TokKind::FnTy)?.span.start;
 
                 let (params, _) =
-                    self.delimited_list(Self::func_ty, TokKind::LParen, TokKind::RParen)?;
+                    self.delimited_list(Self::param_ty, TokKind::LParen, TokKind::RParen)?;
                 self.consume(TokKind::Arrow)?;
-                let ret_ty = self.func_ty()?;
+                let ret_ty = self.ty()?;
 
                 let span = start..ret_ty.span.end;
                 Ok(TyKind::Func(params, Box::new(ret_ty)).span(span))
@@ -56,14 +56,14 @@ impl Parser<'_> {
         }
     }
 
-    fn func_ty(&mut self) -> Result<FuncTy> {
+    fn param_ty(&mut self) -> Result<ParamTy> {
         let mut_tok = self.consume_at(TokKind::Mut);
         let ty = self.ty()?;
 
         let start = mut_tok.map_or(ty.span.start, |tok| tok.span.start);
         let span = Range::from(start..ty.span.end);
 
-        Ok(FuncTy {
+        Ok(ParamTy {
             ty,
             mutable: mut_tok.is_some(),
             span,

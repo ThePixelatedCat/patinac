@@ -147,7 +147,7 @@ pub fn resolve_expr(
         ExprKind::For { pat, iter, body } => {
             let iter = resolve_expr(scope, hir, handler, *iter);
             let mut scope = Scope::clone(scope);
-            let id = crate::resolve_pat(&mut scope, hir, pat, false, None);
+            let id = crate::resolve_pat(&mut scope, hir, &pat, false, None);
             let body = resolve_block_expr(&scope, hir, handler, body);
             hir::Expr::For {
                 id,
@@ -229,7 +229,6 @@ fn check_is_place(
         hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
             check_is_place(hir, module, handler, *base)
         }
-        hir::Expr::Call { .. } => todo!("Projections"),
         _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place), module))),
     }
 }

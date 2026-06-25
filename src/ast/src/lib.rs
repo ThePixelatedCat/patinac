@@ -156,7 +156,7 @@ pub enum TyItemKind {
 }
 
 /// A variant of a `union`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Variant {
     /// The name of the variant.
     pub ident: SpanIdent,
@@ -207,8 +207,6 @@ pub enum ExecKind {
         generics: Vec<SpanIdent>,
         /// The value parameters.
         params: Vec<Param>,
-        /// Whether the return type is mutable (i.e. a projection).
-        ret_mut: bool,
         /// The return type.
         ret_ty: Ty,
         /// The body.
@@ -424,7 +422,7 @@ impl ExprKind {
 pub enum LitExpr {
     /// An integer, of any of the [three][TyKind::Int] [integer][TyKind::UInt] [types][TyKind::Byte]. Sign is not part of the literal.
     Int(u64),
-    /// A float. Can include sign and exponent.
+    /// A float. Can include exponent.
     Float(f64),
     /// A string. Common escape sequences and raw strings are supported.
     String(String),
@@ -576,7 +574,7 @@ pub enum TyKind {
     /// A heterogenous tuple (compile-time length).
     Tuple(Vec<Ty>),
     /// A first-class function value, implemented as a closure.
-    Func(Vec<FuncTy>, Box<FuncTy>),
+    Func(Vec<ParamTy>, Box<Ty>),
     /// A user-defined type, such as a `record` or `union`.
     Named(Path, Vec<Ty>),
 }
@@ -601,9 +599,9 @@ impl TyKind {
     }
 }
 
-/// A parameter or return type of a function type.
+/// A parameter of a function type.
 #[derive(Debug, PartialEq, Eq)]
-pub struct FuncTy {
+pub struct ParamTy {
     /// The type of the paremeter.
     pub ty: Ty,
     /// Whether the parameter is mutable.

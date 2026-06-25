@@ -142,7 +142,6 @@ fn impls() {
                     kind: ExecKind::Func {
                         generics: vec![],
                         params: vec![],
-                        ret_mut: false,
                         ret_ty: TyKind::unit().span(34..36),
                         body: ExprKind::unit().span(39..41)
                     }
@@ -195,7 +194,6 @@ fn functions() {
                         span: Range::from(20..27)
                     }
                 ],
-                ret_mut: false,
                 ret_ty: TyKind::unit().span(30..32),
                 body: ExprKind::Infix {
                     op: InfixOp::Assign,

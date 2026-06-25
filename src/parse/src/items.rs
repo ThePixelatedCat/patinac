@@ -166,7 +166,6 @@ impl Parser<'_> {
             TokKind::RParen,
         )?;
         self.consume(TokKind::Colon)?;
-        let ret_mut = self.consume_at(TokKind::Mut).is_some();
         let ret_ty = self.ty()?;
         self.consume(TokKind::Eq)?;
         let body = self.expr()?;
@@ -176,7 +175,6 @@ impl Parser<'_> {
             kind: ExecKind::Func {
                 generics,
                 params,
-                ret_mut,
                 ret_ty,
                 body,
             },

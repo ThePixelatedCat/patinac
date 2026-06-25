@@ -7,24 +7,8 @@ use ident::SpanIdent;
 use crate::VarId;
 
 new_key_type! {
-    /// An ID for an [`Expr`] in a slotmap.
+    /// An ID corresponding to an [`Expr`].
     pub struct ExprId;
-}
-
-/// A statement. Always contained within a [`BlockExpr`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stmt {
-    /// A variable declaration.
-    Decl {
-        /// The the variable being bound.
-        var: VarId,
-        /// The initial value for the variable.
-        value: ExprId,
-        /// The span of the declaration, starting from the `let` and ending after the [`value`][`Stmt::Decl::value`].
-        span: Range<u32>,
-    },
-    /// An expression used as a statement. Evaluated purely for side-effects.
-    Expr(ExprId),
 }
 /// An expression.
 #[derive(Debug, PartialEq)]
@@ -85,9 +69,9 @@ pub enum Expr {
     },
     /// A variable assignment.
     Assign {
-        /// The place being assigned to, on the lhs of the `=`. This semantically must be a "place expression".
+        /// The place being assigned to, on the left of the `=`. Semantically, this must be a "place expression".
         place: ExprId,
-        /// The value being assigned, on the rhs of the `=`.
+        /// The value being assigned, on the right of the `=`.
         value: ExprId,
     },
     /// An if-then, with an optional else branch.
@@ -117,7 +101,8 @@ pub enum Expr {
     /// Return, which returns early from the enclosing function.
     Return(ExprId),
     /// A block, which executes each contained statement sequentially.
-    /// Blocks evaluates the value of the last statement, or unit if the last statement is not an expression.
+    ///
+    /// Blocks evaluate to the value of the last statement, or unit if the last statement is not an expression.
     Block(BlockExpr),
 
     /// TEMPORARY, until we have stdlib + FFI.
@@ -129,14 +114,15 @@ pub enum Expr {
 pub enum LitExpr {
     /// An integer, of any of the [three][crate::Ty::Int] [integer][crate::Ty::UInt] [types][crate::Ty::Byte]. Sign is not part of the literal.
     Int(u64),
-    /// A float. Can include sign and exponent.
+    /// A float. Can include exponent.
     Float(f64),
     /// A string. Common escape sequences and raw strings are supported.
     String(String),
     /// A boolean.
     Bool(bool),
 }
-/// An argument in a [ function call][ExprKind::Call], consisting of an expression that may have a mutability annotation.
+
+/// An argument in a [ function call][Expr::Call], consisting of an expression that may have a mutability annotation.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Arg {
     /// The value of the function argument.
@@ -156,6 +142,22 @@ pub struct BlockExpr {
     pub stmts: Vec<Stmt>,
     /// The total span of the block, from opening to closing brace.
     pub span: Range<u32>,
+}
+
+/// A statement. Always contained within a [`BlockExpr`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stmt {
+    /// A variable declaration.
+    Decl {
+        /// The the variable being bound.
+        var: VarId,
+        /// The initial value for the variable.
+        value: ExprId,
+        /// The span of the declaration, starting from the `let` and ending after the [`value`][`Stmt::Decl::value`].
+        span: Range<u32>,
+    },
+    /// An expression used as a statement, evaluated purely for side-effects.
+    Expr(ExprId),
 }
 
 /// An infix operator.
@@ -197,7 +199,7 @@ pub enum InfixOp {
     Leq,
 }
 
-/// A prefix operator
+/// A prefix operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixOp {
     /// `!`. Logical negation.

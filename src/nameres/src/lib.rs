@@ -222,16 +222,11 @@ fn resolve_exec_item(
         ast::ExecKind::Func {
             generics,
             params,
-            ret_mut,
             ret_ty,
             body,
         } => {
             if !generics.is_empty() {
                 todo!("Generics")
-            }
-
-            if ret_mut {
-                todo!("Projections")
             }
 
             let mut scope = Scope::clone(scope);
@@ -240,7 +235,7 @@ fn resolve_exec_item(
                 .into_iter()
                 .map(|p| {
                     let ty = resolve_ty(&scope, handler, p.ty)?;
-                    let id = resolve_pat(&mut scope, hir, p.pat, p.mutable, Some(ty.clone()));
+                    let id = resolve_pat(&mut scope, hir, &p.pat, p.mutable, Some(ty.clone()));
                     Ok((
                         id,
                         Param {
@@ -279,7 +274,7 @@ fn resolve_binding(
         .ty
         .map(|ty| resolve_ty(scope, handler, ty))
         .transpose()?;
-    Ok(resolve_pat(scope, hir, binding.pat, binding.mutable, ty))
+    Ok(resolve_pat(scope, hir, &binding.pat, binding.mutable, ty))
 }
 
 fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<hir::Ty> {
@@ -291,11 +286,7 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
         TyKind::Bool => Ok(hir::Ty::Bool),
         TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(resolve_ty(scope, handler, *ty)?))),
         TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(resolve_tys(scope, handler, tys)?)),
-        TyKind::Func(params, ret) => {
-            if ret.mutable {
-                todo!("Projections")
-            }
-
+        TyKind::Func(params, ret_ty) => {
             let params = params
                 .into_iter()
                 .map(|param| {
@@ -306,7 +297,7 @@ fn resolve_ty(scope: &Scope, handler: &mut ErrorHandler, ty: ast::Ty) -> Result<
                     })
                 })
                 .try_collect_eager();
-            let ret_ty = Box::new(resolve_ty(scope, handler, ret.ty)?);
+            let ret_ty = Box::new(resolve_ty(scope, handler, *ret_ty)?);
             Ok(hir::Ty::Func(params?, ret_ty))
         }
         TyKind::Named(path, args) => {
@@ -335,7 +326,7 @@ fn resolve_tys(
 fn resolve_pat(
     scope: &mut Scope,
     hir: &mut Hir,
-    pat: Pat,
+    pat: &Pat,
     mutable: bool,
     ty: Option<hir::Ty>,
 ) -> VarId {

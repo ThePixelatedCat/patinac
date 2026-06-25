@@ -315,7 +315,7 @@ impl TokKind {
     /// Converts the token into a string that parses back into itself.
     ///
     /// Used for testing.
-    #[allow(
+    #[expect(
         unused,
         reason = "It's used in tests, but the linter doesn't consider that apparently"
     )]

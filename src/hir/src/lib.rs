@@ -156,7 +156,7 @@ pub struct Field {
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExecItem {
-    /// The name of the item.
+    /// The variable the item is associated with.
     pub var: VarId,
     /// The kind of the item (constant or function).
     pub kind: ExecKind,
