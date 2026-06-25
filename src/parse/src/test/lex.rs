@@ -65,7 +65,7 @@ fn single_char_tokens_with_whitespace() {
 
 #[test]
 fn maybe_multiple_char_tokens() {
-    let src = "&&=<=_!=||**->::";
+    let src = "&&=<=_!=||->::";
     assert_eq!(
         test_lex(src),
         Ok(vec![
@@ -75,9 +75,8 @@ fn maybe_multiple_char_tokens() {
             T::Underscore.span(5..6),
             T::Neq.span(6..8),
             T::Or.span(8..10),
-            T::Exponent.span(10..12),
-            T::Arrow.span(12..14),
-            T::PathSep.span(14..16)
+            T::Arrow.span(10..12),
+            T::PathSep.span(12..14)
         ]),
     );
 }
@@ -159,7 +158,7 @@ fn function() {
 // this is a comment!
 fn test(var: Type, var2_: Bool): Int -> {
  
-    let x = "\n" + "String content \"\\ test" + 7 / 27.3e-2 ** 4
+    let x = "\n" + "String content \"\\ test" + 7 / 27.3e-2 ^  4
     let mut chars = x.chars()
     if let Some(c) = chars.next() 
         x = x + c
@@ -218,8 +217,8 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Whitespace.span(118..119),
             T::FloatLit.span(119..126),
             T::Whitespace.span(126..127),
-            T::Exponent.span(127..129),
-            T::Whitespace.span(129..130),
+            T::Exponent.span(127..128),
+            T::Whitespace.span(128..130),
             T::IntLit.span(130..131),
             T::Whitespace.span(131..136),
             // `chars` assignment
