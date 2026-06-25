@@ -251,15 +251,11 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
     }
 
     fn array_header_ty(&self) -> BasicTypeEnum<'ctx> {
-        if let Some(ty) = self.module.get_struct_type("ArrayHeader") {
-            return ty.as_basic_type_enum();
-        }
-
-        let ty = self.ctx.opaque_struct_type("ArrayHeader");
         let i64_ty = self.ctx.i64_type().as_basic_type_enum();
         // Refcount, element count, capacity
-        ty.set_body(&[i64_ty, i64_ty, i64_ty], false);
-        ty.as_basic_type_enum()
+        self.ctx
+            .struct_type(&[i64_ty, i64_ty, i64_ty], false)
+            .as_basic_type_enum()
     }
 
     fn func_ty(&self, params: &[Param], ret_ty: &Ty, env: bool) -> FunctionType<'ctx> {
@@ -529,9 +525,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
     }
 
     fn emit_copy(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
-        if value == LayoutValue::Zst {
-            return;
-        }
         match value {
             LayoutValue::Scalar(
                 ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
@@ -581,6 +574,40 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .build_call(self.fields_copy(fields), &[dst.into(), ptr.into()], "")
                     .unwrap();
             }
+            LayoutValue::Zst => {}
+        }
+    }
+
+    fn emit_move(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
+        match value {
+            LayoutValue::Scalar(_, ScalarLayout::Direct(value)) => {
+                self.builder.build_store(dst, value).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Int(size), ScalarLayout::Indirect(ptr)) => {
+                let ty = match size {
+                    IntSize::Bits8 => self.ctx.i8_type(),
+                    IntSize::Bits64 => self.ctx.i64_type(),
+                };
+                let int = self.builder.build_load(ty, ptr, "").unwrap();
+                self.builder.build_store(dst, int).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Float, ScalarLayout::Indirect(ptr)) => {
+                let float = self
+                    .builder
+                    .build_load(self.ctx.f64_type(), ptr, "")
+                    .unwrap();
+                self.builder.build_store(dst, float).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(ptr)) => {
+                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
+                self.builder.build_store(dst, array).unwrap();
+            }
+            LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(ptr)) => {
+                let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
+                self.builder.build_store(dst, func).unwrap();
+            }
+            LayoutValue::Closure(_, ptr) => self.emit_memcpy(dst, ptr, &self.closure_ty()),
+            LayoutValue::Fields(fields, ptr) => self.emit_memcpy(dst, ptr, &self.fields_ty(fields)),
             LayoutValue::Zst => {}
         }
     }
@@ -730,11 +757,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             .build_call(self.panic(), &[msg.into()], "")
             .unwrap();
         self.builder.build_unreachable().unwrap();
-    }
-
-    fn emit_move(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
-        self.emit_copy(value, dst);
-        self.emit_drop(value);
     }
 
     /// # Panics

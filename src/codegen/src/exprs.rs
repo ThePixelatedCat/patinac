@@ -491,7 +491,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         // Drop the current value in the assigned-to variable
         self.emit_drop(place);
         // Move the temporary value into the variable
-        // FIXME: properly move here, don't copy and drop
         self.emit_move(value, place.as_pointer());
         LayoutValue::Zst
     }
@@ -630,7 +629,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             match stmt {
                 Stmt::Decl { var, value, .. } => {
                     let ty = &self.mir.var(*var).ty;
-                    let val_tmp = self.emit_expr(*value);
+                    let tmp = self.emit_expr(*value);
 
                     // ZSTs and non-mutable values can be referenced directly, without a pointer.
                     // Sized, mutable values must be behind pointers for SSA reasons.
@@ -639,11 +638,11 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                         || layout::indirect(ty)
                         || !self.mir.var(*var).mutable
                     {
-                        val_tmp
+                        tmp
                     } else {
                         let alloc = self
                             .emit_alloca_entry(self.lower_ty(ty), &self.mir.var(*var).ident.str());
-                        self.emit_move(val_tmp, alloc);
+                        self.emit_move(tmp, alloc);
                         self.layout_indirect(ty, alloc)
                     };
 

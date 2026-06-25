@@ -217,3 +217,16 @@ fn unit_param() {
 fn bad_call() {
     check("fn foo(): Int = [1, 2, 3].[0]", OptLevel::O0);
 }
+
+#[test]
+fn not_array() {
+    let input = "
+    fn main(): () = {
+        let mut a = [1]
+        let b = a
+        a.[0] = 2
+        print b.[0]
+    }
+";
+    check(input, OptLevel::O0);
+}
