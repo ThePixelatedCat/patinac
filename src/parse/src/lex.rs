@@ -315,10 +315,6 @@ impl TokKind {
     /// Converts the token into a string that parses back into itself.
     ///
     /// Used for testing.
-    #[expect(
-        unused,
-        reason = "It's used in tests, but the linter doesn't consider that apparently"
-    )]
     pub(crate) fn reverse(self) -> String {
         match self {
             Self::IntLit => String::from("1"),

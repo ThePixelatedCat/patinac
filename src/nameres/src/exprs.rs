@@ -8,10 +8,6 @@ use hir::{Arg, ExprId, Hir, LitExpr, VarId};
 
 use crate::{ErrorKind, Scope};
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "Any given arm is readable on it's own"
-)]
 pub fn resolve_expr(
     scope: &Scope,
     hir: &mut Hir,

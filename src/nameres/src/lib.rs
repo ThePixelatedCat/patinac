@@ -10,7 +10,7 @@ use foldhash::{HashMap, HashMapExt as _};
 
 use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem};
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
-use hir::{ExprId, Field, Hir, Param, TyInfo, VarId, VarInfo};
+use hir::{Field, Hir, Param, TyInfo, VarId, VarInfo};
 use package::{ModuleId, Package};
 
 use crate::{error::ErrorKind, scope::Scope};
@@ -350,7 +350,7 @@ fn resolve_pat(
 
 #[cfg(any(test, feature = "test"))]
 #[allow(clippy::unwrap_used, reason = "test utility")]
-pub fn test_resolve_expr(input: &str) -> Result<(ExprId, Hir)> {
+pub fn test_resolve_expr(input: &str) -> Result<(hir::ExprId, Hir)> {
     let expr = parse::Parser::parse_expr(input).unwrap();
     let mut hir = Hir::default();
     let mut handler = ErrorHandler::TEST;

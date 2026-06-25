@@ -6,10 +6,6 @@ use mir::{Item, ItemKind};
 use crate::LowerInfo;
 
 impl LowerInfo<'_, '_> {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Any given arm is readable on it's own"
-    )]
     pub fn lower_expr(&mut self, expr: hir::ExprId) -> mir::ExprId {
         let new_expr = match self.hir.expr(expr) {
             hir::Expr::Var(var) => mir::Expr::Var(self.lower_var(*var)),

@@ -21,6 +21,10 @@ impl PackageAsts {
     }
 
     /// Removes and returns the [`Ast`] for the provided module.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "implementation detail, should never happen"
+    )]
     pub fn take(&mut self, id: ModuleId) -> Ast {
         self.0.remove(id).expect("id is valid for this map")
     }
@@ -134,7 +138,7 @@ pub enum VisItem {
 }
 
 /// The definition of a type, either a `record` or a `union`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TyItem {
     /// Whether the type is opaque (meaning it's fields/variants are private).
     pub opaque: bool,
@@ -147,7 +151,7 @@ pub struct TyItem {
 }
 
 /// The information of a [`TyItem`] specific to whether it's a `record` or an `union`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TyItemKind {
     /// A `record` type.
     Record(Vec<Field>),

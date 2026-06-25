@@ -7,10 +7,6 @@ use crate::{
 };
 
 impl TypeChecker<'_> {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Any given arm is readable on it's own"
-    )]
     pub(super) fn infer_expr(&mut self, hir: &Hir, module: ModuleId, expr: ExprId) -> PartialTy {
         let ty = match hir.expr(expr) {
             Expr::Var(id) => self.var_ty(hir, *id).clone(),

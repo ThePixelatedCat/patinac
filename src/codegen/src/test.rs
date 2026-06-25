@@ -212,3 +212,8 @@ fn unit_param() {
 ";
     check(input, OptLevel::O0);
 }
+
+#[test]
+fn bad_call() {
+    check("fn foo(): Int = [1, 2, 3].[0]", OptLevel::O0);
+}

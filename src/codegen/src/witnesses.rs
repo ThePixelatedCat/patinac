@@ -153,12 +153,12 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         }
 
         self.builder
-            .build_return(Some(&self.ctx.bool_type().const_int(1, false)))
+            .build_return(Some(&self.const_bool(true)))
             .unwrap();
 
         self.builder.position_at_end(ne_block);
         self.builder
-            .build_return(Some(&self.ctx.bool_type().const_zero()))
+            .build_return(Some(&self.const_bool(false)))
             .unwrap();
 
         self.builder.position_at_end(old_insert_block);
@@ -219,18 +219,13 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                 .build_atomicrmw(
                     AtomicRMWBinOp::Sub,
                     refc,
-                    self.ctx.i64_type().const_int(1, false),
+                    self.const_int(1),
                     AtomicOrdering::AcquireRelease,
                 )
                 .unwrap();
             let no_refs = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    old_refc,
-                    self.ctx.i64_type().const_int(1, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::EQ, old_refc, self.const_int(1), "")
                 .unwrap();
 
             let target_block = if layout::trivial(elem_ty) {
@@ -288,7 +283,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
             self.emit_drop(elem_ptr);
             let new_index = self
                 .builder
-                .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
+                .build_int_add(curr_index, self.const_int(1), "")
                 .unwrap();
             self.builder.build_store(index, new_index).unwrap();
             let done = self
@@ -473,13 +468,11 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         {
             self.builder.position_at_end(ret_block);
             let ret_val = self.builder.build_phi(self.ctx.bool_type(), "").unwrap();
-            let true_val = self.ctx.bool_type().const_int(1, false);
-            let false_val = self.ctx.bool_type().const_zero();
             ret_val.add_incoming(&[
-                (&true_val, entry_block),
-                (&false_val, null_block),
-                (&false_val, count_block),
-                (&true_val, empty_block),
+                (&self.const_bool(true), entry_block),
+                (&self.const_bool(false), null_block),
+                (&self.const_bool(false), count_block),
+                (&self.const_bool(true), empty_block),
                 (&equal, loop_block),
             ]);
             self.builder
@@ -848,11 +841,11 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                     self.builder.position_at_end(eq_block);
                 }
                 self.builder
-                    .build_return(Some(&self.ctx.bool_type().const_int(1, false)))
+                    .build_return(Some(&self.const_bool(true)))
                     .unwrap();
                 self.builder.position_at_end(ne_block);
                 self.builder
-                    .build_return(Some(&self.ctx.bool_type().const_zero()))
+                    .build_return(Some(&self.const_bool(false)))
                     .unwrap();
             }
         }

@@ -138,7 +138,7 @@ pub enum Error {
 /// - The root path is a file that doesn't have the `ptn` extension
 /// - A module folder doesn't contain a `ptn` file with the same name as the folder
 /// - An [`io::Error`] occured while traversing the filesystem
-#[allow(
+#[expect(
     clippy::missing_panics_doc,
     reason = "implementation detail, should never happen"
 )]

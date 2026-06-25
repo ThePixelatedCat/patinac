@@ -83,7 +83,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .builder
                     .build_struct_gep(self.fields_ty(fields), base, *field, "")
                     .unwrap();
-                self.layout_indirect(&fields[*field as usize], field_ptr)
+                self.layout_indirect(&fields[usize::try_from(*field).unwrap()], field_ptr)
             }
             Expr::Index { array, index } => {
                 let array = self.emit_place(*array);
@@ -103,7 +103,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .builder
                     .build_struct_gep(self.fields_ty(fields), base, *field, "")
                     .unwrap();
-                self.layout_indirect(&fields[*field as usize], field_ptr)
+                self.layout_indirect(&fields[usize::try_from(*field).unwrap()], field_ptr)
             }
             Expr::Index { array, index } => {
                 let array = self.emit_unique_place(*array);
@@ -292,7 +292,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             .build_struct_gep(self.fields_ty(fields), ptr, field, "")
             .unwrap();
 
-        let result = self.emit_dup(self.layout_indirect(&fields[field as usize], field_ptr));
+        let result = self
+            .emit_dup(self.layout_indirect(&fields[usize::try_from(field).unwrap()], field_ptr));
         self.emit_drop(base);
         result
     }

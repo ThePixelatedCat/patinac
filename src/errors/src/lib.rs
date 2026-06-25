@@ -119,7 +119,7 @@ impl<'callback> ErrorHandler<'callback> {
     }
 
     /// Reports the provided error and produces a [`HandledError`] for the caller to use.
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
         reason = "Semantically useful to enforce that an error can only be reported once"
     )]
@@ -152,7 +152,7 @@ impl<'callback> ErrorHandler<'callback> {
     }
 
     /// An error handler used for tests. Provides simple debug output of errors.
-    #[allow(
+    #[expect(
         clippy::use_debug,
         reason = "This handler is for use in tests, where debug output is desirable"
     )]

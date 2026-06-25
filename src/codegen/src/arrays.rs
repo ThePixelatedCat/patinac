@@ -20,7 +20,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_in_bounds_gep(
                     self.array_header_ty(),
                     array,
-                    &[self.ctx.i64_type().const_int(1, true).const_neg()],
+                    &[self.const_int(-1)],
                     "header",
                 )
                 .unwrap()
@@ -186,7 +186,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_atomicrmw(
                     AtomicRMWBinOp::Add,
                     refc,
-                    self.ctx.i64_type().const_int(1, false),
+                    self.const_int(1),
                     AtomicOrdering::Monotonic,
                 )
                 .unwrap();
@@ -271,7 +271,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_struct_gep(header_ty, alloc, 0, "")
                 .unwrap();
             self.builder
-                .build_store(refc_ptr, self.ctx.i64_type().const_int(1, false))
+                .build_store(refc_ptr, self.const_int(1))
                 .unwrap()
                 .set_atomic_ordering(AtomicOrdering::Monotonic)
                 .unwrap();
@@ -287,12 +287,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.build_store(cap_ptr, cap).unwrap();
             let payload = unsafe {
                 self.builder
-                    .build_in_bounds_gep(
-                        header_ty,
-                        alloc,
-                        &[self.ctx.i64_type().const_int(1, false)],
-                        "",
-                    )
+                    .build_in_bounds_gep(header_ty, alloc, &[self.const_int(1)], "")
                     .unwrap()
             };
             self.builder.build_unconditional_branch(ret_block).unwrap();
@@ -377,7 +372,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_int_compare(
                     IntPredicate::EQ,
                     refc.into_int_value(),
-                    self.ctx.i64_type().const_int(1, false),
+                    self.const_int(1),
                     "",
                 )
                 .unwrap();
@@ -416,7 +411,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_struct_gep(header_ty, alloc, 0, "")
                 .unwrap();
             self.builder
-                .build_store(refc_ptr, self.ctx.i64_type().const_int(1, false))
+                .build_store(refc_ptr, self.const_int(1))
                 .unwrap()
                 .set_atomic_ordering(AtomicOrdering::Monotonic)
                 .unwrap();
@@ -444,12 +439,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             // Get payload of new array.
             let new_array = unsafe {
                 self.builder
-                    .build_in_bounds_gep(
-                        header_ty,
-                        alloc,
-                        &[self.ctx.i64_type().const_int(1, false)],
-                        "",
-                    )
+                    .build_in_bounds_gep(header_ty, alloc, &[self.const_int(1)], "")
                     .unwrap()
             };
             // Either memcpy or copy each element, depending on whether the element type is trivial
@@ -467,17 +457,10 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             } else {
                 let empty = self
                     .builder
-                    .build_int_compare(
-                        IntPredicate::EQ,
-                        count,
-                        self.ctx.i64_type().const_zero(),
-                        "",
-                    )
+                    .build_int_compare(IntPredicate::EQ, count, self.const_int(0), "")
                     .unwrap();
                 let loop_block = self.ctx.prepend_basic_block(store_block, "loop");
-                self.builder
-                    .build_store(index, self.ctx.i64_type().const_zero())
-                    .unwrap();
+                self.builder.build_store(index, self.const_int(0)).unwrap();
                 self.builder
                     .build_conditional_branch(empty, store_block, loop_block)
                     .unwrap();
@@ -499,7 +482,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                     self.emit_copy(elem, new_elem.as_pointer());
                     let new_index = self
                         .builder
-                        .build_int_add(curr_index, self.ctx.i64_type().const_int(1, false), "")
+                        .build_int_add(curr_index, self.const_int(1), "")
                         .unwrap();
                     self.builder.build_store(index, new_index).unwrap();
                     let done = self
@@ -530,7 +513,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_atomicrmw(
                     AtomicRMWBinOp::Sub,
                     refc,
-                    self.ctx.i64_type().const_int(1, false),
+                    self.const_int(1),
                     AtomicOrdering::SequentiallyConsistent,
                 )
                 .unwrap();
@@ -582,12 +565,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(entry_block);
             let cmp = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    count,
-                    self.ctx.i64_type().const_int(1, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::EQ, count, self.const_int(1), "")
                 .unwrap();
             self.builder
                 .build_conditional_branch(cmp, count_one_block, count_not_one_block)
@@ -599,12 +577,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(count_one_block);
             let cmp = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    size,
-                    self.ctx.i64_type().const_int(1, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::EQ, size, self.const_int(1), "")
                 .unwrap();
             // If element is 1 byte, return 8 bytes because the allocator will probably round to that anyway.
             // Otherwise branch further.
@@ -618,16 +591,11 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(size_not_one_block);
             let cmp = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::ULT,
-                    size,
-                    self.ctx.i64_type().const_int(1025, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::ULT, size, self.const_int(1025), "")
                 .unwrap();
             let med_cap = self
                 .builder
-                .build_left_shift(size, self.ctx.i64_type().const_int(2, false), "")
+                .build_left_shift(size, self.const_int(2), "")
                 .unwrap();
             // 4 is a good balance for medium-size elements.
             // For >1kb elements, just use 1 to avoid wasting too much memory.
@@ -641,12 +609,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(count_not_one_block);
             let cmp = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::ULT,
-                    count,
-                    self.ctx.i64_type().const_int(8, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::ULT, count, self.const_int(8), "")
                 .unwrap();
             self.builder
                 .build_conditional_branch(cmp, count_small_block, count_other_block)
@@ -658,7 +621,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(count_small_block);
             let cap = self
                 .builder
-                .build_left_shift(size, self.ctx.i64_type().const_int(3, false), "")
+                .build_left_shift(size, self.const_int(3), "")
                 .unwrap();
             self.builder.build_unconditional_branch(ret_block).unwrap();
             cap
@@ -680,12 +643,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .into_int_value();
             let is_pow2 = self
                 .builder
-                .build_int_compare(
-                    IntPredicate::ULT,
-                    bit_count,
-                    self.ctx.i64_type().const_int(2, false),
-                    "",
-                )
+                .build_int_compare(IntPredicate::ULT, bit_count, self.const_int(2), "")
                 .unwrap();
             self.builder
                 .build_conditional_branch(is_pow2, count_pow2_block, count_not_pow2_block)
@@ -698,41 +656,41 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(count_not_pow2_block);
             let dec = self
                 .builder
-                .build_int_sub(count, self.ctx.i64_type().const_int(1, false), "")
+                .build_int_sub(count, self.const_int(1), "")
                 .unwrap();
             let shr = self
                 .builder
-                .build_right_shift(dec, self.ctx.i64_type().const_int(1, false), false, "")
+                .build_right_shift(dec, self.const_int(1), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, dec, "").unwrap();
             let shr = self
                 .builder
-                .build_right_shift(or, self.ctx.i64_type().const_int(2, false), false, "")
+                .build_right_shift(or, self.const_int(2), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, or, "").unwrap();
             let shr = self
                 .builder
-                .build_right_shift(or, self.ctx.i64_type().const_int(4, false), false, "")
+                .build_right_shift(or, self.const_int(4), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, or, "").unwrap();
             let shr = self
                 .builder
-                .build_right_shift(or, self.ctx.i64_type().const_int(8, false), false, "")
+                .build_right_shift(or, self.const_int(8), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, or, "").unwrap();
             let shr = self
                 .builder
-                .build_right_shift(or, self.ctx.i64_type().const_int(16, false), false, "")
+                .build_right_shift(or, self.const_int(16), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, or, "").unwrap();
             let shr = self
                 .builder
-                .build_right_shift(or, self.ctx.i64_type().const_int(32, false), false, "")
+                .build_right_shift(or, self.const_int(32), false, "")
                 .unwrap();
             let or = self.builder.build_or(shr, or, "").unwrap();
             let inc = self
                 .builder
-                .build_int_add(or, self.ctx.i64_type().const_int(1, false), "")
+                .build_int_add(or, self.const_int(1), "")
                 .unwrap();
             self.builder
                 .build_unconditional_branch(count_pow2_block)
@@ -761,7 +719,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(ret_block);
             let ret_val = self.builder.build_phi(self.ctx.i64_type(), "").unwrap();
             ret_val.add_incoming(&[
-                (&self.ctx.i64_type().const_int(8, false), count_one_block),
+                (&self.const_int(8), count_one_block),
                 (&size_not_one_cap, size_not_one_block),
                 (&count_small_cap, count_small_block),
                 (&count_other_cap, count_pow2_block),

@@ -13,7 +13,7 @@ use parse::Parser;
 
 #[derive(FromArgs)]
 #[argh(description = "The compiler for Patina")]
-#[allow(
+#[expect(
     clippy::doc_paragraphs_missing_punctuation,
     reason = "Command line formatting conventions"
 )]
@@ -35,16 +35,13 @@ struct Args {
 
 fn main() -> ExitCode {
     let args: Args = from_env();
-    let target = match Target::host() {
-        Some(target) => target,
-        None => {
-            eprintln!(
-                "{}{}",
-                "error".bright_red().bold(),
-                ": host platform is not a supported target".white().bold()
-            );
-            return ExitCode::FAILURE;
-        }
+    let Some(target) = Target::host() else {
+        eprintln!(
+            "{}{}",
+            "error".bright_red().bold(),
+            ": host platform is not a supported target".white().bold()
+        );
+        return ExitCode::FAILURE;
     };
 
     let start = Instant::now();
