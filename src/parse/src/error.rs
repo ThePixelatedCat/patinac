@@ -14,6 +14,8 @@ pub enum ErrorKind {
     Mismatched { expected: TokKind, found: TokKind },
     #[display("unexpected token {_0}")]
     Unexpected(TokKind),
+    #[display("`self` must be the first parameter")]
+    SelfNotFirst,
 }
 
 impl SpanError for ErrorKind {}

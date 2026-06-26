@@ -128,7 +128,7 @@ union XY {
 fn impls() {
     let input = "
     impl Foo {
-        fn bar(): () = ()
+        fn bar(mut self): () = ()
         const BAZ: () = ()
     }
 ";
@@ -141,16 +141,17 @@ fn impls() {
                     ident: Ident::new("bar").span(27..30),
                     kind: ExecKind::Func {
                         generics: vec![],
+                        self_param: Some((true, Range::from(31..39))),
                         params: vec![],
-                        ret_ty: TyKind::unit().span(34..36),
-                        body: ExprKind::unit().span(39..41)
+                        ret_ty: TyKind::unit().span(42..44),
+                        body: ExprKind::unit().span(47..49)
                     }
                 },
                 ExecItem {
-                    ident: Ident::new("BAZ").span(56..59),
+                    ident: Ident::new("BAZ").span(64..67),
                     kind: ExecKind::Const {
-                        ty: TyKind::unit().span(61..63),
-                        val: ExprKind::unit().span(66..68)
+                        ty: TyKind::unit().span(69..71),
+                        val: ExprKind::unit().span(74..76)
                     }
                 }
             ]
@@ -180,6 +181,7 @@ fn functions() {
             ident: Ident::new("sum").span(3..6),
             kind: ExecKind::Func {
                 generics: vec![],
+                self_param: None,
                 params: vec![
                     Param {
                         pat: PatKind::ident("a").span(11..12),
@@ -221,4 +223,9 @@ fn malformed_items() {
             .is_err(),
     );
     assert!(Parser::new_test("let global = false").item().is_err(),);
+    assert!(
+        Parser::new_test("fn foo(a: Int, self): () = ()")
+            .item()
+            .is_err()
+    )
 }

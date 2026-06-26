@@ -500,11 +500,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
         // Store the new payload in the array and decrement the refcount on the original array.
         {
             self.builder.position_at_end(store_block);
-            let payload_ptr = self
-                .builder
-                .build_struct_gep(self.array_ty(), array, 0, "")
-                .unwrap();
-            self.builder.build_store(payload_ptr, new_array).unwrap();
+            self.builder.build_store(array, new_array).unwrap();
             let refc = self
                 .builder
                 .build_struct_gep(header_ty, header, 0, "")

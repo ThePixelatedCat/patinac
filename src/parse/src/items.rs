@@ -145,26 +145,45 @@ impl Parser<'_> {
 
         let ident = self.ident()?;
         let generics = self.generic_params()?;
-        let (params, _) = self.delimited_list(
-            |this| {
-                let mut_tok = this.consume_at(TokKind::Mut);
-                let pat = this.pattern()?;
-                this.consume(TokKind::Colon)?;
-                let ty = this.ty()?;
+
+        self.consume(TokKind::LParen)?;
+
+        let mut self_param = None;
+        let mut params = Vec::new();
+        while !self.at(TokKind::RParen) {
+            let mut_tok = self.consume_at(TokKind::Mut);
+
+            if let Some(self_tok) = self.consume_at(TokKind::Self_) {
+                if self_param.is_some() || !params.is_empty() {
+                    return Err(self.err(ErrorKind::SelfNotFirst, self_tok.span));
+                }
+
+                let start = mut_tok.map_or(self_tok.span.start, |tok| tok.span.start);
+                let span = Range::from(start..self_tok.span.end);
+
+                self_param = Some((mut_tok.is_some(), span));
+            } else {
+                let pat = self.pattern()?;
+                self.consume(TokKind::Colon)?;
+                let ty = self.ty()?;
 
                 let start = mut_tok.map_or(pat.span.start, |tok| tok.span.start);
                 let span = Range::from(start..ty.span.end);
 
-                Ok(Param {
+                params.push(Param {
                     mutable: mut_tok.is_some(),
                     pat,
                     ty,
                     span,
-                })
-            },
-            TokKind::LParen,
-            TokKind::RParen,
-        )?;
+                });
+            }
+
+            if self.consume_at(TokKind::Comma).is_none() {
+                break;
+            }
+        }
+        self.consume(TokKind::RParen)?;
+
         self.consume(TokKind::Colon)?;
         let ret_ty = self.ty()?;
         self.consume(TokKind::Eq)?;
@@ -174,6 +193,7 @@ impl Parser<'_> {
             ident,
             kind: ExecKind::Func {
                 generics,
+                self_param,
                 params,
                 ret_ty,
                 body,

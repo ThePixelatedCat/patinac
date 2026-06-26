@@ -54,6 +54,10 @@ fn resolve_ast(
     handler: &mut ErrorHandler,
     is_root: bool,
 ) {
+    if !ast.impls.is_empty() {
+        todo!("Associated Items")
+    }
+
     for ty in &ast.ty_items {
         match scope.get_ty(ty.ident.ident) {
             Some(_) => {
@@ -223,12 +227,17 @@ fn resolve_exec_item(
         }
         ast::ExecKind::Func {
             generics,
+            self_param,
             params,
             ret_ty,
             body,
         } => {
             if !generics.is_empty() {
                 todo!("Generics")
+            }
+
+            if self_param.is_some() {
+                todo!("Methods")
             }
 
             let mut scope = Scope::clone(scope);

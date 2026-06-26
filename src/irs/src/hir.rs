@@ -132,7 +132,7 @@ new_key_type! {
     pub struct TyId;
 }
 /// Information for a user-defined type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TyInfo {
     /// The fields of the type.
     pub fields: HashMap<Ident, Field>,

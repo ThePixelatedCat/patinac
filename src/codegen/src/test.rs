@@ -189,7 +189,8 @@ fn func_ptr() {
 fn arrays() {
     let input = "
     fn main(): () = {
-        let foo = [1, 2, 3]
+        let mut foo = [1, 2, 3]
+        foo.[0] = foo.[1]
         print fst(foo)
         print foo == []
     }
@@ -219,13 +220,12 @@ fn bad_call() {
 }
 
 #[test]
-fn not_array() {
+fn mut_mixing() {
     let input = "
     fn main(): () = {
-        let mut a = [1]
-        let b = a
-        a.[0] = 2
-        print b.[0]
+        let mut a = 1
+        let b = 1
+        print a == b
     }
 ";
     check(input, OptLevel::O0);

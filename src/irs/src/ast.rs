@@ -209,6 +209,8 @@ pub enum ExecKind {
     Func {
         /// The generic parameters.
         generics: Vec<SpanIdent>,
+        /// The mutability and span of the `self` parameter, if there is one.
+        self_param: Option<(bool, Range<u32>)>,
         /// The value parameters.
         params: Vec<Param>,
         /// The return type.
