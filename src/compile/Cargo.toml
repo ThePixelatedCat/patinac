@@ -7,7 +7,7 @@ edition = "2024"
 # Internal
 errors.path = "../errors"
 package.path = "../package"
-ast.path = "../ast"
+irs.path = "../irs"
 parse.path = "../parse"
 nameres.path = "../nameres"
 typecheck.path = "../typecheck"

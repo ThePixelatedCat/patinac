@@ -1,4 +1,4 @@
-use hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt};
+use irs::hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt};
 use package::ModuleId;
 
 use crate::{

@@ -8,9 +8,11 @@ mod test;
 
 use foldhash::{HashMap, HashMapExt as _};
 
-use ast::{Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem};
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
-use hir::{Field, Hir, Param, TyInfo, VarId, VarInfo};
+use irs::{
+    ast::{self, Ast, Binding, PackageAsts, Pat, PatKind, TyItem, TyItemKind, TyKind, VisItem},
+    hir::{self, Field, Hir, Param, TyInfo, VarId, VarInfo},
+};
 use package::{ModuleId, Package};
 
 use crate::{error::ErrorKind, scope::Scope};

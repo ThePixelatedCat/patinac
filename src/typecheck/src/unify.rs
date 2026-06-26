@@ -1,8 +1,8 @@
 use std::{iter, range::Range};
 
 use errors::{Error, SpanError as _};
-use hir::Hir;
 use ident::SpanIdent;
+use irs::hir::Hir;
 use package::ModuleId;
 
 use crate::{

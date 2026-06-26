@@ -3,7 +3,7 @@ use std::mem;
 use itertools::Itertools as _;
 
 use errors::{Result, SpanError as _, TryCollectEager as _};
-use hir::{ExprId, Hir, Param, Ty};
+use irs::hir::{ExprId, Hir, Param, Ty};
 use slotmap::SecondaryMap;
 
 use crate::{Table, TypeChecker, error::ErrorKind, types::PartialTy};

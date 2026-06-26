@@ -1,7 +1,10 @@
 use std::iter;
 
 use ident::Ident;
-use mir::{Item, ItemKind};
+use irs::{
+    hir,
+    mir::{self, Item, ItemKind},
+};
 
 use crate::LowerInfo;
 

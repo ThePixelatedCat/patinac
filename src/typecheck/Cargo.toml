@@ -8,7 +8,7 @@ edition = "2024"
 ident.path = "../ident"
 errors.path = "../errors"
 package.path = "../package"
-hir.path = "../hir"
+irs.path = "../irs"
 # External
 ena = "0.14.3"
 itertools = "0.14.0"

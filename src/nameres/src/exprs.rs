@@ -2,9 +2,11 @@ use foldhash::HashSet;
 use itertools::Itertools as _;
 use package::ModuleId;
 
-use ast::ExprKind;
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
-use hir::{Arg, ExprId, Hir, LitExpr, VarId};
+use irs::{
+    ast::{self, ExprKind},
+    hir::{self, Arg, ExprId, Hir, LitExpr, VarId},
+};
 
 use crate::{ErrorKind, Scope};
 

@@ -6,7 +6,7 @@ use inkwell::{
     values::{BasicValue as _, FunctionValue, PointerValue},
 };
 
-use mir::Ty;
+use irs::mir::Ty;
 
 use crate::{
     CodegenState,

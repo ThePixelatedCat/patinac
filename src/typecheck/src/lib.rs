@@ -15,8 +15,8 @@ use package::ModuleId;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
-use hir::{ExecKind, ExprId, Hir, Ty, VarId};
 use ident::SpanIdent;
+use irs::hir::{ExecKind, ExprId, Hir, Ty, VarId};
 
 use crate::types::{PartialTy, TyVar};
 

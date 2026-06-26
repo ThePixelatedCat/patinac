@@ -3,7 +3,7 @@ use inkwell::{
     values::{BasicValue, BasicValueEnum, FloatValue, IntValue, PointerValue},
 };
 
-use mir::Ty;
+use irs::mir::Ty;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum LayoutValue<'mir, 'ctx> {

@@ -2,11 +2,11 @@ use std::range::Range;
 
 use pretty_assertions::assert_eq;
 
-use ast::{
+use ident::Ident;
+use irs::ast::{
     ExecItem, ExecKind, ExprKind, Field, Impl, InfixOp, Param, PatKind, Path, TyItem, TyItemKind,
     TyKind, Variant, VisItem,
 };
-use ident::Ident;
 
 use crate::{Parser, items::Item};
 

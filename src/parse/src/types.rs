@@ -1,6 +1,6 @@
 use std::range::Range;
 
-use ast::{ParamTy, Ty, TyKind};
+use irs::ast::{ParamTy, Ty, TyKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -8,7 +8,7 @@ macro_rules! primitive {
     ($self:ident, $ty:ident) => {
         $self
             .consume($crate::TokKind::$ty)
-            .map(|t| ast::TyKind::$ty.span(t.span))
+            .map(|t| irs::ast::TyKind::$ty.span(t.span))
     };
 }
 

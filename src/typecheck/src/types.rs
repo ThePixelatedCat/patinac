@@ -5,7 +5,7 @@ use std::{
 
 use ena::unify::{EqUnifyValue, UnifyKey};
 
-use hir::{Ty, TyId};
+use irs::hir::{Ty, TyId};
 
 use crate::Table;
 

@@ -3,7 +3,7 @@ use inkwell::{
     values::{BasicMetadataValueEnum, BasicValue as _, CallSiteValue, PointerValue},
 };
 
-use mir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
+use irs::mir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
 
 use crate::{
     CodegenState,

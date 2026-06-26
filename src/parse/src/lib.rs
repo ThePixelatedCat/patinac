@@ -15,9 +15,9 @@ use std::range::Range;
 
 use itertools::Itertools as _;
 
-use ast::{Ast, Binding, Path, Ty};
 use errors::{ErrorHandler, HandledError, Result, SpanError as _};
 use ident::{Ident, SpanIdent};
+use irs::ast::{Ast, Binding, Path, Ty};
 use lex::{Lexer, Tok, TokKind};
 use package::ModuleId;
 
@@ -77,7 +77,7 @@ impl<'src> Parser<'src> {
     /// # Panics
     /// If the lexer produces an error.
     #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<ast::Expr> {
+    pub fn parse_expr(src: &'src str) -> Result<irs::ast::Expr> {
         Self::new_test(src).expr()
     }
 

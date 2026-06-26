@@ -4,7 +4,7 @@ use ena::unify::UnificationTable;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
-use hir::{Param, Ty};
+use irs::hir::{Param, Ty};
 use package::ModuleId;
 
 use crate::TypeChecker;

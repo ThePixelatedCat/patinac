@@ -2,7 +2,7 @@ use std::{debug_assert_matches, range::Range, str::CharIndices};
 
 use itertools::Itertools as _;
 
-use ast::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
+use irs::ast::{Arg, BlockExpr, Expr, ExprKind, InfixOp, LitExpr, MatchArm, PrefixOp, Stmt};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 

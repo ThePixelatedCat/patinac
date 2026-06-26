@@ -2,8 +2,8 @@ use std::range::Range;
 
 use derive_more::From;
 
-use ast::{ExecItem, ExecKind, Field, Impl, Param, TyItem, TyItemKind, Variant, VisItem};
 use ident::SpanIdent;
+use irs::ast::{ExecItem, ExecKind, Field, Impl, Param, TyItem, TyItemKind, Variant, VisItem};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 

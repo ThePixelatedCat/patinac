@@ -52,18 +52,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ade012bac4db278517a0132c8c10c6427025868dca16c801087c28d5a411f1"
 
 [[package]]
-name = "ast"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "ident",
- "itertools",
- "package",
- "parse",
- "slotmap",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -147,8 +135,8 @@ dependencies = [
  "errors",
  "ident",
  "inkwell",
+ "irs",
  "lower",
- "mir",
  "nameres",
  "parse",
  "slotmap",
@@ -160,9 +148,9 @@ name = "compile"
 version = "0.1.0"
 dependencies = [
  "argh",
- "ast",
  "codegen",
  "errors",
+ "irs",
  "lower",
  "nameres",
  "package",
@@ -336,17 +324,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hir"
-version = "0.1.0"
-dependencies = [
- "derive_more",
- "foldhash 0.2.0",
- "ident",
- "package",
- "slotmap",
-]
-
-[[package]]
 name = "id-arena"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -418,6 +395,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "irs"
+version = "0.1.0"
+dependencies = [
+ "derive_more",
+ "foldhash 0.2.0",
+ "ident",
+ "itertools",
+ "package",
+ "slotmap",
 ]
 
 [[package]]
@@ -517,9 +506,8 @@ version = "0.1.0"
 dependencies = [
  "errors",
  "foldhash 0.2.0",
- "hir",
  "ident",
- "mir",
+ "irs",
  "package",
  "slotmap",
 ]
@@ -531,24 +519,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
-name = "mir"
-version = "0.1.0"
-dependencies = [
- "ident",
- "slotmap",
-]
-
-[[package]]
 name = "nameres"
 version = "0.1.0"
 dependencies = [
- "ast",
  "derive_more",
  "errors",
  "foldhash 0.2.0",
- "hir",
  "ident",
  "imbl",
+ "irs",
  "itertools",
  "package",
  "parse",
@@ -582,10 +561,10 @@ dependencies = [
 name = "parse"
 version = "0.1.0"
 dependencies = [
- "ast",
  "derive_more",
  "errors",
  "ident",
+ "irs",
  "itertools",
  "logos",
  "package",
@@ -936,8 +915,8 @@ dependencies = [
  "derive_more",
  "ena",
  "errors",
- "hir",
  "ident",
+ "irs",
  "itertools",
  "nameres",
  "package",

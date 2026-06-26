@@ -4,7 +4,7 @@ use inkwell::{
     values::{BasicValue as _, FunctionValue},
 };
 
-use mir::{Ty, VarId};
+use irs::mir::{Ty, VarId};
 
 use crate::{
     CodegenState,

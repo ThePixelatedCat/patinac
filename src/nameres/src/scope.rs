@@ -1,9 +1,11 @@
 use foldhash::fast::RandomState;
 
-use ast::Path;
-use hir::{TyId, VarId};
 use ident::Ident;
 use imbl::{GenericHashMap, shared_ptr::RcK};
+use irs::{
+    ast::Path,
+    hir::{TyId, VarId},
+};
 use package::ModuleId;
 
 use crate::error::{ErrorKind, ItemKind};

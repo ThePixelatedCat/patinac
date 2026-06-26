@@ -35,7 +35,7 @@ use inkwell::{
 };
 use slotmap::SecondaryMap;
 
-use mir::{ItemKind, Mir, Param, Ty, VarId};
+use irs::mir::{ItemKind, Mir, Param, Ty, VarId};
 
 use crate::layout::{IntSize, LayoutValue, ScalarKind, ScalarLayout, StorageClass};
 pub use config::*;

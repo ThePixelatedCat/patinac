@@ -8,7 +8,7 @@ edition = "2024"
 ident.path = "../ident"
 errors.path = "../errors"
 package.path = "../package"
-ast.path = "../ast"
+irs.path = "../irs"
 # External
 itertools = "0.14.0"
 derive_more = { version = "2.1.1", features = ["from", "display"] }

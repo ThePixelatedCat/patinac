@@ -2,11 +2,11 @@ use std::{assert_matches, range::Range};
 
 use pretty_assertions::assert_eq;
 
-use ast::{
+use ident::Ident;
+use irs::ast::{
     Arg, Binding, BlockExpr, ExprKind, InfixOp, LitExpr, MatchArm, PatKind, Path, PrefixOp, Stmt,
     TyKind,
 };
-use ident::Ident;
 
 use crate::Parser;
 

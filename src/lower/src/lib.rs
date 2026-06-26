@@ -11,9 +11,11 @@ use std::cmp::Reverse;
 use slotmap::{Key as _, SecondaryMap};
 
 use errors::ErrorHandler;
-use hir::{ExecItem, ExecKind, Hir, TyId};
 use ident::Ident;
-use mir::{Item, ItemKind, Mir, VarInfo};
+use irs::{
+    hir::{self, ExecItem, ExecKind, Hir, TyId},
+    mir::{self, Item, ItemKind, Mir, VarInfo},
+};
 use package::ModuleId;
 
 struct LowerInfo<'hir, 'err> {

@@ -1,5 +1,5 @@
-use ast::{Pat, PatKind};
 use ident::SpanIdent;
+use irs::ast::{Pat, PatKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
