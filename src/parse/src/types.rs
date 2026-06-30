@@ -1,25 +1,12 @@
-use std::range::Range;
+use std::{ops::Deref as _, range::Range};
 
 use irs::ast::{ParamTy, Ty, TyKind};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
-macro_rules! primitive {
-    ($self:ident, $ty:ident) => {
-        $self
-            .consume($crate::TokKind::$ty)
-            .map(|t| irs::ast::TyKind::$ty.span(t.span))
-    };
-}
-
 impl Parser<'_> {
     pub(crate) fn ty(&mut self) -> Result<Ty> {
         match self.peek()? {
-            TokKind::Int => primitive!(self, Int),
-            TokKind::UInt => primitive!(self, UInt),
-            TokKind::Byte => primitive!(self, Byte),
-            TokKind::Float => primitive!(self, Float),
-            TokKind::Bool => primitive!(self, Bool),
             TokKind::LBracket => {
                 let start = self.consume(TokKind::LBracket)?.span.start;
                 let inner_ty = Box::new(self.ty()?);
@@ -42,15 +29,32 @@ impl Parser<'_> {
             }
             TokKind::Ident => {
                 let (path, span) = self.path()?;
-
                 let (generics, end) = if self.at(TokKind::LBracket) {
                     self.delimited_list(Self::ty, TokKind::LBracket, TokKind::RBracket)
                         .map(|(g, s)| (g, s.end))?
                 } else {
                     (vec![], span.end)
                 };
+                let span = Range::from(span.start..end);
 
-                Ok(TyKind::Named(path, generics).span(span.start..end))
+                if path.len() == 1 {
+                    let prim_ty = match path.end().str().deref() {
+                        "Int" => Some(TyKind::Int),
+                        "UInt" => Some(TyKind::UInt),
+                        "Byte" => Some(TyKind::Byte),
+                        "Bool" => Some(TyKind::Bool),
+                        "Float" => Some(TyKind::Float),
+                        _ => None,
+                    };
+                    if let Some(ty) = prim_ty {
+                        if !generics.is_empty() {
+                            self.err(ErrorKind::PrimitiveGenerics, span);
+                        }
+                        return Ok(ty.span(span));
+                    }
+                }
+
+                Ok(TyKind::Named(path, generics).span(span))
             }
             _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
         }

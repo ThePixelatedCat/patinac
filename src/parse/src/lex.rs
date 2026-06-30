@@ -174,30 +174,6 @@ pub enum TokKind {
     Geq,
 
     /* KEYWORDS */
-    /// `Int`.
-    #[display("Int")]
-    #[token("Int")]
-    Int,
-    /// `UInt`.
-    #[display("UInt")]
-    #[token("UInt")]
-    UInt,
-    /// `Byte`.
-    #[display("Byte")]
-    #[token("Byte")]
-    Byte,
-    /// `Float`.
-    #[display("Float")]
-    #[token("Float")]
-    Float,
-    /// `Bool`.
-    #[display("Bool")]
-    #[token("Bool")]
-    Bool,
-    /// `Char`.
-    #[display("Char")]
-    #[token("Char")]
-    Char,
     /// `Fn`.
     #[display("Fn")]
     #[token("Fn")]

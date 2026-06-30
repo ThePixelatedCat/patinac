@@ -3,7 +3,7 @@ use derive_more::Display;
 use errors::SpanError;
 use ident::Ident;
 
-use crate::types::{Param, PartialTy};
+use crate::types::PartialTy;
 
 #[derive(Debug, Display, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
@@ -19,10 +19,6 @@ pub enum ErrorKind {
     MissingField(PartialTy, Ident),
     #[display("ype {_0} does not have any fields")]
     NoFieldsType(PartialTy),
-    #[display("mismatched parameter count between type `{_0}` and type `{_1}`")]
-    ParamCount(PartialTy, PartialTy),
-    #[display("mismatched parameter mutability between parameters `{_0}` and `{_1}`")]
-    ParamMutability(Param, Param),
 }
 
 impl SpanError for ErrorKind {}

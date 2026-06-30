@@ -108,7 +108,7 @@ fn mut_arg() {
 fn record_field() {
     let input = "
     record Point(x: Float, y: Float)
-    fn get_x(self: Point): Float = self.x
+    fn get_x(this: Point): Float = this.x
     fn make_point(x: Float): Point = Point(x, 0.0)
     fn main(): () = {
         let point = make_point(1.0)

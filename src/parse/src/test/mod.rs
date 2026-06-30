@@ -6,7 +6,7 @@ use itertools::Itertools as _;
 use proptest::{collection::vec, prelude::*};
 
 use errors::ErrorHandler;
-use package::ModuleId;
+use irs::ModuleId;
 
 use crate::{Parser, TokKind};
 

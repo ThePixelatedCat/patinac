@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 # Internal
 ident.path = "../ident"
-package.path = "../package"
 # External
 derive_more = { version = "2.1.1", features = [
     "display",

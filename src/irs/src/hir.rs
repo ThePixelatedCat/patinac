@@ -3,10 +3,11 @@
 use std::range::Range;
 
 use foldhash::HashMap;
-use package::ModuleId;
 use slotmap::{SecondaryMap, SlotMap, new_key_type};
 
 use ident::{Ident, SpanIdent};
+
+use super::ModuleId;
 
 /// An AST-like structure, with additional metadata in the form of type information and resolved variable identifiers.
 #[derive(Debug, Default)]

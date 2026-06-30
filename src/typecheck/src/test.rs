@@ -4,8 +4,10 @@ use ena::unify::UnificationTable;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
-use irs::hir::{Param, Ty};
-use package::ModuleId;
+use irs::{
+    ModuleId,
+    hir::{Param, Ty},
+};
 
 use crate::TypeChecker;
 
@@ -63,7 +65,7 @@ fn array() {
 
 #[test]
 fn mismatched_array() {
-    assert!(check_expr("[1, 2.0]").is_err(),);
+    assert_matches!(check_expr("[1, 2.0]"), Err(_));
 }
 
 #[test]

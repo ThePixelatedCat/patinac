@@ -693,13 +693,12 @@ if y < 3 {
 
 #[test]
 fn malformed_expressions() {
-    assert!(Parser::new_test("let x = 7 + sin(3.0)").expr().is_err(),);
-    assert!(Parser::new_test("[1, 3, 4, 5").expr().is_err(),);
-    assert!(Parser::new_test("*5").expr().is_err(),);
-    assert!(
-        Parser::new_test("let foo: fn(let UInt) -> UInt = fn()")
-            .stmt()
-            .is_err(),
+    assert_matches!(Parser::new_test("let x = 7 + sin(3.0)").expr(), Err(_));
+    assert_matches!(Parser::new_test("[1, 3, 4, 5").expr(), Err(_));
+    assert_matches!(Parser::new_test("*5").expr(), Err(_));
+    assert_matches!(
+        Parser::new_test("let foo: fn(let UInt) -> UInt = fn()").stmt(),
+        Err(_)
     );
-    assert!(Parser::new_test("foo.0").expr().is_err(),);
+    assert_matches!(Parser::new_test("foo.0").expr(), Err(_));
 }

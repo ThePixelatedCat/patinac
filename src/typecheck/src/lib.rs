@@ -11,12 +11,14 @@ mod unify;
 use std::range::Range;
 
 use ena::unify::{InPlaceUnificationTable, UnificationTable};
-use package::ModuleId;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result};
 use ident::SpanIdent;
-use irs::hir::{ExecKind, ExprId, Hir, Ty, VarId};
+use irs::{
+    ModuleId,
+    hir::{ExecKind, ExprId, Hir, Ty, VarId},
+};
 
 use crate::types::{PartialTy, TyVar};
 

@@ -3,38 +3,11 @@
 
 use std::{
     fmt::{self, Display, Formatter},
+    iter,
     range::Range,
 };
 
-use package::ModuleId;
-use slotmap::SecondaryMap;
-
 use ident::{Ident, SpanIdent};
-
-/// The [`Asts`][Ast] for an entire package.
-pub struct PackageAsts(SecondaryMap<ModuleId, Ast>);
-
-impl PackageAsts {
-    /// Returns a reference to the [`Ast`] for the provided module.
-    pub fn get(&self, id: ModuleId) -> &Ast {
-        &self.0[id]
-    }
-
-    /// Removes and returns the [`Ast`] for the provided module.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "implementation detail, should never happen"
-    )]
-    pub fn take(&mut self, id: ModuleId) -> Ast {
-        self.0.remove(id).expect("id is valid for this map")
-    }
-}
-
-impl FromIterator<(ModuleId, Ast)> for PackageAsts {
-    fn from_iter<T: IntoIterator<Item = (ModuleId, Ast)>>(iter: T) -> Self {
-        Self(iter.into_iter().collect())
-    }
-}
 
 /// The top-level representation of a single module, containing all of the module's items.
 ///
@@ -97,10 +70,10 @@ impl Path {
         }
     }
 
-    /// Add to the end of the path.
-    pub fn push(&mut self, ident: Ident) {
-        self.head.push(self.tail);
-        self.tail = ident;
+    /// Returns the number of segments in the path.
+    #[expect(clippy::len_without_is_empty, reason = "can't be empty")]
+    pub const fn len(&self) -> usize {
+        self.head.len() + 1
     }
 
     /// Returns the first identifier of the path.
@@ -117,14 +90,21 @@ impl Path {
         self.tail
     }
 
-    /// Returns the first identifier of the path, and the rest of the path if it had more than 1 segment.
-    pub fn split(mut self) -> (Ident, Option<Self>) {
-        if self.head.is_empty() {
-            (self.tail, None)
-        } else {
-            let start = self.head.remove(0);
-            (start, Some(self))
-        }
+    /// Add to the end of the path.
+    pub fn push(&mut self, ident: Ident) {
+        self.head.push(self.tail);
+        self.tail = ident;
+    }
+
+    /// Returns an iterator over the path.
+    pub fn iter(&self) -> impl Iterator<Item = Ident> {
+        self.head.iter().copied().chain(iter::once(self.tail))
+    }
+}
+
+impl From<Ident> for Path {
+    fn from(value: Ident) -> Self {
+        Self::single(value)
     }
 }
 

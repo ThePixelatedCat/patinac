@@ -2,8 +2,7 @@ use std::{iter, range::Range};
 
 use errors::{Error, SpanError as _};
 use ident::SpanIdent;
-use irs::hir::Hir;
-use package::ModuleId;
+use irs::{ModuleId, hir::Hir};
 
 use crate::{
     Constraint, Table, TypeChecker,
@@ -112,21 +111,18 @@ fn unify_ty_ty(
             unify_ty_ty(table, span, module, &lhs_inner, &rhs_inner)
         }
         (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
-            if lhs_params.len() != rhs_params.len() {
-                return Err(ErrorKind::ParamCount(
+            if lhs_params.len() != rhs_params.len()
+                || iter::zip(&lhs_params, &rhs_params).any(|(l, r)| l.mutable != r.mutable)
+            {
+                return Err(ErrorKind::TypesNotEqual(
                     PartialTy::Fn(lhs_params, lhs_ret),
                     PartialTy::Fn(rhs_params, rhs_ret),
                 )
                 .span(span, module));
             }
-            // Intentionally do the parameters "backwards" for proper errors (variance or something)
-            iter::zip(rhs_params, lhs_params).try_for_each(|(r, l)| {
-                if r.mutable != l.mutable {
-                    let span = l.span;
-                    return Err(ErrorKind::ParamMutability(r, l).span(span, module));
-                }
-                unify_ty_ty(table, r.span, module, &r.ty, &l.ty)
-            })?;
+            // Intentionally compare the right parameter to the left one for proper errors.
+            iter::zip(rhs_params, lhs_params)
+                .try_for_each(|(r, l)| unify_ty_ty(table, r.span, module, &r.ty, &l.ty))?;
             unify_ty_ty(table, span, module, &lhs_ret, &rhs_ret)
         }
         (PartialTy::Named(a), PartialTy::Named(b)) if a == b => Ok(()),

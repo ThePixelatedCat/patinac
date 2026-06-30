@@ -13,10 +13,10 @@ use slotmap::{Key as _, SecondaryMap};
 use errors::ErrorHandler;
 use ident::Ident;
 use irs::{
+    ModuleId,
     hir::{self, ExecItem, ExecKind, Hir, TyId},
     mir::{self, Item, ItemKind, Mir, VarInfo},
 };
-use package::ModuleId;
 
 struct LowerInfo<'hir, 'err> {
     hir: &'hir Hir,

@@ -1,346 +1,342 @@
 use foldhash::HashSet;
 use itertools::Itertools as _;
-use package::ModuleId;
 
-use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
+use errors::{Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ast::{self, ExprKind},
-    hir::{self, Arg, ExprId, Hir, LitExpr, VarId},
+    hir::{self, Arg, ExprId, LitExpr, VarId},
 };
 
-use crate::{ErrorKind, Scope};
+use crate::{ErrorKind, ResolveInfo, scope::Scope};
 
-pub fn resolve_expr(
-    scope: &Scope,
-    hir: &mut Hir,
-    handler: &mut ErrorHandler,
-    expr: ast::Expr,
-) -> Result<ExprId> {
-    let new_expr = match expr.kind {
-        ExprKind::Var(path) => match scope.resolve_var(path) {
-            Ok(id) => hir::Expr::Var(id),
-            Err(error) => {
-                return Err(handler.err(error.span(expr.span, scope.module())));
-            }
-        },
-        ExprKind::Lit(lit) => {
-            let lit = match lit {
-                ast::LitExpr::Int(i) => hir::LitExpr::Int(i),
-                ast::LitExpr::Float(f) => hir::LitExpr::Float(f),
-                ast::LitExpr::String(s) => hir::LitExpr::String(s),
-                ast::LitExpr::Bool(b) => hir::LitExpr::Bool(b),
-            };
-            hir::Expr::Lit(lit)
-        }
-        ExprKind::Array(exprs) => hir::Expr::Array(resolve_exprs(scope, hir, handler, exprs)?),
-        ExprKind::Tuple(exprs) => hir::Expr::Tuple(resolve_exprs(scope, hir, handler, exprs)?),
-        ExprKind::Infix { op, lhs, rhs } => {
-            let rhs = resolve_expr(scope, hir, handler, *rhs);
-            let lhs = resolve_expr(scope, hir, handler, *lhs)?;
-            match convert_infix_op(op) {
-                Some(op) => hir::Expr::Infix { op, lhs, rhs: rhs? },
+impl ResolveInfo<'_, '_> {
+    pub fn resolve_expr(&mut self, scope: &mut Scope, expr: &ast::Expr) -> Result<ExprId> {
+        let new_expr = match &expr.kind {
+            ExprKind::Var(path) => match scope.get_var(path) {
+                Some(id) => hir::Expr::Var(id),
                 None => {
-                    check_is_place(hir, scope.module(), handler, lhs)?;
-                    hir::Expr::Assign {
-                        place: lhs,
-                        value: rhs?,
+                    return Err(self
+                        .handler
+                        .err(ErrorKind::UnknownVar(path.end()).span(expr.span, scope.module())));
+                }
+            },
+            ExprKind::Lit(lit) => {
+                let lit = match lit {
+                    ast::LitExpr::Int(i) => hir::LitExpr::Int(*i),
+                    ast::LitExpr::Float(f) => hir::LitExpr::Float(*f),
+                    ast::LitExpr::String(s) => hir::LitExpr::String(s.clone()),
+                    ast::LitExpr::Bool(b) => hir::LitExpr::Bool(*b),
+                };
+                hir::Expr::Lit(lit)
+            }
+            ExprKind::Array(exprs) => hir::Expr::Array(self.resolve_exprs(scope, exprs)?),
+            ExprKind::Tuple(exprs) => hir::Expr::Tuple(self.resolve_exprs(scope, exprs)?),
+            ExprKind::Infix { op, lhs, rhs } => {
+                let rhs = self.resolve_expr(scope, rhs);
+                let lhs = self.resolve_expr(scope, lhs)?;
+                match convert_infix_op(*op) {
+                    Some(op) => hir::Expr::Infix { op, lhs, rhs: rhs? },
+                    None => {
+                        self.check_is_place(scope, lhs)?;
+                        hir::Expr::Assign {
+                            place: lhs,
+                            value: rhs?,
+                        }
                     }
                 }
             }
-        }
-        ExprKind::Prefix { op, expr } => hir::Expr::Prefix {
-            op: convert_prefix_op(op),
-            expr: resolve_expr(scope, hir, handler, *expr)?,
-        },
-        ExprKind::Field { base, field } => hir::Expr::Field {
-            base: resolve_expr(scope, hir, handler, *base)?,
-            field,
-        },
-        ExprKind::Index { array, index } => {
-            let array = resolve_expr(scope, hir, handler, *array);
-            let index = resolve_expr(scope, hir, handler, *index);
-            hir::Expr::Index {
-                array: array?,
-                index: index?,
+            ExprKind::Prefix { op, expr } => hir::Expr::Prefix {
+                op: convert_prefix_op(*op),
+                expr: self.resolve_expr(scope, expr)?,
+            },
+            ExprKind::Field { base, field } => hir::Expr::Field {
+                base: self.resolve_expr(scope, base)?,
+                field: *field,
+            },
+            ExprKind::Index { array, index } => {
+                let array = self.resolve_expr(scope, array);
+                let index = self.resolve_expr(scope, index);
+                hir::Expr::Index {
+                    array: array?,
+                    index: index?,
+                }
             }
-        }
-        ExprKind::Call { func, args } => {
-            let func = resolve_expr(scope, hir, handler, *func);
-            let args: Vec<Arg> = args
-                .into_iter()
-                .map(|arg| {
-                    let val = resolve_expr(scope, hir, handler, arg.value)?;
-                    if arg.mutable {
-                        check_is_place(hir, scope.module(), handler, val)?;
-                    }
-                    Ok(Arg {
-                        value: val,
-                        mutable: arg.mutable,
-                        span: arg.span,
+            ExprKind::Call { func, args } => {
+                let func = self.resolve_expr(scope, func);
+                let args: Vec<Arg> = args
+                    .iter()
+                    .map(|arg| {
+                        let val = self.resolve_expr(scope, &arg.value)?;
+                        if arg.mutable {
+                            self.check_is_place(scope, val)?;
+                        }
+                        Ok(Arg {
+                            value: val,
+                            mutable: arg.mutable,
+                            span: arg.span,
+                        })
                     })
-                })
-                .try_collect_eager()?;
+                    .try_collect_eager()?;
 
-            // Verify uniqueness of mutable arguments
-            // TODO optimise???
-            args.iter()
-                .permutations(2)
-                .map(|p| (p[0], p[1]))
-                .filter(|(a, b)| a.mutable || b.mutable)
-                .try_for_each(|(a, b)| {
-                    if overlaps(hir, a.value, b.value) {
-                        Err(handler
-                            .err(ErrorKind::OverlappingPlace(b.span).span(a.span, scope.module())))
-                    } else {
-                        Ok(())
-                    }
-                })?;
+                // Verify uniqueness of mutable arguments
+                // TODO optimise???
+                args.iter()
+                    .permutations(2)
+                    .map(|p| (p[0], p[1]))
+                    .filter(|(a, b)| a.mutable || b.mutable)
+                    .try_for_each(|(a, b)| {
+                        if self.overlaps(a.value, b.value) {
+                            Err(self.handler.err(
+                                ErrorKind::OverlappingPlace(b.span).span(a.span, scope.module()),
+                            ))
+                        } else {
+                            Ok(())
+                        }
+                    })?;
 
-            hir::Expr::Call { func: func?, args }
-        }
-        ExprKind::Lambda { params, body } => {
-            let mut scope = Scope::clone(scope);
-
-            // Rebind all captures within the lambda body, making them all immutable.
-            let mut captures = HashSet::default();
-            collect_captures(&scope, hir, &mut captures, &body);
-            let captures = captures
-                .into_iter()
-                .map(|capture| {
-                    let info = hir.var_info(capture);
-                    let rebinding = hir.add_var(hir::VarInfo {
-                        mutable: false,
-                        ..info
-                    });
-                    scope.add_var(info.ident.ident, rebinding);
-                    (capture, rebinding)
-                })
-                .collect();
-
-            let params = params
-                .into_iter()
-                .map(|param| crate::resolve_binding(&mut scope, hir, handler, param))
-                .try_collect_eager();
-            let body = resolve_expr(&scope, hir, handler, *body);
-
-            hir::Expr::Lambda {
-                params: params?,
-                body: body?,
-                captures,
+                hir::Expr::Call { func: func?, args }
             }
-        }
-        ExprKind::If { cond, th, el } => {
-            let cond = resolve_expr(scope, hir, handler, *cond);
-            let th = resolve_block_expr(scope, hir, handler, th);
-            let el = el
-                .map(|el| resolve_block_expr(scope, hir, handler, el))
-                .transpose();
-            hir::Expr::If {
-                cond: cond?,
-                th: th?,
-                el: el?,
+            ExprKind::Lambda { params, body } => {
+                scope.push();
+
+                // Rebind all captures within the lambda body, making them all immutable.
+                let mut captures = HashSet::default();
+                self.collect_captures(scope, &mut captures, body);
+                let captures = captures
+                    .into_iter()
+                    .map(|capture| {
+                        let info = self.hir.var_info(capture);
+                        let rebinding = self.hir.add_var(hir::VarInfo {
+                            mutable: false,
+                            ..info
+                        });
+                        scope.add_var(&info.ident.ident.into(), rebinding);
+                        (capture, rebinding)
+                    })
+                    .collect();
+
+                let params = params
+                    .iter()
+                    .map(|param| self.resolve_binding(scope, param))
+                    .try_collect_eager();
+                let body = self.resolve_expr(scope, body);
+
+                scope.pop();
+
+                hir::Expr::Lambda {
+                    params: params?,
+                    body: body?,
+                    captures,
+                }
             }
-        }
-        ExprKind::Match { .. } => todo!("Pattern Matching"),
-        ExprKind::For { pat, iter, body } => {
-            let iter = resolve_expr(scope, hir, handler, *iter);
-            let mut scope = Scope::clone(scope);
-            let id = crate::resolve_pat(&mut scope, hir, &pat, false, None);
-            let body = resolve_block_expr(&scope, hir, handler, body);
-            hir::Expr::For {
-                id,
-                iter: iter?,
-                body: body?,
+            ExprKind::If { cond, th, el } => {
+                let cond = self.resolve_expr(scope, cond);
+                let th = self.resolve_block_expr(scope, th);
+                let el = el
+                    .as_ref()
+                    .map(|el| self.resolve_block_expr(scope, el))
+                    .transpose();
+                hir::Expr::If {
+                    cond: cond?,
+                    th: th?,
+                    el: el?,
+                }
             }
-        }
-        ExprKind::Loop(body) => hir::Expr::Loop(resolve_block_expr(scope, hir, handler, body)?),
-        ExprKind::Break => hir::Expr::Break,
-        ExprKind::Continue => hir::Expr::Continue,
-        ExprKind::Return(expr) => hir::Expr::Return(resolve_expr(scope, hir, handler, *expr)?),
-        ExprKind::Block(stmts) => hir::Expr::Block(resolve_block_expr(scope, hir, handler, stmts)?),
-        ExprKind::Print(expr) => hir::Expr::Print(resolve_expr(scope, hir, handler, *expr)?),
-    };
+            ExprKind::Match { .. } => todo!("Pattern Matching"),
+            ExprKind::For { pat, iter, body } => {
+                let iter = self.resolve_expr(scope, iter);
 
-    Ok(hir.add_expr(new_expr, expr.span))
-}
+                scope.push();
+                let id = self.resolve_pat(scope, pat, false, None);
+                let body = self.resolve_block_expr(scope, body);
+                scope.pop();
 
-fn resolve_exprs(
-    scope: &Scope,
-    hir: &mut Hir,
-    handler: &mut ErrorHandler,
-    exprs: Vec<ast::Expr>,
-) -> Result<Vec<ExprId>> {
-    exprs
-        .into_iter()
-        .map(|expr| resolve_expr(scope, hir, handler, expr))
-        .try_collect_eager()
-}
+                hir::Expr::For {
+                    id,
+                    iter: iter?,
+                    body: body?,
+                }
+            }
+            ExprKind::Loop(body) => hir::Expr::Loop(self.resolve_block_expr(scope, body)?),
+            ExprKind::Break => hir::Expr::Break,
+            ExprKind::Continue => hir::Expr::Continue,
+            ExprKind::Return(expr) => hir::Expr::Return(self.resolve_expr(scope, expr)?),
+            ExprKind::Block(stmts) => hir::Expr::Block(self.resolve_block_expr(scope, stmts)?),
+            ExprKind::Print(expr) => hir::Expr::Print(self.resolve_expr(scope, expr)?),
+        };
 
-fn resolve_block_expr(
-    scope: &Scope,
-    hir: &mut Hir,
-    handler: &mut ErrorHandler,
-    block_expr: ast::BlockExpr,
-) -> Result<hir::BlockExpr> {
-    let mut scope = Scope::clone(scope);
-    let stmts = block_expr
-        .stmts
-        .into_iter()
-        .map(|stmt| match stmt {
-            ast::Stmt::Decl {
-                binding,
-                value,
-                span,
-            } => {
-                // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
-                let value = resolve_expr(&scope, hir, handler, value);
-                let var = crate::resolve_binding(&mut scope, hir, handler, binding);
-                Ok(hir::Stmt::Decl {
-                    var: var?,
-                    value: value?,
+        Ok(self.hir.add_expr(new_expr, expr.span))
+    }
+
+    fn resolve_exprs(&mut self, scope: &mut Scope, exprs: &[ast::Expr]) -> Result<Vec<ExprId>> {
+        exprs
+            .iter()
+            .map(|expr| self.resolve_expr(scope, expr))
+            .try_collect_eager()
+    }
+
+    fn resolve_block_expr(
+        &mut self,
+        scope: &mut Scope,
+        block_expr: &ast::BlockExpr,
+    ) -> Result<hir::BlockExpr> {
+        scope.push();
+        let stmts = block_expr
+            .stmts
+            .iter()
+            .map(|stmt| match stmt {
+                ast::Stmt::Decl {
+                    binding,
+                    value,
                     span,
-                })
-            }
-            ast::Stmt::Expr(expr) => resolve_expr(&scope, hir, handler, expr).map(hir::Stmt::Expr),
+                } => {
+                    // val must be resolved before the binding, to ensure the declared variable isn't in scope within it's own declaration
+                    let value = self.resolve_expr(scope, value);
+                    let var = self.resolve_binding(scope, binding);
+                    Ok(hir::Stmt::Decl {
+                        var: var?,
+                        value: value?,
+                        span: *span,
+                    })
+                }
+                ast::Stmt::Expr(expr) => self.resolve_expr(scope, expr).map(hir::Stmt::Expr),
+            })
+            .try_collect_eager()?;
+        scope.pop();
+
+        Ok(hir::BlockExpr {
+            stmts,
+            span: block_expr.span,
         })
-        .try_collect_eager()?;
-    Ok(hir::BlockExpr {
-        stmts,
-        span: block_expr.span,
-    })
-}
-
-fn check_is_place(
-    hir: &Hir,
-    module: ModuleId,
-    handler: &mut ErrorHandler,
-    place: ExprId,
-) -> Result<()> {
-    match hir.expr(place) {
-        hir::Expr::Var(id) => {
-            if hir.var_info(*id).mutable {
-                Ok(())
-            } else {
-                Err(handler.err(ErrorKind::Mutation.span(hir.expr_span(place), module)))
-            }
-        }
-        hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
-            check_is_place(hir, module, handler, *base)
-        }
-        _ => Err(handler.err(ErrorKind::NotPlaceExpr.span(hir.expr_span(place), module))),
     }
-}
 
-fn overlaps(hir: &Hir, a: ExprId, b: ExprId) -> bool {
-    match (hir.expr(a), hir.expr(b)) {
-        (hir::Expr::Var(a), hir::Expr::Var(b)) => a == b,
-        (hir::Expr::Var(_), hir::Expr::Index { array: arr, .. }) => overlaps(hir, a, *arr),
-        (hir::Expr::Var(_), hir::Expr::Field { base, .. }) => overlaps(hir, a, *base),
-        (
-            hir::Expr::Index {
-                array: arr_a,
-                index: idx_a,
-            },
-            hir::Expr::Index {
-                array: arr_b,
-                index: idx_b,
-            },
-        ) => {
-            if let hir::Expr::Lit(LitExpr::Int(idx_a)) = hir.expr(*idx_a)
-                && let hir::Expr::Lit(LitExpr::Int(idx_b)) = hir.expr(*idx_b)
-            {
-                idx_a == idx_b
-            } else {
-                overlaps(hir, *arr_a, *arr_b)
+    fn check_is_place(&mut self, scope: &Scope, place: ExprId) -> Result<()> {
+        match self.hir.expr(place) {
+            hir::Expr::Var(id) => {
+                if self.hir.var_info(*id).mutable {
+                    Ok(())
+                } else {
+                    Err(self
+                        .handler
+                        .err(ErrorKind::Mutation.span(self.hir.expr_span(place), scope.module())))
+                }
             }
-        }
-        (
-            hir::Expr::Field {
-                base: base_a,
-                field: field_a,
-            },
-            hir::Expr::Field {
-                base: base_b,
-                field: field_b,
-            },
-        ) => (field_a.ident == field_b.ident) && overlaps(hir, *base_a, *base_b),
-        (hir::Expr::Index { array: arr, .. }, hir::Expr::Field { base, .. }) => {
-            overlaps(hir, *arr, b) || overlaps(hir, a, *base)
-        }
-        _ => false,
-    }
-}
-
-fn collect_captures(scope: &Scope, hir: &Hir, captures: &mut HashSet<VarId>, expr: &ast::Expr) {
-    match &expr.kind {
-        ExprKind::Var(path) => {
-            // Only add capture if it's bound.
-            // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
-            if let Some(id) = scope.get_var(path.start())
-                && !hir.var_info(id).global
-            {
-                captures.insert(id);
+            hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
+                self.check_is_place(scope, *base)
             }
-        }
-        ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
-        ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
-            for e in exprs {
-                collect_captures(scope, hir, captures, e);
-            }
-        }
-        ExprKind::Lambda { body: e, .. }
-        | ExprKind::Field { base: e, .. }
-        | ExprKind::Prefix { expr: e, .. }
-        | ExprKind::Print(e)
-        | ExprKind::Return(e) => collect_captures(scope, hir, captures, e),
-        ExprKind::Infix {
-            lhs: e1, rhs: e2, ..
-        }
-        | ExprKind::Index {
-            array: e1,
-            index: e2,
-        } => {
-            collect_captures(scope, hir, captures, e1);
-            collect_captures(scope, hir, captures, e2);
-        }
-        ExprKind::Call { func, args } => {
-            collect_captures(scope, hir, captures, func);
-            for a in args {
-                collect_captures(scope, hir, captures, &a.value);
-            }
-        }
-        ExprKind::Match { scrutinee, arms } => {
-            collect_captures(scope, hir, captures, scrutinee);
-            for a in arms {
-                collect_captures(scope, hir, captures, &a.body);
-            }
-        }
-        ExprKind::If { cond, th, el } => {
-            collect_captures(scope, hir, captures, cond);
-            collect_block_captures(scope, hir, captures, th);
-            el.as_ref()
-                .inspect(|el| collect_block_captures(scope, hir, captures, el));
-        }
-        ExprKind::For { iter, body, .. } => {
-            collect_captures(scope, hir, captures, iter);
-            collect_block_captures(scope, hir, captures, body);
-        }
-        ExprKind::Loop(stmts) | ExprKind::Block(stmts) => {
-            collect_block_captures(scope, hir, captures, stmts);
+            _ => Err(self
+                .handler
+                .err(ErrorKind::NotPlaceExpr.span(self.hir.expr_span(place), scope.module()))),
         }
     }
-}
 
-fn collect_block_captures(
-    scope: &Scope,
-    hir: &Hir,
-    captures: &mut HashSet<VarId>,
-    block: &ast::BlockExpr,
-) {
-    for s in &block.stmts {
-        match s {
-            ast::Stmt::Decl { value, .. } => collect_captures(scope, hir, captures, value),
-            ast::Stmt::Expr(expr) => collect_captures(scope, hir, captures, expr),
+    fn overlaps(&self, a: ExprId, b: ExprId) -> bool {
+        match (self.hir.expr(a), self.hir.expr(b)) {
+            (hir::Expr::Var(a), hir::Expr::Var(b)) => a == b,
+            (hir::Expr::Var(_), hir::Expr::Index { array: arr, .. }) => self.overlaps(a, *arr),
+            (hir::Expr::Var(_), hir::Expr::Field { base, .. }) => self.overlaps(a, *base),
+            (
+                hir::Expr::Index {
+                    array: arr_a,
+                    index: idx_a,
+                },
+                hir::Expr::Index {
+                    array: arr_b,
+                    index: idx_b,
+                },
+            ) => {
+                if let hir::Expr::Lit(LitExpr::Int(idx_a)) = self.hir.expr(*idx_a)
+                    && let hir::Expr::Lit(LitExpr::Int(idx_b)) = self.hir.expr(*idx_b)
+                {
+                    idx_a == idx_b
+                } else {
+                    self.overlaps(*arr_a, *arr_b)
+                }
+            }
+            (
+                hir::Expr::Field {
+                    base: base_a,
+                    field: field_a,
+                },
+                hir::Expr::Field {
+                    base: base_b,
+                    field: field_b,
+                },
+            ) => (field_a.ident == field_b.ident) && self.overlaps(*base_a, *base_b),
+            (hir::Expr::Index { array: arr, .. }, hir::Expr::Field { base, .. }) => {
+                self.overlaps(*arr, b) || self.overlaps(a, *base)
+            }
+            _ => false,
+        }
+    }
+
+    fn collect_captures(&self, scope: &Scope, captures: &mut HashSet<VarId>, expr: &ast::Expr) {
+        match &expr.kind {
+            ExprKind::Var(path) => {
+                // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
+                if let Some(id) = scope.get_var(path)
+                    && !self.hir.var_info(id).global
+                {
+                    captures.insert(id);
+                }
+            }
+            ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
+            ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
+                for e in exprs {
+                    self.collect_captures(scope, captures, e);
+                }
+            }
+            ExprKind::Lambda { body: e, .. }
+            | ExprKind::Field { base: e, .. }
+            | ExprKind::Prefix { expr: e, .. }
+            | ExprKind::Print(e)
+            | ExprKind::Return(e) => self.collect_captures(scope, captures, e),
+            ExprKind::Infix {
+                lhs: e1, rhs: e2, ..
+            }
+            | ExprKind::Index {
+                array: e1,
+                index: e2,
+            } => {
+                self.collect_captures(scope, captures, e1);
+                self.collect_captures(scope, captures, e2);
+            }
+            ExprKind::Call { func, args } => {
+                self.collect_captures(scope, captures, func);
+                for a in args {
+                    self.collect_captures(scope, captures, &a.value);
+                }
+            }
+            ExprKind::Match { scrutinee, arms } => {
+                self.collect_captures(scope, captures, scrutinee);
+                for a in arms {
+                    self.collect_captures(scope, captures, &a.body);
+                }
+            }
+            ExprKind::If { cond, th, el } => {
+                self.collect_captures(scope, captures, cond);
+                self.collect_block_captures(scope, captures, th);
+                el.as_ref()
+                    .inspect(|el| self.collect_block_captures(scope, captures, el));
+            }
+            ExprKind::For { iter, body, .. } => {
+                self.collect_captures(scope, captures, iter);
+                self.collect_block_captures(scope, captures, body);
+            }
+            ExprKind::Loop(stmts) | ExprKind::Block(stmts) => {
+                self.collect_block_captures(scope, captures, stmts);
+            }
+        }
+    }
+
+    fn collect_block_captures(
+        &self,
+        scope: &Scope,
+        captures: &mut HashSet<VarId>,
+        block: &ast::BlockExpr,
+    ) {
+        for ast::Stmt::Decl { value: expr, .. } | ast::Stmt::Expr(expr) in &block.stmts {
+            self.collect_captures(scope, captures, expr);
         }
     }
 }

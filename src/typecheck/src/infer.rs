@@ -1,5 +1,7 @@
-use irs::hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt};
-use package::ModuleId;
+use irs::{
+    ModuleId,
+    hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt},
+};
 
 use crate::{
     TypeChecker,

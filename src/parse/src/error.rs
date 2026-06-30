@@ -8,14 +8,16 @@ use crate::TokKind;
 pub enum ErrorKind {
     #[display("invalid token")]
     BadToken,
-    #[display("invalid unicode codepoint")]
-    BadUnicodeEscape,
-    #[display("expected {expected}, found {found}")]
-    Mismatched { expected: TokKind, found: TokKind },
     #[display("unexpected token {_0}")]
     Unexpected(TokKind),
+    #[display("expected {expected}, found {found}")]
+    Mismatched { expected: TokKind, found: TokKind },
     #[display("`self` must be the first parameter")]
     SelfNotFirst,
+    #[display("invalid unicode codepoint")]
+    BadUnicodeEscape,
+    #[display("primitive type cannot have generic parameters")]
+    PrimitiveGenerics,
 }
 
 impl SpanError for ErrorKind {}

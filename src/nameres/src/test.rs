@@ -134,4 +134,19 @@ fn rebinding() {
     record Foo(val: UInt)
 ";
     assert_matches!(crate::test_resolve_ast(input), Err(_));
+
+    let input = "
+    record Foo()
+    const Foo: Foo = Foo()
+";
+    assert_matches!(crate::test_resolve_ast(input), Ok(_));
+}
+
+#[test]
+fn so_much_int() {
+    let input = "
+    record Int()
+    const Int: Int = Int()
+";
+    assert_matches!(crate::test_resolve_ast(input), Ok(_))
 }

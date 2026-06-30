@@ -1,210 +1,179 @@
-use foldhash::fast::RandomState;
-
 use ident::Ident;
-use imbl::{GenericHashMap, shared_ptr::RcK};
 use irs::{
+    ModuleId,
     ast::Path,
     hir::{TyId, VarId},
 };
-use package::ModuleId;
 
-use crate::error::{ErrorKind, ItemKind};
+use crate::error::ErrorKind;
 
-type Table<T> = GenericHashMap<Ident, (T, Visibility), RandomState, RcK>;
-
-#[derive(Clone, PartialEq)]
+#[derive(Debug)]
 pub struct Scope {
     module: ModuleId,
-    mods: Table<Self>,
-    tys: Table<TyId>,
-    vars: Table<VarId>,
+    root: ScopeNode,
+    stack: Vec<ScopeNode>,
 }
 
 impl Scope {
     pub fn new(module: ModuleId) -> Self {
         Self {
             module,
-            mods: Table::default(),
-            tys: Table::default(),
-            vars: Table::default(),
+            root: ScopeNode::default(),
+            stack: Vec::new(),
         }
+    }
+
+    pub fn push(&mut self) {
+        self.stack.push(ScopeNode::default());
+    }
+
+    pub fn pop(&mut self) {
+        self.stack.pop();
     }
 
     pub const fn module(&self) -> ModuleId {
         self.module
     }
 
-    pub fn add_module(&mut self, ident: Ident, scope: Self) {
-        self.mods.insert(ident, (scope, Visibility::Local));
+    pub fn add_ty(&mut self, path: &Path, ty: TyId) {
+        self.scope_mut().insert(path, Some(ty), None);
     }
 
-    pub fn add_ty(&mut self, ident: Ident, ty: TyId) {
-        self.tys.insert(ident, (ty, Visibility::Local));
+    pub fn add_var(&mut self, path: &Path, var: VarId) {
+        self.scope_mut().insert(path, None, Some(var));
     }
 
-    pub fn add_var(&mut self, ident: Ident, var: VarId) {
-        self.vars.insert(ident, (var, Visibility::Local));
+    pub fn get_ty(&self, path: &Path) -> Option<TyId> {
+        self.get(path, |(ty, _)| ty)
     }
 
-    pub fn import(&mut self, path: Path) -> Result<(), ErrorKind> {
-        let (module, ident) = self.resolve_start(path)?;
-        let module = module.ok_or(ErrorKind::SelfImport)?;
-
-        let (mut add_scope, mut add_ty, mut add_var) = (None, None, None);
-        if let Some((scope, vis)) = module.mods.get(&ident) {
-            if self.mods.contains_key(&ident) {
-                return Err(ErrorKind::DupItem(ident));
-            }
-            check_vis(*vis, ident, ItemKind::Module)?;
-            add_scope = Some(scope.clone());
-        }
-
-        if let Some((ty, vis)) = module.tys.get(&ident) {
-            if self.tys.contains_key(&ident) {
-                return Err(ErrorKind::DupItem(ident));
-            }
-            check_vis(*vis, ident, ItemKind::Type)?;
-            add_ty = Some(*ty);
-        }
-
-        if let Some((var, vis)) = module.vars.get(&ident) {
-            if self.vars.contains_key(&ident) {
-                return Err(ErrorKind::DupItem(ident));
-            }
-            check_vis(*vis, ident, ItemKind::Value)?;
-            add_var = Some(*var);
-        }
-
-        if (&add_scope, add_ty, add_var) == (&None, None, None) {
-            return Err(ErrorKind::UnknownItem(ItemKind::Unknown, ident));
-        }
-
-        if let Some(scope) = add_scope {
-            self.mods.insert(ident, (scope, Visibility::Private));
-        }
-        if let Some(ty) = add_ty {
-            self.tys.insert(ident, (ty, Visibility::Private));
-        }
-        if let Some(var) = add_var {
-            self.vars.insert(ident, (var, Visibility::Private));
-        }
-
-        Ok(())
+    pub fn get_var(&self, path: &Path) -> Option<VarId> {
+        self.get(path, |(_, var)| var)
     }
 
-    pub fn export(&mut self, ident: Ident) -> Result<(), ErrorKind> {
-        let success = if let Some((_, vis)) = self.mods.get_mut(&ident) {
-            match vis {
-                Visibility::Private => return Err(ErrorKind::Reexport),
-                _ => *vis = Visibility::Public,
-            }
-            true
-        } else if let Some((_, vis)) = self.tys.get_mut(&ident) {
-            match vis {
-                Visibility::Private => return Err(ErrorKind::Reexport),
-                _ => *vis = Visibility::Public,
-            }
-            true
-        } else if let Some((_, vis)) = self.vars.get_mut(&ident) {
-            match vis {
-                Visibility::Private => return Err(ErrorKind::Reexport),
-                _ => *vis = Visibility::Public,
-            }
-            true
-        } else {
-            false
-        };
-
-        if success {
-            Ok(())
-        } else {
-            Err(ErrorKind::UnknownItem(ItemKind::Unknown, ident))
-        }
-    }
-
-    pub fn get_ty(&self, ident: Ident) -> Option<TyId> {
-        self.tys.get(&ident).map(|(ty, _)| *ty)
-    }
-
-    pub fn get_var(&self, ident: Ident) -> Option<VarId> {
-        self.vars.get(&ident).map(|(var, _)| *var)
-    }
-
-    fn resolve_start(&self, path: Path) -> Result<(Option<&Self>, Ident), ErrorKind> {
-        match path.split() {
-            (start, None) => Ok((None, start)),
-            (start, Some(rest)) => {
-                let mut module = &self
-                    .mods
-                    .get(&start)
-                    .ok_or(ErrorKind::UnknownItem(ItemKind::Module, start))?
-                    .0;
-                let mut path = rest;
-                loop {
-                    match path.split() {
-                        (start, None) => break Ok((Some(module), start)),
-                        (start, Some(rest)) => {
-                            let (new_module, vis) = module
-                                .mods
-                                .get(&start)
-                                .ok_or(ErrorKind::UnknownItem(ItemKind::Module, start))?;
-                            check_vis(*vis, start, ItemKind::Module)?;
-                            module = new_module;
-                            path = rest;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn resolve<T>(
+    fn get<T>(
         &self,
-        get_table: impl Fn(&Self) -> &Table<T>,
-        path: Path,
-        item_kind: ItemKind,
-    ) -> Result<&T, ErrorKind> {
-        let (module, ident) = self.resolve_start(path)?;
-        match module {
-            None => get_table(self)
-                .get(&ident)
-                .map(|(item, _)| item)
-                .ok_or(ErrorKind::UnknownItem(item_kind, ident)),
-            Some(module) => {
-                let (item, vis) = get_table(module)
-                    .get(&ident)
-                    .ok_or(ErrorKind::UnknownItem(item_kind, ident))?;
-                check_vis(*vis, ident, item_kind)?;
-                Ok(item)
-            }
+        path: &Path,
+        pick_elem: impl Fn((Option<TyId>, Option<VarId>)) -> Option<T>,
+    ) -> Option<T> {
+        self.stack
+            .iter()
+            .rev()
+            .find_map(|scope| pick_elem(scope.get(path)))
+            .or_else(|| pick_elem(self.root.get(path)))
+    }
+
+    pub fn import(&mut self, path: &Path) -> Result<(), ErrorKind> {
+        match self.root.get(path) {
+            (None, None) => Err(ErrorKind::UnknownItem(path.end())),
+            (ty, var) => match self.root.insert(&path.end().into(), ty, var) {
+                (old_ty, old_var)
+                    if (old_ty.is_some() && ty.is_some())
+                        || (old_var.is_some() && var.is_some()) =>
+                {
+                    Err(ErrorKind::DupItem(path.end()))
+                }
+                _ => Ok(()),
+            },
         }
     }
 
-    pub fn resolve_ty(&self, path: Path) -> Result<TyId, ErrorKind> {
-        self.resolve(|this| &this.tys, path, ItemKind::Type)
-            .copied()
-    }
-
-    pub fn resolve_var(&self, path: Path) -> Result<VarId, ErrorKind> {
-        self.resolve(|this| &this.vars, path, ItemKind::Value)
-            .copied()
+    fn scope_mut(&mut self) -> &mut ScopeNode {
+        self.stack.last_mut().unwrap_or(&mut self.root)
     }
 }
 
-fn check_vis(vis: Visibility, name: Ident, kind: ItemKind) -> Result<(), ErrorKind> {
-    if vis == Visibility::Public {
-        Ok(())
-    } else {
-        Err(ErrorKind::NotVisible(kind, name))
+#[derive(Debug, Default)]
+struct ScopeNode(ScopeNodeInner);
+
+impl ScopeNode {
+    fn get(&self, path: &Path) -> (Option<TyId>, Option<VarId>) {
+        self.get_node(path)
+            .map_or((None, None), |node| (node.ty, node.var))
+    }
+
+    fn get_node(&self, path: &Path) -> Option<&ScopeNodeInner> {
+        let mut curr_node = &self.0;
+        for ident in path.iter() {
+            curr_node = &curr_node
+                .children
+                .iter()
+                .find(|(prefix, _)| *prefix == ident)?
+                .1;
+        }
+        Some(curr_node)
+    }
+
+    fn insert(
+        &mut self,
+        path: &Path,
+        ty: Option<TyId>,
+        var: Option<VarId>,
+    ) -> (Option<TyId>, Option<VarId>) {
+        let mut curr_node = &mut self.0;
+        for ident in path.iter() {
+            let index = curr_node
+                .children
+                .iter()
+                .position(|(prefix, _)| *prefix == ident);
+            curr_node = match index {
+                Some(index) => &mut curr_node.children[index].1,
+                None => {
+                    &mut curr_node
+                        .children
+                        .push_mut((
+                            ident,
+                            ScopeNodeInner {
+                                ty: None,
+                                var: None,
+                                children: Vec::new(),
+                            },
+                        ))
+                        .1
+                }
+            };
+        }
+
+        let (mut old_ty, mut old_var) = (None, None);
+        if let Some(ty) = ty {
+            old_ty = curr_node.ty.replace(ty);
+        }
+        if let Some(var) = var {
+            old_var = curr_node.var.replace(var);
+        }
+        (old_ty, old_var)
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Visibility {
-    /// Only visible within this module.
-    Private,
-    /// Visible within this module and any child modules. Default.
-    Local,
-    /// Visible within this module, it's parent, and any child modules.
-    Public,
+#[derive(Debug, Default, Clone)]
+struct ScopeNodeInner {
+    ty: Option<TyId>,
+    var: Option<VarId>,
+    children: Vec<(Ident, Self)>,
 }
+
+// impl<T> PathTrieNode<T> {
+//     fn get_child(&self, ident: Ident) -> Option<&PathTrieNode<T>> {
+//         self.children.iter().find(|child| child.prefix == ident)
+//     }
+
+//     fn get_child_mut(&mut self, ident: Ident) -> Option<&mut PathTrieNode<T>> {
+//         self.children.iter_mut().find(|child| child.prefix == ident)
+//     }
+
+//     fn insert_child(&mut self, ident: Ident, value: Option<T>) {
+//         self.children.push(Self {
+//             prefix: ident,
+//             value,
+//             children: Vec::new(),
+//         });
+//     }
+
+//     fn insert_child_mut(&mut self, ident: Ident, value: Option<T>) -> &mut Self {
+//         self.children.push_mut(Self {
+//             prefix: ident,
+//             value,
+//             children: Vec::new(),
+//         })
+//     }
+// }

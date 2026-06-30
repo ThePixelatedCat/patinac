@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 # Internal
 errors.path = "../errors"
-package.path = "../package"
+ident.path = "../ident"
 irs.path = "../irs"
 parse.path = "../parse"
 nameres.path = "../nameres"
@@ -16,6 +16,11 @@ codegen.path = "../codegen"
 # External
 yansi = "1.0.1"
 argh = { version = "0.1.19", features = ["help"], default-features = false }
+derive_more = { version = "2.1.1", features = [
+    "display",
+    "from",
+    "into_iterator",
+] }
 slotmap = "1.1.1"
 
 [lints]

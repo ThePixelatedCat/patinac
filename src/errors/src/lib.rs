@@ -3,8 +3,9 @@
 use std::{range::Range, result};
 
 use derive_more::{Display, Error};
-use package::ModuleId;
 use smol_str::SmolStr;
+
+use irs::ModuleId;
 
 /// The [`Result`][result::Result] type alias used throughout most of the compiler. Defaults to [`HandledError`] for it's `Err` variant.
 pub type Result<T, E = HandledError> = result::Result<T, E>;

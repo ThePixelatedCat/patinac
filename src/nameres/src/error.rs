@@ -7,14 +7,12 @@ use ident::Ident;
 
 #[derive(Debug, Display, PartialEq, Eq)]
 pub enum ErrorKind {
-    #[display("{_0} `{_1}` is not visible")]
-    NotVisible(ItemKind, Ident),
-    #[display("unresolved {_0} `{_1}`")]
-    UnknownItem(ItemKind, Ident),
-    #[display("cannot export imports")]
-    Reexport,
-    #[display("cannot import an item from a module into itself")]
-    SelfImport,
+    #[display("unresolved item `{_0}`")]
+    UnknownItem(Ident),
+    #[display("unresolved type `{_0}`")]
+    UnknownType(Ident),
+    #[display("unresolved variable `{_0}`")]
+    UnknownVar(Ident),
     #[display("cannot mutate this immutable value")]
     Mutation,
     #[display("expected this to be a mutable place")]
@@ -32,13 +30,3 @@ pub enum ErrorKind {
 }
 
 impl SpanError for ErrorKind {}
-
-#[derive(Clone, Copy, Debug, Display, PartialEq, Eq)]
-#[display(rename_all = "lowercase")]
-pub enum ItemKind {
-    Value,
-    Type,
-    Module,
-    #[display("item")]
-    Unknown,
-}

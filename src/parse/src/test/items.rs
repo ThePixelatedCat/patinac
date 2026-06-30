@@ -1,4 +1,4 @@
-use std::range::Range;
+use std::{assert_matches, range::Range};
 
 use pretty_assertions::assert_eq;
 
@@ -215,17 +215,31 @@ fn functions() {
 }
 
 #[test]
-fn malformed_items() {
-    assert!(Parser::new_test("const fn: Int = 5").item().is_err(),);
-    assert!(
-        Parser::new_test("const NO_DICTS: [String: Int] = 5")
-            .item()
-            .is_err(),
+fn primitive_types() {
+    assert_eq!(
+        Parser::new_test("const Int: Int = 0").item(),
+        Ok(Item::ExecItem(ExecItem {
+            ident: Ident::new("Int").span(6..9),
+            kind: ExecKind::Const {
+                ty: TyKind::Int.span(11..14),
+                val: ExprKind::int(0).span(17..18)
+            }
+        }))
     );
-    assert!(Parser::new_test("let global = false").item().is_err(),);
-    assert!(
-        Parser::new_test("fn foo(a: Int, self): () = ()")
-            .item()
-            .is_err()
+
+    assert_matches!(Parser::new_test("const Int: Int<Int> = 0").item(), Err(_));
+}
+
+#[test]
+fn malformed_items() {
+    assert_matches!(Parser::new_test("const fn: Int = 5").item(), Err(_));
+    assert_matches!(
+        Parser::new_test("const NO_DICTS: [String: Int] = 5").item(),
+        Err(_)
+    );
+    assert_matches!(Parser::new_test("let global = false").item(), Err(_));
+    assert_matches!(
+        Parser::new_test("fn foo(a: Int, self): () = ()").item(),
+        Err(_)
     )
 }

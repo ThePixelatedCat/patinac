@@ -1,8 +1,6 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    range::Range,
-};
+use std::range::Range;
 
+use derive_more::Display;
 use ena::unify::{EqUnifyValue, UnifyKey};
 
 use irs::hir::{Ty, TyId};
@@ -28,18 +26,29 @@ impl UnifyKey for TyVar {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 pub enum PartialTy {
+    #[display("Int")]
     Int,
+    #[display("UInt")]
     UInt,
+    #[display("Byte")]
     Byte,
+    #[display("Float")]
     Float,
+    #[display("Bool")]
     Bool,
+    #[display("({})", itertools::join(_0, ", "))]
     Tuple(Vec<Self>),
+    #[display("[{_0}]")]
     Array(Box<Self>),
+    #[display("fn({}) -> {_1}", itertools::join(_0, ", "))]
     Fn(Vec<Param>, Box<Self>),
+    #[display("temp{_0:?}")]
     Named(TyId),
+    #[display("{{var}}")]
     Var(TyVar),
+    #[display("{{integer}}")]
     IntVar(TyVar),
 }
 
@@ -86,42 +95,12 @@ impl From<&Ty> for PartialTy {
     }
 }
 
-impl Display for PartialTy {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self {
-            Self::Int => "Int".fmt(f),
-            Self::UInt => "UInt".fmt(f),
-            Self::Byte => "Byte".fmt(f),
-            Self::Float => "Float".fmt(f),
-            Self::Bool => "Bool".fmt(f),
-            Self::Tuple(tys) => write!(f, "#({})", itertools::join(tys, ", ")),
-            Self::Array(ty) => write!(f, "Array[{ty}]"),
-            Self::Fn(params, result_ty) => {
-                write!(f, "fn({}) -> {result_ty}", itertools::join(params, ", "))
-            }
-            Self::Named(name) => {
-                write!(f, "temp{name:?}") // TODO properly print
-            }
-            Self::Var(_) => "{var}".fmt(f),
-            Self::IntVar(_) => "{integer}".fmt(f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
+#[display("{}{ty}", if *mutable { "mut " } else { "" })]
 pub struct Param {
     pub ty: PartialTy,
     pub mutable: bool,
     pub span: Range<u32>,
-}
-
-impl Display for Param {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.mutable {
-            "mut ".fmt(f)?;
-        }
-        self.ty.fmt(f)
-    }
 }
 
 pub fn convert(table: &mut Table, ast_ty: Option<&Ty>) -> PartialTy {

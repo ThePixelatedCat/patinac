@@ -7,7 +7,6 @@ edition = "2024"
 # Internal
 ident.path = "../ident"
 errors.path = "../errors"
-package.path = "../package"
 irs.path = "../irs"
 # External
 itertools = "0.14.0"

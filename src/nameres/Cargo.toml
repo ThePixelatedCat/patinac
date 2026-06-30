@@ -7,10 +7,9 @@ edition = "2024"
 # Internal
 ident.path = "../ident"
 errors.path = "../errors"
-package.path = "../package"
 irs.path = "../irs"
 # External
-imbl = "7.0.0"
+slotmap = "1.1.1"
 foldhash = "0.2.0"
 derive_more = { version = "2.1.1", features = ["display"] }
 itertools = "0.14.0"

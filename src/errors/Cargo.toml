@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # Internal
-package.path = "../package"
+irs.path = "../irs"
 # External
 smol_str = "0.3.6"
 derive_more = { version = "2.1.1", features = ["display", "error"] }

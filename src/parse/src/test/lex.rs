@@ -12,22 +12,6 @@ fn test_lex(src: &str) -> Result<Vec<Tok>, Vec<Range<u32>>> {
 }
 
 #[test]
-fn single_char_tokens() {
-    let src = "+-(.):";
-    assert_eq!(
-        test_lex(src),
-        Ok(vec![
-            T::Plus.span(0..1),
-            T::Minus.span(1..2),
-            T::LParen.span(2..3),
-            T::Dot.span(3..4),
-            T::RParen.span(4..5),
-            T::Colon.span(5..6),
-        ]),
-    );
-}
-
-#[test]
 fn unknown_input() {
     assert_eq!(
         test_lex("$$$$$$$+"),
@@ -44,7 +28,7 @@ fn unknown_input() {
 }
 
 #[test]
-fn single_char_tokens_with_whitespace() {
+fn whitespace() {
     let src = "   + -  (.): ";
     assert_eq!(
         test_lex(src),
@@ -77,45 +61,6 @@ fn maybe_multiple_char_tokens() {
             T::Or.span(8..10),
             T::Arrow.span(10..12),
             T::PathSep.span(12..14)
-        ]),
-    );
-}
-
-#[test]
-fn keywords() {
-    let src = "if Int record Byte let mut UInt union Float = match Bool else Char fn";
-    assert_eq!(
-        test_lex(src),
-        Ok(vec![
-            T::If.span(0..2),
-            T::Whitespace.span(2..3),
-            T::Int.span(3..6),
-            T::Whitespace.span(6..7),
-            T::Record.span(7..13),
-            T::Whitespace.span(13..14),
-            T::Byte.span(14..18),
-            T::Whitespace.span(18..19),
-            T::Let.span(19..22),
-            T::Whitespace.span(22..23),
-            T::Mut.span(23..26),
-            T::Whitespace.span(26..27),
-            T::UInt.span(27..31),
-            T::Whitespace.span(31..32),
-            T::Union.span(32..37),
-            T::Whitespace.span(37..38),
-            T::Float.span(38..43),
-            T::Whitespace.span(43..44),
-            T::Eq.span(44..45),
-            T::Whitespace.span(45..46),
-            T::Match.span(46..51),
-            T::Whitespace.span(51..52),
-            T::Bool.span(52..56),
-            T::Whitespace.span(56..57),
-            T::Else.span(57..61),
-            T::Whitespace.span(61..62),
-            T::Char.span(62..66),
-            T::Whitespace.span(66..67),
-            T::Fn.span(67..69),
         ]),
     );
 }
@@ -186,11 +131,11 @@ fn test(var: Type, var2_: Bool): Int -> {
             T::Ident.span(42..47),
             T::Colon.span(47..48),
             T::Whitespace.span(48..49),
-            T::Bool.span(49..53),
+            T::Ident.span(49..53),
             T::RParen.span(53..54),
             T::Colon.span(54..55),
             T::Whitespace.span(55..56),
-            T::Int.span(56..59),
+            T::Ident.span(56..59),
             T::Whitespace.span(59..60),
             T::Arrow.span(60..62),
             T::Whitespace.span(62..63),

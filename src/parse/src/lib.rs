@@ -17,11 +17,16 @@ use itertools::Itertools as _;
 
 use errors::{ErrorHandler, HandledError, Result, SpanError as _};
 use ident::{Ident, SpanIdent};
-use irs::ast::{Ast, Binding, Path, Ty};
-use lex::{Lexer, Tok, TokKind};
-use package::ModuleId;
+use irs::{
+    ModuleId,
+    ast::{Ast, Binding, Path, Ty},
+};
 
-use crate::{error::ErrorKind, items::Item};
+use crate::{
+    error::ErrorKind,
+    items::Item,
+    lex::{Lexer, Tok, TokKind},
+};
 
 /// Manages the state needing for parsing.
 ///
