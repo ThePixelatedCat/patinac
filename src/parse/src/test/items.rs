@@ -4,8 +4,8 @@ use pretty_assertions::assert_eq;
 
 use ident::Ident;
 use irs::ast::{
-    ExecItem, ExecKind, ExprKind, Field, Impl, InfixOp, Param, PatKind, Path, TyItem, TyItemKind,
-    TyKind, Variant, VisItem,
+    BlockItem, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem,
+    TyItemKind, TyKind, Variant, VisItem,
 };
 
 use crate::{Parser, items::Item};
@@ -134,8 +134,9 @@ fn impls() {
 ";
     assert_eq!(
         Parser::new_test(input).item(),
-        Ok(Item::Impl(Impl {
-            ty: Ident::new("Foo").span(10..13),
+        Ok(Item::BlockItem(BlockItem::Impl {
+            ty_path: Path::single(Ident::new("Foo")),
+            ty_span: Range::from(10..13),
             items: vec![
                 ExecItem {
                     ident: Ident::new("bar").span(27..30),

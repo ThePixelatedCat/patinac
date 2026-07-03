@@ -150,3 +150,19 @@ fn so_much_int() {
 ";
     assert_matches!(crate::test_resolve_ast(input), Ok(_))
 }
+
+#[test]
+fn assoc_items() {
+    let input = "
+    import MyInt::ZERO
+
+    record MyInt(val: Int)
+    impl MyInt {
+        const ZERO: MyInt = MyInt(0)
+        fn add(lhs: MyInt, rhs: MyInt): MyInt = MyInt(lhs.val + rhs.val)
+    }
+
+    fn bad_identity(int: MyInt): MyInt = MyInt::add(int, ZERO)
+";
+    assert_matches!(crate::test_resolve_ast(input), Ok(_))
+}

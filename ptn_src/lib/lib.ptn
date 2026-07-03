@@ -1,6 +1,6 @@
-export { swap }
+export { swap, int }
 
-fn swap(mut a: [Int], mut b: [Int]): () = { 
+fn swap(mut a: Int, mut b: Int): () = { 
     let a_tmp = a
     a = b
     b = a_tmp

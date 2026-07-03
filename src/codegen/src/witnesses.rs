@@ -54,7 +54,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                 .builder
                 .build_struct_gep(ty, out, u32::try_from(idx).unwrap(), "fieldptr")
                 .unwrap();
-            self.emit_drop(self.layout_direct(field_ty, field_ptr));
+            self.build_drop(self.layout_direct(field_ty, field_ptr));
         }
         self.builder.build_return(None).unwrap();
 
@@ -83,7 +83,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         let src = func.get_nth_param(1).unwrap().into_pointer_value();
 
         if layout::all_trivial(fields) {
-            self.emit_memcpy(dst, src, &ty);
+            self.build_memcpy(dst, src, &ty);
         } else {
             // If the fields are not all trivial, we need to copy each field individually.
             for (idx, field_ty) in fields.iter().enumerate() {
@@ -98,7 +98,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                     .build_struct_gep(ty, src, idx, "srcfieldptr")
                     .unwrap();
 
-                self.emit_copy(self.layout_direct(field_ty, src), dst);
+                self.build_copy(self.layout_direct(field_ty, src), dst);
             }
         }
         self.builder.build_return(None).unwrap();
@@ -142,7 +142,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
 
             // If the fields are equal, continue to a new block for the next comparison, else branch to the not-equal block
             let eq_block = self.ctx.append_basic_block(func, "eq");
-            let equal = self.emit_equals(
+            let equal = self.build_equals(
                 self.layout_direct(field_ty, lhs),
                 self.layout_direct(field_ty, rhs),
             );
@@ -276,11 +276,11 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                 .build_load(self.ctx.i64_type(), index, "")
                 .unwrap()
                 .into_int_value();
-            let elem_ptr = self.emit_array_indexing(
+            let elem_ptr = self.build_index(
                 LayoutValue::array(elem_ty, array),
                 LayoutValue::int(IntSize::Bits64, curr_index),
             );
-            self.emit_drop(elem_ptr);
+            self.build_drop(elem_ptr);
             let new_index = self
                 .builder
                 .build_int_add(curr_index, self.const_int(1), "")
@@ -298,9 +298,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         // Free the memory allocation.
         {
             self.builder.position_at_end(free_block);
-            self.builder
-                .build_call(self.free(), &[header.into()], "")
-                .unwrap();
+            self.build_c_call(self.free(), &[header.into()]);
             self.builder.build_unconditional_branch(ret_block).unwrap();
         }
 
@@ -435,12 +433,10 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                 .unwrap()
                 .into_int_value();
             let curr_index_val = LayoutValue::int(IntSize::Bits64, curr_index);
-            let lhs_elem =
-                self.emit_array_indexing(LayoutValue::array(elem_ty, lhs), curr_index_val);
-            let rhs_elem =
-                self.emit_array_indexing(LayoutValue::array(elem_ty, rhs), curr_index_val);
+            let lhs_elem = self.build_index(LayoutValue::array(elem_ty, lhs), curr_index_val);
+            let rhs_elem = self.build_index(LayoutValue::array(elem_ty, rhs), curr_index_val);
             // Need to load the elements if they're direct.
-            let equal = self.emit_equals(
+            let equal = self.build_equals(
                 self.layout_direct(elem_ty, lhs_elem.as_pointer()),
                 self.layout_direct(elem_ty, rhs_elem.as_pointer()),
             );
@@ -485,7 +481,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn closure_drop(&self) -> FunctionValue<'ctx> {
+    pub(crate) fn any_closure_drop(&self) -> FunctionValue<'ctx> {
         let func_name = "Closure.drop";
 
         // Check if we already built this function
@@ -524,7 +520,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn closure_copy(&self) -> FunctionValue<'ctx> {
+    pub(crate) fn any_closure_copy(&self) -> FunctionValue<'ctx> {
         let func_name = "Closure.copy";
 
         // Check if we already built this function
@@ -564,7 +560,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn closure_equals(&self) -> FunctionValue<'ctx> {
+    pub(crate) fn any_closure_equals(&self) -> FunctionValue<'ctx> {
         let func_name = "Closure.equals";
 
         // Check if we already built this function
@@ -604,7 +600,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn emit_closure_drop(
+    pub(crate) fn closure_drop(
         &self,
         name: &str,
         captures: &[VarId],
@@ -650,13 +646,11 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                     .builder
                     .build_struct_gep(env_ty, env, u32::try_from(idx).unwrap(), "")
                     .unwrap();
-                self.emit_drop(self.layout_direct(ty, capture_ptr));
+                self.build_drop(self.layout_direct(ty, capture_ptr));
             }
 
             // Free the environment's memory
-            self.builder
-                .build_call(self.free(), &[env.as_basic_value_enum().into()], "free")
-                .unwrap();
+            self.build_c_call(self.free(), &[env.as_basic_value_enum().into()]);
         }
         self.builder.build_return(None).unwrap();
 
@@ -665,7 +659,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn emit_closure_copy(
+    pub(crate) fn closure_copy(
         &self,
         name: &str,
         captures: &[VarId],
@@ -689,21 +683,14 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         let dst = func.get_nth_param(0).unwrap().into_pointer_value();
         let src = func.get_nth_param(1).unwrap().into_pointer_value();
         let ty = self.closure_ty();
-        self.emit_memcpy(dst, src, &ty);
+        self.build_memcpy(dst, src, &ty);
         // Don't need to clone the environment if there isn't one
         if let Some(env_ty) = env_ty {
             // Allocate the new target environment
             let size = env_ty.size_of().unwrap();
             let dst_env = self
-                .builder
-                .build_call(
-                    self.malloc(),
-                    &[size.as_basic_value_enum().into()],
-                    "malloc",
-                )
+                .build_call(self.malloc(), &[size.as_basic_value_enum().into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_pointer_value();
 
             // Get the source environment
@@ -722,7 +709,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                 .all(|id| layout::trivial(&self.mir.var(*id).ty))
             {
                 // If all of the captures are trivial, we can memcpy the whole environment
-                self.emit_memcpy(dst_env, src_env, &env_ty);
+                self.build_memcpy(dst_env, src_env, &env_ty);
             } else {
                 // If some of the captures aren't trivial, we need to copy each of them individually
                 for (idx, ty) in captures.iter().map(|id| &self.mir.var(*id).ty).enumerate() {
@@ -735,7 +722,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                         .builder
                         .build_struct_gep(env_ty, src_env, idx, "srccapture")
                         .unwrap();
-                    self.emit_copy(self.layout_direct(ty, src_capture), dst_capture);
+                    self.build_copy(self.layout_direct(ty, src_capture), dst_capture);
                 }
             }
 
@@ -753,7 +740,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn emit_closure_equals(
+    pub(crate) fn closure_equals(
         &self,
         name: &str,
         captures: &[VarId],
@@ -829,7 +816,7 @@ impl<'ctx> CodegenState<'_, 'ctx> {
                         .builder
                         .build_struct_gep(env_ty, rhs_env, idx, "rhscapture")
                         .unwrap();
-                    let equal = self.emit_equals(
+                    let equal = self.build_equals(
                         self.layout_direct(ty, lhs_capture),
                         self.layout_direct(ty, rhs_capture),
                     );

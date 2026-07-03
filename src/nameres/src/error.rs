@@ -19,7 +19,7 @@ pub enum ErrorKind {
     NotPlaceExpr,
     #[display("this mutable place overlaps with {_0:?}")]
     OverlappingPlace(Range<u32>),
-    #[display("duplicate item with name `{_0}`")]
+    #[display("duplicate item `{_0}`")]
     DupItem(Ident),
     #[display("duplicate field `{_0}`")]
     DupFields(Ident),

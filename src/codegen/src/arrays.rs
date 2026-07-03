@@ -1,7 +1,6 @@
 use inkwell::{
     AtomicOrdering, AtomicRMWBinOp, IntPredicate,
     intrinsics::Intrinsic,
-    module::Linkage,
     types::BasicType as _,
     values::{BasicValue as _, FunctionValue, PointerValue},
 };
@@ -35,22 +34,18 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             .into_pointer_value()
     }
 
-    pub fn emit_array_indexing(
+    pub fn build_index(
         &self,
         array: LayoutValue<'hir, 'ctx>,
         index: LayoutValue<'hir, 'ctx>,
     ) -> LayoutValue<'hir, 'ctx> {
         let (elem_ty, array) = array.as_array();
         let elem_ptr = self
-            .builder
             .build_call(
                 self.array_index(elem_ty),
                 &[array.into(), index.as_int().into()],
-                "",
             )
             .unwrap()
-            .try_as_basic_value()
-            .unwrap_basic()
             .into_pointer_value();
         self.layout_indirect(elem_ty, elem_ptr)
     }
@@ -70,9 +65,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
         let ty = self
             .ptr_ty()
             .fn_type(&[self.array_ty().into(), self.ctx.i64_type().into()], false);
-        let func = self
-            .module
-            .add_function(&func_name, ty, Some(Linkage::Private));
+        let func = self.add_func(&func_name, ty, false);
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let bounds_block = self.ctx.append_basic_block(func, "bounds");
         let panic_block = self.ctx.append_basic_block(func, "panic");
@@ -118,7 +111,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
         // OOB panic.
         {
             self.builder.position_at_end(panic_block);
-            self.emit_panic("index out of bounds");
+            self.build_panic("index out of bounds");
         }
 
         // GEP the element and return.
@@ -153,9 +146,7 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             .ctx
             .void_type()
             .fn_type(&[self.array_ty().into()], false);
-        let func = self
-            .module
-            .add_function(func_name, func_ty, Some(Linkage::Private));
+        let func = self.add_func(func_name, func_ty, false);
         let entry_block = self.ctx.append_basic_block(func, "entry");
         let incr_block = self.ctx.append_basic_block(func, "incr");
         let ret_block = self.ctx.append_basic_block(func, "return");
@@ -245,11 +236,8 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
             self.builder.position_at_end(init_block);
             // Calculate capacity.
             let cap = self
-                .builder
-                .build_call(self.array_calc_cap(elem_ty), &[count.into()], "")
+                .build_call(self.array_calc_cap(elem_ty), &[count.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_int_value();
             let header_ty = self.array_header_ty();
             // Add room for header.
@@ -259,11 +247,8 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .unwrap();
             // Allocate.
             let alloc = self
-                .builder
-                .build_call(self.malloc(), &[alloc_size.into()], "")
+                .build_call(self.malloc(), &[alloc_size.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_pointer_value();
             // Initialise each field of the header.
             let refc_ptr = self
@@ -399,11 +384,8 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .build_int_add(capacity, header_ty.size_of().unwrap(), "")
                 .unwrap();
             let alloc = self
-                .builder
-                .build_call(self.malloc(), &[alloc_size.into()], "")
+                .build_call(self.malloc(), &[alloc_size.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_pointer_value();
             // Initialise refcount to 1.
             let refc_ptr = self
@@ -473,13 +455,10 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                         .unwrap()
                         .into_int_value();
                     let curr_index_val = LayoutValue::int(IntSize::Bits64, curr_index);
-                    let elem = self
-                        .emit_array_indexing(LayoutValue::array(elem_ty, array), curr_index_val);
-                    let new_elem = self.emit_array_indexing(
-                        LayoutValue::array(elem_ty, new_array),
-                        curr_index_val,
-                    );
-                    self.emit_copy(elem, new_elem.as_pointer());
+                    let elem = self.build_index(LayoutValue::array(elem_ty, array), curr_index_val);
+                    let new_elem =
+                        self.build_index(LayoutValue::array(elem_ty, new_array), curr_index_val);
+                    self.build_copy(elem, new_elem.as_pointer());
                     let new_index = self
                         .builder
                         .build_int_add(curr_index, self.const_int(1), "")
@@ -631,11 +610,8 @@ impl<'hir, 'ctx> CodegenState<'hir, 'ctx> {
                 .get_declaration(&self.module, &[self.ctx.i64_type().into()])
                 .unwrap();
             let bit_count = self
-                .builder
-                .build_call(ctpop, &[count.into()], "")
+                .build_c_call(ctpop, &[count.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_int_value();
             let is_pow2 = self
                 .builder

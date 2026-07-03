@@ -3,7 +3,7 @@ use std::range::Range;
 use derive_more::From;
 
 use ident::SpanIdent;
-use irs::ast::{ExecItem, ExecKind, Field, Impl, Param, TyItem, TyItemKind, Variant, VisItem};
+use irs::ast::{BlockItem, ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant, VisItem};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -11,8 +11,8 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 pub enum Item {
     VisItem(VisItem),
     TyItem(TyItem),
+    BlockItem(BlockItem),
     ExecItem(ExecItem),
-    Impl(Impl),
 }
 
 impl Parser<'_> {
@@ -104,14 +104,14 @@ impl Parser<'_> {
         )
     }
 
-    fn impl_item(&mut self) -> Result<Impl> {
+    fn impl_item(&mut self) -> Result<BlockItem> {
         self.consume(TokKind::Impl)?;
 
-        let ty = self.ident()?;
+        let (ty_path, ty_span) = self.path()?;
 
         self.consume(TokKind::LBrace)?;
         let mut items = vec![];
-        while !self.at(TokKind::RBrace) {
+        while self.consume_at(TokKind::RBrace).is_none() {
             let item = match self.peek()? {
                 TokKind::Const => self.const_item(),
                 TokKind::Fn => self.func_item(),
@@ -122,7 +122,11 @@ impl Parser<'_> {
             items.push(item);
         }
 
-        Ok(Impl { ty, items })
+        Ok(BlockItem::Impl {
+            ty_path,
+            ty_span,
+            items,
+        })
     }
 
     fn const_item(&mut self) -> Result<ExecItem> {

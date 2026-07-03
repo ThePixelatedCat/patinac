@@ -18,8 +18,8 @@ pub struct Ast {
     pub vis_items: Vec<VisItem>,
     /// The type definitions of a module, containing both `union` and `record` definitions.
     pub ty_items: Vec<TyItem>,
-    /// The type implementations of a module.
-    pub impls: Vec<Impl>,
+    /// The block items of a module, with each block containing other nested item. This includes `impl` blocks.
+    pub block_items: Vec<BlockItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
     pub exec_items: Vec<ExecItem>,
 }
@@ -157,13 +157,18 @@ pub struct Field {
     pub ty: Ty,
 }
 
-/// An `impl` block, providing methods, associated functions, and associated constants for a type.
+/// A block of nested items.
 #[derive(Debug, PartialEq)]
-pub struct Impl {
-    /// The type this impl block is for.
-    pub ty: SpanIdent,
-    /// The items within the block.
-    pub items: Vec<ExecItem>,
+pub enum BlockItem {
+    /// An `impl` block, associating it's nested items with a type.
+    Impl {
+        /// The path to the type this impl block is associated with.
+        ty_path: Path,
+        /// The span of the type path.
+        ty_span: Range<u32>,
+        /// The items within the block.
+        items: Vec<ExecItem>,
+    },
 }
 
 /// An "executable item". These are the items that contain expressions, namely constants and functions.

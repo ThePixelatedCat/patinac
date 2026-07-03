@@ -12,7 +12,7 @@ use slotmap::SecondaryMap;
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
-    ast::{self, Ast, Binding, Pat, PatKind, Path, TyItem, TyItemKind, TyKind, VisItem},
+    ast::{self, Ast, Binding, BlockItem, Pat, PatKind, Path, TyItem, TyItemKind, TyKind, VisItem},
     hir::{self, Field, Hir, Param, TyInfo, VarId, VarInfo},
 };
 
@@ -50,44 +50,58 @@ impl ResolveInfo<'_, '_> {
         let mut scope = Scope::new(module);
 
         for &child in &self.package.get(module).children {
+            scope.add_path(&self.package.get(child).name.into());
             self.resolve_module(child, &mut scope, false);
         }
         let ast = &self.asts[module];
 
-        if !ast.impls.is_empty() {
-            todo!("Associated Items")
+        for ty in &ast.ty_items {
+            let id = self.hir.reserve_ty(ty.ident);
+            if scope.add_ty(&ty.ident.ident.into(), id).is_some() {
+                self.handler
+                    .err(ErrorKind::DupItem(ty.ident.ident).span(ty.ident.span, scope.module()));
+            }
         }
 
         for ty in &ast.ty_items {
-            match scope.get_ty(&ty.ident.ident.into()) {
-                Some(_) => {
-                    self.handler.err(
-                        ErrorKind::DupItem(ty.ident.ident).span(ty.ident.span, scope.module()),
-                    );
-                }
-                None => {
-                    let id = self.hir.reserve_ty(ty.ident);
-                    scope.add_ty(&ty.ident.ident.into(), id);
+            self.resolve_ty_item(&mut scope, ty);
+        }
+
+        for block in &ast.block_items {
+            match block {
+                BlockItem::Impl { ty_path, items, .. } => {
+                    for item in items {
+                        let mut path = ty_path.clone();
+                        path.push(item.ident.ident);
+
+                        let id = self.hir.add_var(VarInfo {
+                            ident: item.ident,
+                            mutable: false,
+                            global: true,
+                            module: scope.module(),
+                        });
+                        if scope.add_var(&path, id).is_some() {
+                            self.handler.err(
+                                ErrorKind::DupItem(item.ident.ident)
+                                    .span(item.ident.span, scope.module()),
+                            );
+                        }
+                    }
                 }
             }
         }
 
         for exec in &ast.exec_items {
-            match scope.get_var(&exec.ident.ident.into()) {
-                Some(_) => {
-                    self.handler.err(
-                        ErrorKind::DupItem(exec.ident.ident).span(exec.ident.span, scope.module()),
-                    );
-                }
-                None => {
-                    let id = self.hir.add_var(VarInfo {
-                        ident: exec.ident,
-                        mutable: false,
-                        global: true,
-                        module: scope.module(),
-                    });
-                    scope.add_var(&exec.ident.ident.into(), id);
-                }
+            let id = self.hir.add_var(VarInfo {
+                ident: exec.ident,
+                mutable: false,
+                global: true,
+                module: scope.module(),
+            });
+            if scope.add_var(&exec.ident.ident.into(), id).is_some() {
+                self.handler.err(
+                    ErrorKind::DupItem(exec.ident.ident).span(exec.ident.span, scope.module()),
+                );
             }
         }
 
@@ -103,38 +117,16 @@ impl ResolveInfo<'_, '_> {
         for vis in &ast.vis_items {
             if let VisItem::Export(idents) = vis {
                 for ident in idents {
-                    let mut success = false;
-                    // TEST
-                    let path = Path::new_const([self.package.get(module).name, ident.ident]);
-
-                    if let Some(ty) = scope.get_ty(&ident.ident.into()) {
-                        parent_scope.add_ty(&path, ty);
-                        success = true;
-                    }
-
-                    if let Some(var) = scope.get_var(&ident.ident.into()) {
-                        parent_scope.add_var(&path, var);
-                        success = true;
-                    }
-
-                    if !success {
-                        self.handler.err(
-                            ErrorKind::UnknownItem(ident.ident).span(ident.span, scope.module()),
-                        );
-                    }
+                    scope
+                        .export(self.package.get(module).name, ident.ident, parent_scope)
+                        .map_err(|error| self.handler.err(error.span(ident.span, scope.module())))
+                        .ok();
                 }
             }
         }
 
-        for ty in &ast.ty_items {
-            self.resolve_ty_item(&mut scope, ty);
-        }
-
-        if is_root
-            && let Ok(Some(idx)) = self.find_main(scope.module(), &ast.exec_items)
-            && let Ok(main) = self.resolve_exec_item(&mut scope, &ast.exec_items[idx])
-        {
-            self.hir.set_main(main);
+        for block in &ast.block_items {
+            self.resolve_block_item(&mut scope, block);
         }
 
         let main_index = is_root
@@ -142,7 +134,7 @@ impl ResolveInfo<'_, '_> {
             .flatten();
 
         for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) = self.resolve_exec_item(&mut scope, exec) {
+            if let Ok(exec) = self.resolve_exec_item(&mut scope, &exec.ident.ident.into(), exec) {
                 if main_index.is_some_and(|main_index| main_index == index) {
                     self.hir.set_main(exec);
                 } else {
@@ -230,13 +222,38 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
+    fn resolve_block_item(&mut self, scope: &mut Scope, item: &BlockItem) {
+        match item {
+            BlockItem::Impl {
+                ty_path,
+                ty_span,
+                items,
+            } => {
+                let Some(_) = scope.get_ty(ty_path) else {
+                    self.handler
+                        .err(ErrorKind::UnknownType(ty_path.end()).span(*ty_span, scope.module()));
+                    return;
+                };
+
+                for item in items {
+                    let mut path = ty_path.clone();
+                    path.push(item.ident.ident);
+                    if let Ok(exec) = self.resolve_exec_item(scope, &path, item) {
+                        self.hir.add_exec(exec);
+                    }
+                }
+            }
+        }
+    }
+
     fn resolve_exec_item(
         &mut self,
         scope: &mut Scope,
+        path: &Path,
         item: &ast::ExecItem,
     ) -> Result<hir::ExecItem> {
         let id = scope
-            .get_var(&item.ident.ident.into())
+            .get_var(path)
             .expect("all items should have already been inserted into the scope");
 
         match &item.kind {

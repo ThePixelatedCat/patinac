@@ -1,6 +1,6 @@
 use inkwell::{
     FloatPredicate,
-    values::{BasicMetadataValueEnum, BasicValue as _, CallSiteValue, PointerValue},
+    values::{BasicMetadataValueEnum, BasicValue as _, BasicValueEnum, PointerValue},
 };
 
 use irs::mir::{Arg, BlockExpr, Expr, ExprId, InfixOp, LitExpr, PrefixOp, Stmt, Ty, VarId};
@@ -53,9 +53,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             .as_pointer_value();
 
         let expr = self.emit_expr(expr);
-        self.builder
-            .build_call(self.printf(), &[format.into(), expr.as_scalar().into()], "")
-            .unwrap();
+        self.build_c_call(self.printf(), &[format.into(), expr.as_scalar().into()]);
 
         LayoutValue::Zst
     }
@@ -88,7 +86,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Expr::Index { array, index } => {
                 let array = self.emit_place(*array);
                 let index = self.emit_expr(*index);
-                self.emit_array_indexing(array, index)
+                self.build_index(array, index)
             }
             _ => unreachable!("not a place"),
         }
@@ -109,17 +107,15 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 let array = self.emit_unique_place(*array);
                 let index = self.emit_expr(*index);
                 let (elem_ty, array_ptr) = array.as_array();
-                self.builder
-                    .build_call(self.array_unique(elem_ty), &[array_ptr.into()], "")
-                    .unwrap();
-                self.emit_array_indexing(array, index)
+                self.build_call(self.array_unique(elem_ty), &[array_ptr.into()]);
+                self.build_index(array, index)
             }
             _ => unreachable!("not a place"),
         }
     }
 
     fn emit_ident(&self, id: VarId) -> LayoutValue<'mir, 'ctx> {
-        self.emit_dup(self.vars[id])
+        self.build_dup(self.vars[id])
     }
 
     fn emit_lit(&self, lit: &LitExpr) -> LayoutValue<'mir, 'ctx> {
@@ -139,21 +135,10 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
 
         // Allocate the array.
+        let len = u64::try_from(elems.len()).expect("I doubt we'll see 128bit CPUs any time soon");
         let array = self
-            .builder
-            .build_call(
-                self.array_new(elem_ty),
-                &[self
-                    .const_uint(
-                        u64::try_from(elems.len())
-                            .expect("I doubt we'll see 128bit CPUs any time soon"),
-                    )
-                    .into()],
-                "",
-            )
+            .build_call(self.array_new(elem_ty), &[self.const_uint(len).into()])
             .unwrap()
-            .try_as_basic_value()
-            .unwrap_basic()
             .into_pointer_value();
         let array = LayoutValue::array(elem_ty, array);
 
@@ -162,10 +147,9 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             let index = self.const_uint(
                 u64::try_from(index).expect("I doubt we'll see 128bit CPUs any time soon"),
             );
-            let elem_ptr =
-                self.emit_array_indexing(array, LayoutValue::int(IntSize::Bits64, index));
+            let elem_ptr = self.build_index(array, LayoutValue::int(IntSize::Bits64, index));
             let elem = self.emit_expr(*expr);
-            self.emit_move(elem, elem_ptr.as_pointer());
+            self.build_move(elem, elem_ptr.as_pointer());
         }
 
         array
@@ -182,14 +166,14 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
 
         let lowered_ty = self.fields_ty(field_tys);
-        let out = self.emit_alloca_entry(lowered_ty, "");
+        let out = self.build_alloca_entry(lowered_ty, "");
         for (idx, value) in values.iter().enumerate() {
             let value = self.emit_expr(*value);
             let ptr = self
                 .builder
                 .build_struct_gep(lowered_ty, out, u32::try_from(idx).unwrap(), "")
                 .unwrap();
-            self.emit_move(value, ptr);
+            self.build_move(value, ptr);
         }
         LayoutValue::Fields(field_tys, out)
     }
@@ -237,7 +221,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 LayoutValue::int_op(lhs, rhs, |l, r| self.builder.build_or(l, r, "").unwrap())
             }
             op @ (InfixOp::Eqq | InfixOp::Neq) => {
-                let equals = self.emit_equals(lhs, rhs);
+                let equals = self.build_equals(lhs, rhs);
                 if op == InfixOp::Neq {
                     LayoutValue::int(IntSize::Bits8, self.builder.build_not(equals, "").unwrap())
                 } else {
@@ -285,7 +269,12 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
     }
 
     fn emit_field(&mut self, base: ExprId, field: u32) -> LayoutValue<'mir, 'ctx> {
-        let base = self.emit_expr(base);
+        let (base, needs_drop) = if self.is_place(base) {
+            (self.emit_place(base), false)
+        } else {
+            (self.emit_expr(base), true)
+        };
+
         let (fields, ptr) = base.as_fields();
         let field_ptr = self
             .builder
@@ -293,18 +282,26 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             .unwrap();
 
         let result = self
-            .emit_dup(self.layout_indirect(&fields[usize::try_from(field).unwrap()], field_ptr));
-        self.emit_drop(base);
+            .build_dup(self.layout_indirect(&fields[usize::try_from(field).unwrap()], field_ptr));
+        if needs_drop {
+            self.build_drop(base)
+        };
         result
     }
 
     fn emit_index(&mut self, array: ExprId, index: ExprId) -> LayoutValue<'mir, 'ctx> {
-        let array = self.emit_expr(array);
+        let (array, needs_drop) = if self.is_place(array) {
+            (self.emit_place(array), false)
+        } else {
+            (self.emit_expr(array), true)
+        };
         let index = self.emit_expr(index);
-        let elem_ptr = self.emit_array_indexing(array, index);
+        let elem_ptr = self.build_index(array, index);
 
-        let result = self.emit_dup(elem_ptr);
-        self.emit_drop(array);
+        let result = self.build_dup(elem_ptr);
+        if needs_drop {
+            self.build_drop(array)
+        };
         result
     }
 
@@ -341,16 +338,13 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 LayoutValue::Zst
             }
             StorageClass::Indirect => {
-                let ret_ptr = self.emit_alloca_entry(self.lower_ty(ret_ty), "out");
+                let ret_ptr = self.build_alloca_entry(self.lower_ty(ret_ty), "out");
                 args.insert(0, ret_ptr.into());
                 self.emit_call_inner(func, args);
                 self.layout_direct(ret_ty, ret_ptr)
             }
             StorageClass::Scalar => {
-                let result = self
-                    .emit_call_inner(func, args)
-                    .try_as_basic_value()
-                    .unwrap_basic();
+                let result = self.emit_call_inner(func, args).unwrap();
                 let kind = match ret_ty {
                     Ty::Int | Ty::UInt => ScalarKind::Int(IntSize::Bits64),
                     Ty::Byte | Ty::Bool => ScalarKind::Int(IntSize::Bits8),
@@ -363,7 +357,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         };
 
         for tmp in tmps {
-            self.emit_drop(tmp);
+            self.build_drop(tmp);
         }
 
         result
@@ -373,22 +367,19 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         &mut self,
         func: ExprId,
         mut args: Vec<BasicMetadataValueEnum<'ctx>>,
-    ) -> CallSiteValue<'ctx> {
+    ) -> Option<BasicValueEnum<'ctx>> {
         if let Expr::Var(id) = self.mir.expr(func)
             && let Some(func) = self.funcs.get(*id)
         {
-            return self.builder.build_call(*func, &args, "").unwrap();
+            return self.build_call(*func, &args);
         }
         match self.emit_expr(func) {
-            LayoutValue::Scalar(ScalarKind::FuncPtr(func_ty), ScalarLayout::Direct(func)) => self
-                .builder
-                .build_indirect_call(func_ty, func.into_pointer_value(), &args, "")
-                .unwrap(),
+            LayoutValue::Scalar(ScalarKind::FuncPtr(func_ty), ScalarLayout::Direct(func)) => {
+                self.build_indirect_call(func_ty, func.into_pointer_value(), &args)
+            }
             LayoutValue::Scalar(ScalarKind::FuncPtr(func_ty), ScalarLayout::Indirect(ptr)) => {
                 let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
-                self.builder
-                    .build_indirect_call(func_ty, func.into_pointer_value(), &args, "")
-                    .unwrap()
+                self.build_indirect_call(func_ty, func.into_pointer_value(), &args)
             }
             LayoutValue::Closure(func_ty, closure) => {
                 let ty = self.closure_ty();
@@ -401,9 +392,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 // Extract function pointer from closure and call it.
                 let func = self.builder.build_struct_gep(ty, closure, 0, "").unwrap();
                 let func = self.builder.build_load(self.ptr_ty(), func, "").unwrap();
-                self.builder
-                    .build_indirect_call(func_ty, func.into_pointer_value(), &args, "")
-                    .unwrap()
+                self.build_indirect_call(func_ty, func.into_pointer_value(), &args)
             }
             _ => unreachable!("wrong type for function"),
         }
@@ -421,15 +410,11 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 .collect();
             let env_ty = self.ctx.struct_type(&capture_tys, false);
             let env = self
-                .builder
                 .build_call(
                     self.malloc(),
                     &[env_ty.size_of().unwrap().as_basic_value_enum().into()],
-                    "",
                 )
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_pointer_value();
 
             // Initialize the environment
@@ -438,7 +423,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .builder
                     .build_struct_gep(env_ty, env, u32::try_from(index).unwrap(), "")
                     .unwrap();
-                self.emit_copy(self.vars[*capture], dst);
+                self.build_copy(self.vars[*capture], dst);
             }
 
             (env, Some(env_ty))
@@ -448,7 +433,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         let name = self.mir.var(func).ident.str();
         let func = self.funcs[func];
         let ty = self.closure_ty();
-        let closure = self.emit_alloca_entry(ty, "");
+        let closure = self.build_alloca_entry(ty, "");
 
         // Store everything into the closure, emitting the witness functions along the way.
         let store = |idx, val: PointerValue<'ctx>| {
@@ -459,19 +444,19 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         store(1, env);
         store(
             2,
-            self.emit_closure_drop(&name, captures, env_ty)
+            self.closure_drop(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store(
             3,
-            self.emit_closure_copy(&name, captures, env_ty)
+            self.closure_copy(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
         store(
             4,
-            self.emit_closure_equals(&name, captures, env_ty)
+            self.closure_equals(&name, captures, env_ty)
                 .as_global_value()
                 .as_pointer_value(),
         );
@@ -489,9 +474,9 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
 
         // Drop the current value in the assigned-to variable
-        self.emit_drop(place);
+        self.build_drop(place);
         // Move the temporary value into the variable
-        self.emit_move(value, place.as_pointer());
+        self.build_move(value, place.as_pointer());
         LayoutValue::Zst
     }
 
@@ -520,8 +505,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         // Set up blocks and result value alloc.
         let result = match layout::storage_class(ty) {
             StorageClass::Zst => None,
-            StorageClass::Indirect => Some(self.emit_alloca_entry(self.ptr_ty(), "if_result")),
-            StorageClass::Scalar => Some(self.emit_alloca_entry(self.lower_ty(ty), "if_result")),
+            StorageClass::Indirect => Some(self.build_alloca_entry(self.ptr_ty(), "if_result")),
+            StorageClass::Scalar => Some(self.build_alloca_entry(self.lower_ty(ty), "if_result")),
         };
         let th_block = self.ctx.append_basic_block(function, "then");
         let el_block = self.ctx.append_basic_block(function, "else");
@@ -624,7 +609,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         for stmt in &block.0 {
             // Drop the previous expression, if there was one.
             if let Some(expr) = last_expr.take() {
-                self.emit_drop(expr);
+                self.build_drop(expr);
             }
             match stmt {
                 Stmt::Decl { var, value, .. } => {
@@ -641,8 +626,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                         tmp
                     } else {
                         let alloc = self
-                            .emit_alloca_entry(self.lower_ty(ty), &self.mir.var(*var).ident.str());
-                        self.emit_move(tmp, alloc);
+                            .build_alloca_entry(self.lower_ty(ty), &self.mir.var(*var).ident.str());
+                        self.build_move(tmp, alloc);
                         self.layout_indirect(ty, alloc)
                     };
 
@@ -658,7 +643,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         // Drop all local variables.
         for var in locals {
             let var = self.vars.remove(var).expect("variable was just added");
-            self.emit_drop(var);
+            self.build_drop(var);
         }
 
         last_expr.unwrap_or(LayoutValue::Zst)

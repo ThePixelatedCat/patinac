@@ -35,38 +35,38 @@ impl Scope {
         self.module
     }
 
-    pub fn add_ty(&mut self, path: &Path, ty: TyId) {
-        self.scope_mut().insert(path, Some(ty), None);
+    pub fn add_path(&mut self, path: &Path) {
+        self.scope_mut().insert(path, None, None);
     }
 
-    pub fn add_var(&mut self, path: &Path, var: VarId) {
-        self.scope_mut().insert(path, None, Some(var));
+    pub fn add_ty(&mut self, path: &Path, ty: TyId) -> Option<TyId> {
+        self.scope_mut().insert(path, Some(ty), None).0
+    }
+
+    pub fn add_var(&mut self, path: &Path, var: VarId) -> Option<VarId> {
+        self.scope_mut().insert(path, None, Some(var)).1
     }
 
     pub fn get_ty(&self, path: &Path) -> Option<TyId> {
-        self.get(path, |(ty, _)| ty)
+        self.get(path).and_then(|(ty, _)| ty)
     }
 
     pub fn get_var(&self, path: &Path) -> Option<VarId> {
-        self.get(path, |(_, var)| var)
+        self.get(path).and_then(|(_, var)| var)
     }
 
-    fn get<T>(
-        &self,
-        path: &Path,
-        pick_elem: impl Fn((Option<TyId>, Option<VarId>)) -> Option<T>,
-    ) -> Option<T> {
+    fn get(&self, path: &Path) -> Option<(Option<TyId>, Option<VarId>)> {
         self.stack
             .iter()
             .rev()
-            .find_map(|scope| pick_elem(scope.get(path)))
-            .or_else(|| pick_elem(self.root.get(path)))
+            .find_map(|scope| scope.get(path))
+            .or_else(|| self.root.get(path))
     }
 
     pub fn import(&mut self, path: &Path) -> Result<(), ErrorKind> {
         match self.root.get(path) {
-            (None, None) => Err(ErrorKind::UnknownItem(path.end())),
-            (ty, var) => match self.root.insert(&path.end().into(), ty, var) {
+            None | Some((None, None)) => Err(ErrorKind::UnknownItem(path.end())),
+            Some((ty, var)) => match self.root.insert(&path.end().into(), ty, var) {
                 (old_ty, old_var)
                     if (old_ty.is_some() && ty.is_some())
                         || (old_var.is_some() && var.is_some()) =>
@@ -75,6 +75,16 @@ impl Scope {
                 }
                 _ => Ok(()),
             },
+        }
+    }
+
+    pub fn export(&mut self, name: Ident, ident: Ident, to: &mut Self) -> Result<(), ErrorKind> {
+        match self.root.get(&ident.into()) {
+            None => Err(ErrorKind::UnknownItem(ident)),
+            Some((ty, var)) => {
+                to.root.insert(&Path::new_const([name, ident]), ty, var);
+                Ok(())
+            }
         }
     }
 
@@ -87,9 +97,8 @@ impl Scope {
 struct ScopeNode(ScopeNodeInner);
 
 impl ScopeNode {
-    fn get(&self, path: &Path) -> (Option<TyId>, Option<VarId>) {
-        self.get_node(path)
-            .map_or((None, None), |node| (node.ty, node.var))
+    fn get(&self, path: &Path) -> Option<(Option<TyId>, Option<VarId>)> {
+        self.get_node(path).map(|node| (node.ty, node.var))
     }
 
     fn get_node(&self, path: &Path) -> Option<&ScopeNodeInner> {
@@ -151,29 +160,3 @@ struct ScopeNodeInner {
     var: Option<VarId>,
     children: Vec<(Ident, Self)>,
 }
-
-// impl<T> PathTrieNode<T> {
-//     fn get_child(&self, ident: Ident) -> Option<&PathTrieNode<T>> {
-//         self.children.iter().find(|child| child.prefix == ident)
-//     }
-
-//     fn get_child_mut(&mut self, ident: Ident) -> Option<&mut PathTrieNode<T>> {
-//         self.children.iter_mut().find(|child| child.prefix == ident)
-//     }
-
-//     fn insert_child(&mut self, ident: Ident, value: Option<T>) {
-//         self.children.push(Self {
-//             prefix: ident,
-//             value,
-//             children: Vec::new(),
-//         });
-//     }
-
-//     fn insert_child_mut(&mut self, ident: Ident, value: Option<T>) -> &mut Self {
-//         self.children.push_mut(Self {
-//             prefix: ident,
-//             value,
-//             children: Vec::new(),
-//         })
-//     }
-// }

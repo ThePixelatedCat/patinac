@@ -1,8 +1,11 @@
-import lib::swap
+import lib::int::MyInt
 
 fn main(): () = {
-    let mut a = [1]
-    let b = a
-    a.[0] = 2
-    print b.[0]
+    let mut a = MyInt(1)
+    let mut b = MyInt(2)
+    lib::swap(mut a.val, mut b.val)
+    print a.val
+    print b.val
+    print MyInt::add(a, b)
 }
+

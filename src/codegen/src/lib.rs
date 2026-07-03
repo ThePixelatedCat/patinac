@@ -31,7 +31,9 @@ use inkwell::{
         FileType, InitializationConfig, Target as LLVMTarget, TargetMachine, TargetMachineOptions,
     },
     types::{BasicType, BasicTypeEnum, FunctionType},
-    values::{BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue},
+    values::{
+        BasicMetadataValueEnum, BasicValueEnum, FloatValue, FunctionValue, IntValue, PointerValue,
+    },
 };
 use slotmap::SecondaryMap;
 
@@ -106,8 +108,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         }
 
         if let Some(main) = self.mir.main() {
-            let fn_ty = self.ctx.i32_type().fn_type(&[], false);
-            let func = self.module.add_function("main", fn_ty, None);
+            let ty = self.ctx.i32_type().fn_type(&[], false);
+            let func = self.add_func("main", ty, true);
             self.funcs.insert(main.var, func);
 
             let ItemKind::Func { body, .. } = main.kind else {
@@ -161,7 +163,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                         StorageClass::Zst => self.builder.build_return(None).unwrap(),
                         StorageClass::Indirect => {
                             let out_ptr = func.get_first_param().unwrap().into_pointer_value();
-                            self.emit_move(body, out_ptr);
+                            self.build_move(body, out_ptr);
                             self.builder.build_return(None).unwrap()
                         }
                         StorageClass::Scalar => {
@@ -214,6 +216,40 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         let func = self.module.add_function(name, ty, Some(linkage));
         func.set_call_conventions(call_conv as u32);
         func
+    }
+
+    fn build_call(
+        &self,
+        func: FunctionValue<'ctx>,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let call = self.builder.build_call(func, args, "").unwrap();
+        call.set_call_convention(LLVMCallConv::LLVMFastCallConv as u32);
+        call.try_as_basic_value().basic()
+    }
+
+    fn build_c_call(
+        &self,
+        func: FunctionValue<'ctx>,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let call = self.builder.build_call(func, args, "").unwrap();
+        call.set_call_convention(LLVMCallConv::LLVMCCallConv as u32);
+        call.try_as_basic_value().basic()
+    }
+
+    fn build_indirect_call(
+        &self,
+        func_ty: FunctionType<'ctx>,
+        func_ptr: PointerValue<'ctx>,
+        args: &[BasicMetadataValueEnum<'ctx>],
+    ) -> Option<BasicValueEnum<'ctx>> {
+        let call = self
+            .builder
+            .build_indirect_call(func_ty, func_ptr, args, "")
+            .unwrap();
+        call.set_call_convention(LLVMCallConv::LLVMFastCallConv as u32);
+        call.try_as_basic_value().basic()
     }
 
     fn lower_ty(&self, ty: &Ty) -> BasicTypeEnum<'ctx> {
@@ -416,7 +452,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
 
     /// # Panics
     /// Panics if the builder is not positioned, or is positioned but not within a function.
-    fn emit_alloca_entry(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
+    fn build_alloca_entry(&self, ty: BasicTypeEnum<'ctx>, name: &str) -> PointerValue<'ctx> {
         let curr_block = self.curr_block();
         let head_block = self
             .curr_function()
@@ -436,7 +472,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         alloc
     }
 
-    fn emit_drop(&self, value: LayoutValue<'mir, 'ctx>) {
+    fn build_drop(&self, value: LayoutValue<'mir, 'ctx>) {
         match value {
             LayoutValue::Scalar(
                 ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
@@ -444,30 +480,22 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             )
             | LayoutValue::Zst => (), // Trivial types
             LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) => {
-                self.builder
-                    .build_call(self.array_drop(elem_ty), &[ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.array_drop(elem_ty), &[ptr.into()]);
             }
             LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
                 let ptr = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.builder
-                    .build_call(self.array_drop(elem_ty), &[ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.array_drop(elem_ty), &[ptr.into()]);
             }
             LayoutValue::Closure(_, ptr) => {
-                self.builder
-                    .build_call(self.closure_drop(), &[ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.any_closure_drop(), &[ptr.into()]);
             }
             LayoutValue::Fields(fields, ptr) => {
-                self.builder
-                    .build_call(self.fields_drop(fields), &[ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.fields_drop(fields), &[ptr.into()]);
             }
         }
     }
 
-    fn emit_dup(&self, value: LayoutValue<'mir, 'ctx>) -> LayoutValue<'mir, 'ctx> {
+    fn build_dup(&self, value: LayoutValue<'mir, 'ctx>) -> LayoutValue<'mir, 'ctx> {
         match value {
             LayoutValue::Scalar(
                 ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
@@ -494,37 +522,29 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 )
             }
             LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
-                self.builder
-                    .build_call(self.array_incr_refc(), &[array.into()], "")
-                    .unwrap();
+                self.build_call(self.array_incr_refc(), &[array.into()]);
                 value
             }
             LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
                 let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.builder
-                    .build_call(self.array_incr_refc(), &[array.into()], "")
-                    .unwrap();
+                self.build_call(self.array_incr_refc(), &[array.into()]);
                 LayoutValue::array(elem_ty, array)
             }
             LayoutValue::Closure(func_ty, ptr) => {
-                let new_ptr = self.emit_alloca_entry(self.closure_ty(), "");
-                self.builder
-                    .build_call(self.closure_copy(), &[new_ptr.into(), ptr.into()], "")
-                    .unwrap();
+                let new_ptr = self.build_alloca_entry(self.closure_ty(), "");
+                self.build_call(self.any_closure_copy(), &[new_ptr.into(), ptr.into()]);
                 LayoutValue::Closure(func_ty, new_ptr)
             }
             LayoutValue::Fields(fields, ptr) => {
-                let new_ptr = self.emit_alloca_entry(self.fields_ty(fields), "");
-                self.builder
-                    .build_call(self.fields_copy(fields), &[new_ptr.into(), ptr.into()], "")
-                    .unwrap();
+                let new_ptr = self.build_alloca_entry(self.fields_ty(fields), "");
+                self.build_call(self.fields_copy(fields), &[new_ptr.into(), ptr.into()]);
                 LayoutValue::Fields(fields, new_ptr)
             }
             LayoutValue::Zst => LayoutValue::Zst,
         }
     }
 
-    fn emit_copy(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
+    fn build_copy(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
         match value {
             LayoutValue::Scalar(
                 ScalarKind::Int(_) | ScalarKind::Float | ScalarKind::FuncPtr(_),
@@ -548,16 +568,12 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 self.builder.build_store(dst, float).unwrap();
             }
             LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
-                self.builder
-                    .build_call(self.array_incr_refc(), &[array.into()], "")
-                    .unwrap();
+                self.build_call(self.array_incr_refc(), &[array.into()]);
                 self.builder.build_store(dst, array).unwrap();
             }
             LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(ptr)) => {
                 let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.builder
-                    .build_call(self.array_incr_refc(), &[array.into()], "")
-                    .unwrap();
+                self.build_call(self.array_incr_refc(), &[array.into()]);
                 self.builder.build_store(dst, array).unwrap();
             }
             LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(ptr)) => {
@@ -565,20 +581,16 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 self.builder.build_store(dst, func).unwrap();
             }
             LayoutValue::Closure(_, ptr) => {
-                self.builder
-                    .build_call(self.closure_copy(), &[dst.into(), ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.any_closure_copy(), &[dst.into(), ptr.into()]);
             }
             LayoutValue::Fields(fields, ptr) => {
-                self.builder
-                    .build_call(self.fields_copy(fields), &[dst.into(), ptr.into()], "")
-                    .unwrap();
+                self.build_call(self.fields_copy(fields), &[dst.into(), ptr.into()]);
             }
             LayoutValue::Zst => {}
         }
     }
 
-    fn emit_move(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
+    fn build_move(&self, value: LayoutValue<'mir, 'ctx>, dst: PointerValue<'ctx>) {
         match value {
             LayoutValue::Scalar(_, ScalarLayout::Direct(value)) => {
                 self.builder.build_store(dst, value).unwrap();
@@ -606,13 +618,15 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
                 self.builder.build_store(dst, func).unwrap();
             }
-            LayoutValue::Closure(_, ptr) => self.emit_memcpy(dst, ptr, &self.closure_ty()),
-            LayoutValue::Fields(fields, ptr) => self.emit_memcpy(dst, ptr, &self.fields_ty(fields)),
+            LayoutValue::Closure(_, ptr) => self.build_memcpy(dst, ptr, &self.closure_ty()),
+            LayoutValue::Fields(fields, ptr) => {
+                self.build_memcpy(dst, ptr, &self.fields_ty(fields))
+            }
             LayoutValue::Zst => {}
         }
     }
 
-    fn emit_equals(
+    fn build_equals(
         &self,
         lhs: LayoutValue<'mir, 'ctx>,
         rhs: LayoutValue<'mir, 'ctx>,
@@ -681,11 +695,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(lhs)),
                 LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(rhs)),
             ) => self
-                .builder
-                .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()], "")
+                .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_int_value(),
             (
                 LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(lhs)),
@@ -694,11 +705,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 let ty = self.array_ty();
                 let lhs = self.builder.build_load(ty, lhs, "").unwrap();
                 let rhs = self.builder.build_load(ty, rhs, "").unwrap();
-                self.builder
-                    .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()], "")
+                self.build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()])
                     .unwrap()
-                    .try_as_basic_value()
-                    .unwrap_basic()
                     .into_int_value()
             }
             (
@@ -729,45 +737,31 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .unwrap()
             }
             (LayoutValue::Closure(_, lhs), LayoutValue::Closure(_, rhs)) => self
-                .builder
-                .build_call(self.closure_equals(), &[lhs.into(), rhs.into()], "")
+                .build_call(self.any_closure_equals(), &[lhs.into(), rhs.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_int_value(),
             (LayoutValue::Fields(fields, lhs), LayoutValue::Fields(_, rhs)) => self
-                .builder
-                .build_call(self.fields_equals(fields), &[lhs.into(), rhs.into()], "")
+                .build_call(self.fields_equals(fields), &[lhs.into(), rhs.into()])
                 .unwrap()
-                .try_as_basic_value()
-                .unwrap_basic()
                 .into_int_value(),
             (LayoutValue::Zst, LayoutValue::Zst) => self.const_bool(true),
             _ => unreachable!("mismatched lhs and rhs types"),
         }
     }
 
-    fn emit_panic(&self, msg: &str) {
+    fn build_panic(&self, msg: &str) {
         let msg = self
             .builder
             .build_global_string_ptr(msg, "")
             .unwrap()
             .as_pointer_value();
-        self.builder
-            .build_call(self.panic(), &[msg.into()], "")
-            .unwrap();
+        self.build_call(self.panic(), &[msg.into()]);
         self.builder.build_unreachable().unwrap();
     }
 
     /// # Panics
     /// Panics if the provided type is unsized.
-    fn emit_memcpy(
-        &self,
-        //ty: &'mir Ty,
-        dst: PointerValue<'ctx>,
-        src: PointerValue<'ctx>,
-        ty: &dyn BasicType,
-    ) {
+    fn build_memcpy(&self, dst: PointerValue<'ctx>, src: PointerValue<'ctx>, ty: &dyn BasicType) {
         let align = self.target.get_target_data().get_abi_alignment(ty);
         let size = ty.size_of().expect("sized type");
         self.builder

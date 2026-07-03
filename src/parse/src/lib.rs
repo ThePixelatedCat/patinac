@@ -62,7 +62,7 @@ impl<'src> Parser<'src> {
                 Ok(Item::VisItem(item)) => ast.vis_items.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
                 Ok(Item::ExecItem(item)) => ast.exec_items.push(item),
-                Ok(Item::Impl(item)) => ast.impls.push(item),
+                Ok(Item::BlockItem(item)) => ast.block_items.push(item),
                 Err(_) => {}
             }
         }
