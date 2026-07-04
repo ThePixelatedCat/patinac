@@ -17,8 +17,8 @@ pub enum ErrorKind {
     Mutation,
     #[display("expected this to be a mutable place")]
     NotPlaceExpr,
-    #[display("this mutable place overlaps with {_0:?}")]
-    OverlappingPlace(Range<u32>),
+    #[display("these mutable arguments overlap")]
+    OverlappingPlaces(Range<u32>, Range<u32>),
     #[display("duplicate item `{_0}`")]
     DupItem(Ident),
     #[display("duplicate field `{_0}`")]
@@ -27,6 +27,8 @@ pub enum ErrorKind {
         "invalid `main` function. The `main` function must take no parameters and return no value"
     )]
     InvalidMain,
+    #[display("`self` parameters can only appear on functions within `impl` blocks")]
+    SelfOutsideImpl,
 }
 
 impl SpanError for ErrorKind {}

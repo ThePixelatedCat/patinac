@@ -29,6 +29,7 @@ impl<E> Error<E> {
             kind,
             span: span.into(),
             module,
+            secondary_locs: Vec::new(),
             ctx: Vec::new(),
         }))
     }
@@ -48,6 +49,13 @@ impl<E> Error<E> {
     #[must_use]
     pub fn with_static_ctx(mut self, ctx: &'static str) -> Self {
         self.0.ctx.push(SmolStr::new_static(ctx));
+        self
+    }
+
+    /// Adds an additional source location to the error.
+    #[must_use]
+    pub fn with_loc(mut self, span: impl Into<Range<u32>>, module: ModuleId) -> Self {
+        self.0.secondary_locs.push((span.into(), module));
         self
     }
 
@@ -84,6 +92,7 @@ struct ErrorInner<E> {
     kind: E,
     span: Range<u32>,
     module: ModuleId,
+    secondary_locs: Vec<(Range<u32>, ModuleId)>,
     ctx: Vec<SmolStr>,
 }
 

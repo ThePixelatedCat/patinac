@@ -87,7 +87,8 @@ impl ResolveInfo<'_, '_> {
                     .try_for_each(|(a, b)| {
                         if self.overlaps(a.value, b.value) {
                             Err(self.handler.err(
-                                ErrorKind::OverlappingPlace(b.span).span(a.span, scope.module()),
+                                ErrorKind::OverlappingPlaces(a.span, b.span)
+                                    .span(a.span, scope.module()),
                             ))
                         } else {
                             Ok(())
@@ -95,6 +96,46 @@ impl ResolveInfo<'_, '_> {
                     })?;
 
                 hir::Expr::Call { func: func?, args }
+            }
+            ExprKind::MethodCall { base, method, args } => {
+                let base = self.resolve_expr(scope, base);
+                let args: Vec<Arg> = args
+                    .iter()
+                    .map(|arg| {
+                        let val = self.resolve_expr(scope, &arg.value)?;
+                        if arg.mutable {
+                            self.check_is_place(scope, val)?;
+                        }
+                        Ok(Arg {
+                            value: val,
+                            mutable: arg.mutable,
+                            span: arg.span,
+                        })
+                    })
+                    .try_collect_eager()?;
+
+                // Verify uniqueness of mutable arguments
+                // TODO optimise???
+                args.iter()
+                    .permutations(2)
+                    .map(|p| (p[0], p[1]))
+                    .filter(|(a, b)| a.mutable || b.mutable)
+                    .try_for_each(|(a, b)| {
+                        if self.overlaps(a.value, b.value) {
+                            Err(self.handler.err(
+                                ErrorKind::OverlappingPlaces(a.span, b.span)
+                                    .span(a.span, scope.module()),
+                            ))
+                        } else {
+                            Ok(())
+                        }
+                    })?;
+
+                hir::Expr::MethodCall {
+                    base: base?,
+                    method: *method,
+                    args,
+                }
             }
             ExprKind::Lambda { params, body } => {
                 scope.push();
@@ -303,6 +344,12 @@ impl ResolveInfo<'_, '_> {
             }
             ExprKind::Call { func, args } => {
                 self.collect_captures(scope, captures, func);
+                for a in args {
+                    self.collect_captures(scope, captures, &a.value);
+                }
+            }
+            ExprKind::MethodCall { base, args, .. } => {
+                self.collect_captures(scope, captures, base);
                 for a in args {
                     self.collect_captures(scope, captures, &a.value);
                 }

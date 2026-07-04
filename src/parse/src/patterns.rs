@@ -5,7 +5,7 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn pattern(&mut self) -> Result<Pat> {
-        match self.peek()? {
+        match self.peek()?.kind {
             TokKind::Minus
             | TokKind::IntLit
             | TokKind::FloatLit

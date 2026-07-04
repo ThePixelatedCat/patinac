@@ -33,6 +33,9 @@ impl TypeChecker<'_> {
                         self.handler.err(err);
                     }
                 }
+                Constraint::Method(base_ty, base_span, method_ty, method_name, module) => {
+                    todo!()
+                }
             }
         }
     }
@@ -45,6 +48,44 @@ fn unify_field_ty(
     base_span: Range<u32>,
     field_ty: &PartialTy,
     field_name: SpanIdent,
+    module: ModuleId,
+) -> Result<(), Error<ErrorKind>> {
+    let base_ty = normalize_ty(table, base_ty);
+
+    let base_id = match base_ty {
+        PartialTy::Named(id) => id,
+        PartialTy::Var(_) => {
+            return Err(ErrorKind::UninferredVarType
+                .span(base_span, module)
+                .with_static_ctx("type must be known by this point"));
+        }
+        no_fields_ty => {
+            return Err(ErrorKind::NoFieldsType(no_fields_ty).span(base_span, module));
+        }
+    };
+
+    let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
+        return Err(
+            ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span, module)
+        );
+    };
+
+    unify_ty_ty(
+        table,
+        field_name.span,
+        module,
+        field_ty,
+        &PartialTy::from(&field.ty),
+    )
+}
+
+fn unify_method_ty(
+    table: &mut Table,
+    hir: &Hir,
+    base_ty: &PartialTy,
+    base_span: Range<u32>,
+    method_ty: &PartialTy,
+    method_name: SpanIdent,
     module: ModuleId,
 ) -> Result<(), Error<ErrorKind>> {
     let base_ty = normalize_ty(table, base_ty);

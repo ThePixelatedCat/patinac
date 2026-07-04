@@ -166,3 +166,18 @@ fn assoc_items() {
 ";
     assert_matches!(crate::test_resolve_ast(input), Ok(_))
 }
+
+#[test]
+fn method() {
+    let input = "
+    record Vec2(x: Float, y: Float)
+    impl Vec2 {
+        fn dot(self, rhs: Vec2): Float = self.x * rhs.x + self.y * rhs.y
+        fn double(mut self): () = {
+            self.x = self.x * 2
+            self.y = self.y * 2
+        }
+    }
+";
+    assert_matches!(crate::test_resolve_ast(input), Ok(_))
+}

@@ -108,15 +108,17 @@ impl<'src> Parser<'src> {
     }
 
     /// Peeks one token. Ignores whitespace.
-    fn peek(&mut self) -> Result<TokKind> {
+    fn peek(&mut self) -> Result<Tok> {
         let tok = self
             .toks
             .peek()
             .copied()
-            .transpose()
-            .map_err(|span| self.err(ErrorKind::BadToken, span))?
-            .map_or(TokKind::Eof, |tok| tok.kind);
-        match tok {
+            .unwrap_or_else(|| {
+                let src_len = u32::try_from(self.src.len()).expect("file too long");
+                Ok(TokKind::Eof.span(src_len..src_len))
+            })
+            .map_err(|span| self.err(ErrorKind::BadToken, span))?;
+        match tok.kind {
             TokKind::Whitespace => {
                 // Skip the whitespace and retry.
                 self.peek()
@@ -131,7 +133,7 @@ impl<'src> Parser<'src> {
 
     /// Checks if the next token is of the given kind. Ignores whitespace.
     fn at(&mut self, tok: TokKind) -> bool {
-        self.peek().is_ok_and(|t| t == tok)
+        self.peek().is_ok_and(|t| t.kind == tok)
     }
 
     /// Checks if the next token is of the given kind. Respects whitespace.

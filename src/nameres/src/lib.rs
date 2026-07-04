@@ -7,13 +7,14 @@ mod scope;
 mod test;
 
 use foldhash::{HashMap, HashMapExt as _};
+use ident::Ident;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
     ast::{self, Ast, Binding, BlockItem, Pat, PatKind, Path, TyItem, TyItemKind, TyKind, VisItem},
-    hir::{self, Field, Hir, Param, TyInfo, VarId, VarInfo},
+    hir::{self, Field, Hir, Param, TyId, TyInfo, VarId, VarInfo},
 };
 
 use crate::{error::ErrorKind, scope::Scope};
@@ -69,7 +70,7 @@ impl ResolveInfo<'_, '_> {
 
         for block in &ast.block_items {
             match block {
-                BlockItem::Impl { ty_path, items, .. } => {
+                BlockItem::Impl { ty, items } => {
                     for item in items {
                         let mut path = ty_path.clone();
                         path.push(item.ident.ident);
@@ -134,7 +135,9 @@ impl ResolveInfo<'_, '_> {
             .flatten();
 
         for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) = self.resolve_exec_item(&mut scope, &exec.ident.ident.into(), exec) {
+            if let Ok(exec) =
+                self.resolve_exec_item(&mut scope, &exec.ident.ident.into(), exec, None)
+            {
                 if main_index.is_some_and(|main_index| main_index == index) {
                     self.hir.set_main(exec);
                 } else {
@@ -224,21 +227,17 @@ impl ResolveInfo<'_, '_> {
 
     fn resolve_block_item(&mut self, scope: &mut Scope, item: &BlockItem) {
         match item {
-            BlockItem::Impl {
-                ty_path,
-                ty_span,
-                items,
-            } => {
-                let Some(_) = scope.get_ty(ty_path) else {
+            BlockItem::Impl { ty, items } => {
+                let Some(ty) = scope.get_ty(ty_path) else {
                     self.handler
-                        .err(ErrorKind::UnknownType(ty_path.end()).span(*ty_span, scope.module()));
+                        .err(ErrorKind::UnknownType(ty_path.end()).span(ty.span, scope.module()));
                     return;
                 };
 
                 for item in items {
                     let mut path = ty_path.clone();
                     path.push(item.ident.ident);
-                    if let Ok(exec) = self.resolve_exec_item(scope, &path, item) {
+                    if let Ok(exec) = self.resolve_exec_item(scope, &path, item, Some(ty)) {
                         self.hir.add_exec(exec);
                     }
                 }
@@ -251,6 +250,7 @@ impl ResolveInfo<'_, '_> {
         scope: &mut Scope,
         path: &Path,
         item: &ast::ExecItem,
+        parent_ty: Option<TyId>,
     ) -> Result<hir::ExecItem> {
         let id = scope
             .get_var(path)
@@ -279,15 +279,33 @@ impl ResolveInfo<'_, '_> {
                     todo!("Generics")
                 }
 
-                if self_param.is_some() {
-                    todo!("Methods")
-                }
-
                 scope.push();
 
-                let params = params
-                    .iter()
-                    .map(|p| {
+                let self_param = self_param.map(|(mutable, span)| {
+                    let Some(ty) = parent_ty else {
+                        return Err(self
+                            .handler
+                            .err(ErrorKind::SelfOutsideImpl.span(span, scope.module())));
+                    };
+                    let id = self.resolve_pat(
+                        scope,
+                        &ast::PatKind::Ident(Ident::new("self")).span((span.end - 4)..span.end),
+                        mutable,
+                        Some(hir::Ty::Named(ty)),
+                    );
+                    Ok((
+                        id,
+                        Param {
+                            ty: hir::Ty::Named(ty),
+                            mutable,
+                            span,
+                        },
+                    ))
+                });
+
+                let params = self_param
+                    .into_iter()
+                    .chain(params.iter().map(|p| {
                         let ty = self.resolve_ty(scope, &p.ty)?;
                         let id = self.resolve_pat(scope, &p.pat, p.mutable, Some(ty.clone()));
                         Ok((
@@ -298,8 +316,9 @@ impl ResolveInfo<'_, '_> {
                                 span: p.span,
                             },
                         ))
-                    })
+                    }))
                     .try_collect_eager();
+
                 let body = self.resolve_expr(scope, body);
 
                 scope.pop();

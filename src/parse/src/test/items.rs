@@ -135,8 +135,7 @@ fn impls() {
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::BlockItem(BlockItem::Impl {
-            ty_path: Path::single(Ident::new("Foo")),
-            ty_span: Range::from(10..13),
+            ty: TyKind::named("Foo").span(10..13),
             items: vec![
                 ExecItem {
                     ident: Ident::new("bar").span(27..30),

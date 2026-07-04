@@ -19,6 +19,8 @@ pub enum ErrorKind {
     MissingField(PartialTy, Ident),
     #[display("ype {_0} does not have any fields")]
     NoFieldsType(PartialTy),
+    #[display("type `{_0}` does not have a method named `{_1}`")]
+    MissingMethod(PartialTy, Ident),
 }
 
 impl SpanError for ErrorKind {}

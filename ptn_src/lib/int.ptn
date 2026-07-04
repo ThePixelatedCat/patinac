@@ -2,6 +2,6 @@ export { MyInt }
 
 record MyInt(val: Int)
 impl MyInt {
-    const ZERO: MyInt = MyInt(0)
+    //const ZERO: MyInt = MyInt(0)
     fn add(lhs: MyInt, rhs: MyInt): MyInt = MyInt(lhs.val + rhs.val)
 }

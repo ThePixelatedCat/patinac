@@ -17,12 +17,12 @@ pub enum Item {
 
 impl Parser<'_> {
     pub(crate) fn item(&mut self) -> Result<Item> {
-        match self.peek()? {
+        match self.peek()?.kind {
             TokKind::Import => self.import_item().map(Item::from),
             TokKind::Export => self.export_item().map(Item::from),
             TokKind::Opaque => {
                 self.consume(TokKind::Opaque)?;
-                match self.peek()? {
+                match self.peek()?.kind {
                     TokKind::Record => self.record_item(true).map(Item::from),
                     TokKind::Union => self.union_item(true).map(Item::from),
                     _ => Err(self.err_next(ErrorKind::Unexpected, &["expected a record or union"])),
@@ -107,12 +107,12 @@ impl Parser<'_> {
     fn impl_item(&mut self) -> Result<BlockItem> {
         self.consume(TokKind::Impl)?;
 
-        let (ty_path, ty_span) = self.path()?;
+        let ty = self.ty()?;
 
         self.consume(TokKind::LBrace)?;
         let mut items = vec![];
         while self.consume_at(TokKind::RBrace).is_none() {
-            let item = match self.peek()? {
+            let item = match self.peek()?.kind {
                 TokKind::Const => self.const_item(),
                 TokKind::Fn => self.func_item(),
                 _ => {
@@ -122,11 +122,7 @@ impl Parser<'_> {
             items.push(item);
         }
 
-        Ok(BlockItem::Impl {
-            ty_path,
-            ty_span,
-            items,
-        })
+        Ok(BlockItem::Impl { ty, items })
     }
 
     fn const_item(&mut self) -> Result<ExecItem> {
@@ -157,7 +153,14 @@ impl Parser<'_> {
         while !self.at(TokKind::RParen) {
             let mut_tok = self.consume_at(TokKind::Mut);
 
-            if let Some(self_tok) = self.consume_at(TokKind::Self_) {
+            if self
+                .peek()
+                .is_ok_and(|tok| tok.kind == TokKind::Ident && self.src_of(tok) == "self")
+            {
+                let self_tok = self
+                    .next()
+                    .expect("should only enter this branch if the next token is okay");
+
                 if self_param.is_some() || !params.is_empty() {
                     return Err(self.err(ErrorKind::SelfNotFirst, self_tok.span));
                 }

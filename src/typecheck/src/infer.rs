@@ -27,25 +27,6 @@ impl TypeChecker<'_> {
                 PartialTy::Array(Box::new(inner_ty))
             }
             Expr::Tuple(exprs) => PartialTy::Tuple(self.infer_exprs(hir, module, exprs)),
-            Expr::Call { func, args } => {
-                let func_ty = self.infer_expr(hir, module, *func);
-                let arg_tys = args
-                    .iter()
-                    .map(|arg| Param {
-                        ty: self.infer_expr(hir, module, arg.value),
-                        mutable: arg.mutable,
-                        span: arg.span,
-                    })
-                    .collect();
-                let ret_ty = PartialTy::var(&mut self.table);
-                self.constrain_eq(
-                    func_ty,
-                    PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
-                    hir.expr_span(expr),
-                    module,
-                );
-                ret_ty
-            }
             &Expr::Infix { op, lhs, rhs } => {
                 let lhs_ty = self.infer_expr(hir, module, lhs);
                 let rhs_ty = self.infer_expr(hir, module, rhs);
@@ -123,6 +104,45 @@ impl TypeChecker<'_> {
                     module,
                 );
                 field_ty
+            }
+            Expr::Call { func, args } => {
+                let func_ty = self.infer_expr(hir, module, *func);
+                let arg_tys = args
+                    .iter()
+                    .map(|arg| Param {
+                        ty: self.infer_expr(hir, module, arg.value),
+                        mutable: arg.mutable,
+                        span: arg.span,
+                    })
+                    .collect();
+                let ret_ty = PartialTy::var(&mut self.table);
+                self.constrain_eq(
+                    func_ty,
+                    PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
+                    hir.expr_span(expr),
+                    module,
+                );
+                ret_ty
+            }
+            Expr::MethodCall { base, method, args } => {
+                let base_ty = self.infer_expr(hir, module, *base);
+                let arg_tys = args
+                    .iter()
+                    .map(|arg| Param {
+                        ty: self.infer_expr(hir, module, arg.value),
+                        mutable: arg.mutable,
+                        span: arg.span,
+                    })
+                    .collect();
+                let ret_ty = PartialTy::var(&mut self.table);
+                self.constrain_method(
+                    base_ty,
+                    hir.expr_span(*base),
+                    PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
+                    *method,
+                    module,
+                );
+                ret_ty
             }
             Expr::Lambda {
                 params,

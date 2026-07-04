@@ -36,6 +36,7 @@ struct TypeChecker<'handler> {
 enum Constraint {
     Eq(PartialTy, PartialTy, Range<u32>, ModuleId),
     Field(PartialTy, Range<u32>, PartialTy, SpanIdent, ModuleId),
+    Method(PartialTy, Range<u32>, PartialTy, SpanIdent, ModuleId),
 }
 
 /// Runs typechecking on the provided [`Hir`], reporting errors through the provided [`ErrorHandler`].
@@ -116,6 +117,23 @@ impl TypeChecker<'_> {
     ) {
         self.constraints.push(Constraint::Field(
             base_ty, base_span, field_ty, field_name, module,
+        ));
+    }
+
+    fn constrain_method(
+        &mut self,
+        base_ty: PartialTy,
+        base_span: Range<u32>,
+        method_ty: PartialTy,
+        method_name: SpanIdent,
+        module: ModuleId,
+    ) {
+        self.constraints.push(Constraint::Method(
+            base_ty,
+            base_span,
+            method_ty,
+            method_name,
+            module,
         ));
     }
 }

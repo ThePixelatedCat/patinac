@@ -3,7 +3,7 @@ use std::iter;
 use ident::Ident;
 use irs::{
     hir,
-    mir::{self, Item, ItemKind},
+    mir::{self, Expr::Print, Item, ItemKind},
 };
 
 use crate::LowerInfo;
@@ -59,6 +59,26 @@ impl LowerInfo<'_, '_> {
                         value: self.lower_expr(arg.value),
                         mutable: arg.mutable,
                     })
+                    .collect();
+                let ret_ty = self.lower_expr_ty(expr);
+                mir::Expr::Call { func, args, ret_ty }
+            }
+            hir::Expr::MethodCall { base, method, args } => {
+                let method = self.hir.methods[&method.ident];
+                let hir::Ty::Func(args, ret_ty) = self.hir.var_ty(method) else {
+                    unreachable!("")
+                }
+                let base = mir::Arg {
+                    ty: self.lower_expr_ty(*base),
+                    value: self.lower_expr(*base),
+                    mutable: self.hir.var_ty(method).,
+                };
+                let args = iter::once(base)
+                    .chain(args.iter().map(|arg| mir::Arg {
+                        ty: self.lower_expr_ty(arg.value),
+                        value: self.lower_expr(arg.value),
+                        mutable: arg.mutable,
+                    }))
                     .collect();
                 let ret_ty = self.lower_expr_ty(expr);
                 mir::Expr::Call { func, args, ret_ty }

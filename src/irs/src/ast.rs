@@ -162,10 +162,8 @@ pub struct Field {
 pub enum BlockItem {
     /// An `impl` block, associating it's nested items with a type.
     Impl {
-        /// The path to the type this impl block is associated with.
-        ty_path: Path,
-        /// The span of the type path.
-        ty_span: Range<u32>,
+        /// The type this impl block is associated with.
+        ty: Ty,
         /// The items within the block.
         items: Vec<ExecItem>,
     },
@@ -317,6 +315,15 @@ pub enum ExprKind {
     Call {
         /// The function being called.
         func: Box<Expr>,
+        /// The list of arguments being applied.
+        args: Vec<Arg>,
+    },
+    /// A method call.
+    MethodCall {
+        /// The base expression that the method is being called on.
+        base: Box<Expr>,
+        /// The name of the method being called.
+        method: SpanIdent,
         /// The list of arguments being applied.
         args: Vec<Arg>,
     },

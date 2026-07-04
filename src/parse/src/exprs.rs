@@ -8,7 +8,7 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn stmt(&mut self) -> Result<Stmt> {
-        match self.peek()? {
+        match self.peek()?.kind {
             TokKind::Let => {
                 let start = self.consume(TokKind::Let)?.span.start;
 
@@ -32,7 +32,7 @@ impl Parser<'_> {
     }
 
     fn expr_inner(&mut self, ref_binding_power: u8) -> Result<Expr> {
-        let mut lhs = match self.peek()? {
+        let mut lhs = match self.peek()?.kind {
             TokKind::Ident => self.var_expr(),
             TokKind::IntLit
             | TokKind::FloatLit
@@ -111,7 +111,7 @@ impl Parser<'_> {
             return self.get_op(lhs);
         }
 
-        let op = match self.peek()? {
+        let op = match self.peek()?.kind {
             // Attach suffix to current lhs and re-loop
             TokKind::Dot => {
                 let lhs = self.dot_suffixes(lhs)?;
@@ -369,16 +369,30 @@ impl Parser<'_> {
     fn dot_suffixes(&mut self, lhs: Expr) -> Result<Expr> {
         self.consume(TokKind::Dot)?;
 
-        match self.peek()? {
+        match self.peek()?.kind {
             TokKind::Ident => {
+                let start = lhs.span.start;
                 let field = self.ident()?;
 
-                let span = lhs.span.start..field.span.end;
-                Ok(ExprKind::Field {
-                    base: Box::new(lhs),
-                    field,
+                if self.at_ws(TokKind::LParen) {
+                    let start = lhs.span.start;
+
+                    let (args, Range { end, .. }) =
+                        self.delimited_list(Self::arg, TokKind::LParen, TokKind::RParen)?;
+
+                    Ok(ExprKind::MethodCall {
+                        base: Box::new(lhs),
+                        method: field,
+                        args,
+                    }
+                    .span(start..end))
+                } else {
+                    Ok(ExprKind::Field {
+                        base: Box::new(lhs),
+                        field,
+                    }
+                    .span(start..field.span.end))
                 }
-                .span(span))
             }
             TokKind::LBracket => {
                 self.consume(TokKind::LBracket)?;

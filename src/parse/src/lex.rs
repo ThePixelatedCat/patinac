@@ -218,10 +218,6 @@ pub enum TokKind {
     #[display("fn")]
     #[token("fn")]
     Fn,
-    /// `self`.
-    #[display("self")]
-    #[token("self")]
-    Self_,
     /// `if`.
     #[display("if")]
     #[token("if")]

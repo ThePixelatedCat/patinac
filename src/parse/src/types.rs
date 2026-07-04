@@ -6,7 +6,7 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn ty(&mut self) -> Result<Ty> {
-        match self.peek()? {
+        match self.peek()?.kind {
             TokKind::LBracket => {
                 let start = self.consume(TokKind::LBracket)?.span.start;
                 let inner_ty = Box::new(self.ty()?);

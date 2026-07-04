@@ -170,3 +170,26 @@ fn fields() {
 ";
     assert_matches!(check_full(input), Ok(()));
 }
+
+#[test]
+fn method() {
+    let input = "
+    record Vec2(x: Float, y: Float)
+    impl Vec2 {
+        fn dot(self, rhs: Vec2): Float = self.x * rhs.x + self.y * rhs.y
+        fn double(mut self): () = {
+            self.x = self.x * 2
+            self.y = self.y * 2
+        }
+    }
+
+    fn main(): () = {
+        let a = Vec2(1.0, 1.0)
+        let mut b = a
+        b.double()
+        Vec2::double(mut b)
+        print a.dot(b)
+    }
+";
+    assert_matches!(check_full(input), Ok(()))
+}

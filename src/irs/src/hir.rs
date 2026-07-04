@@ -19,6 +19,7 @@ pub struct Hir {
     exprs: SlotMap<ExprId, (Expr, Range<u32>)>,
     vars: SlotMap<VarId, VarInfo>,
     var_tys: SecondaryMap<VarId, Ty>,
+    methods: SecondaryMap<TyId, HashMap<Ident, VarId>>,
 }
 
 impl Hir {
@@ -63,6 +64,15 @@ impl Hir {
     /// See [`reserve_ty`][Self::reserve_ty] for more information.
     pub fn fulfill_ty(&mut self, id: TyId, info: TyInfo) {
         self.ty_info.insert(id, info);
+    }
+
+    /// Adds a method to an existing type.
+    ///
+    /// # Panics
+    /// Panics if the type has not been [`fulfilled`][Self::fulfill_ty].
+    pub fn add_method(&mut self, ty: TyId, method: VarId) {
+        let method_name = self.vars[method].ident.ident;
+        self.methods[ty].insert(method_name, method);
     }
 
     /// Returns the name of the given type.
@@ -241,6 +251,15 @@ pub enum Expr {
     Call {
         /// The function being called.
         func: ExprId,
+        /// The list of arguments being applied.
+        args: Vec<Arg>,
+    },
+    /// A method call.
+    MethodCall {
+        /// The base expression that the method is being called on.
+        base: ExprId,
+        /// The name of the method being called.
+        method: SpanIdent,
         /// The list of arguments being applied.
         args: Vec<Arg>,
     },
