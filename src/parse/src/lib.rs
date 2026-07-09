@@ -25,7 +25,7 @@ use irs::{
 use crate::{
     error::ErrorKind,
     items::Item,
-    lex::{Lexer, Tok, TokKind},
+    lex::{Tok, TokKind},
 };
 
 /// Manages the state needing for parsing.
@@ -33,9 +33,10 @@ use crate::{
 /// Construct with [`Parser::new()`], then produce an [`Ast`] (or errors) with [`Parser::parse()`].
 pub struct Parser<'src> {
     module: ModuleId,
-    src: &'src str,
-    toks: Lexer<'src>,
     handler: ErrorHandler<'src>,
+    src: &'src str,
+    toks: Vec<Result<Tok, Range<u32>>>,
+    pos: usize,
 }
 
 impl<'src> Parser<'src> {
@@ -43,9 +44,10 @@ impl<'src> Parser<'src> {
     pub fn new(module: ModuleId, src: &'src str, handler: ErrorHandler<'src>) -> Self {
         Self {
             module,
+            handler,
             src,
             toks: lex::lex(src),
-            handler,
+            pos: 0,
         }
     }
 
@@ -57,7 +59,7 @@ impl<'src> Parser<'src> {
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
-        while !self.at(TokKind::Eof) {
+        while self.pos < self.toks.len() {
             match self.item() {
                 Ok(Item::VisItem(item)) => ast.vis_items.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
@@ -94,41 +96,34 @@ impl<'src> Parser<'src> {
 
     /// Consumes the next token. Ignores whitespace.
     fn next(&mut self) -> Result<Tok> {
-        self.toks
-            .next()
-            .unwrap_or_else(|| {
-                let src_len = u32::try_from(self.src.len()).expect("file too long");
-                Ok(TokKind::Eof.span(src_len..src_len))
-            })
-            .map_err(|span| self.err(ErrorKind::BadToken, span))
-            .and_then(|tok| match tok.kind {
+        self.peek_ws().and_then(|tok| {
+            self.pos += 1;
+            match tok.kind {
                 TokKind::Whitespace => self.next(),
                 _ => Ok(tok),
-            })
+            }
+        })
     }
 
-    /// Peeks one token. Ignores whitespace.
+    /// Peeks the current token. Ignores whitespace.
     fn peek(&mut self) -> Result<Tok> {
-        let tok = self
-            .toks
-            .peek()
+        // Next handles the actual logic, we just reset our position after it's done.
+        let pos = self.pos;
+        let tok = self.next();
+        self.pos = pos;
+        tok
+    }
+
+    // Peeks the current token. Respects whitespace.
+    fn peek_ws(&mut self) -> Result<Tok> {
+        self.toks
+            .get(self.pos)
             .copied()
-            .unwrap_or_else(|| {
+            .ok_or_else(|| {
                 let src_len = u32::try_from(self.src.len()).expect("file too long");
-                Ok(TokKind::Eof.span(src_len..src_len))
-            })
-            .map_err(|span| self.err(ErrorKind::BadToken, span))?;
-        match tok.kind {
-            TokKind::Whitespace => {
-                // Skip the whitespace and retry.
-                self.peek()
-            }
-            _ => {
-                // Reset the repeated peeking.
-                self.toks.reset_peek();
-                Ok(tok)
-            }
-        }
+                self.err(ErrorKind::Eof, src_len..src_len)
+            })?
+            .map_err(|span| self.err(ErrorKind::BadToken, span))
     }
 
     /// Checks if the next token is of the given kind. Ignores whitespace.
@@ -138,21 +133,7 @@ impl<'src> Parser<'src> {
 
     /// Checks if the next token is of the given kind. Respects whitespace.
     fn at_ws(&mut self, tok: TokKind) -> bool {
-        let result = self
-            .toks
-            .peek()
-            .copied()
-            .transpose()
-            .map(|opt_tok| opt_tok.map_or(TokKind::Eof, |tok| tok.kind))
-            .map_or_else(
-                |span| {
-                    self.err(ErrorKind::BadToken, span);
-                    false
-                },
-                |t| t == tok,
-            );
-        self.toks.reset_peek();
-        result
+        self.peek_ws().is_ok_and(|t| t.kind == tok)
     }
 
     /// Consumes the next token and checks that it was the expected kind. Ignores whitespace.
@@ -173,8 +154,10 @@ impl<'src> Parser<'src> {
     }
 
     fn consume_at(&mut self, token: TokKind) -> Option<Tok> {
-        self.at(token)
-            .then(|| self.next().expect("known to be at a valid token"))
+        self.at(token).then(|| {
+            self.next()
+                .expect("known to be at a valid token because `at` returned true")
+        })
     }
 
     fn err(&mut self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {

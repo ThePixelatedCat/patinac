@@ -1,23 +1,21 @@
 use std::range::Range;
 
 use derive_more::Display;
-use itertools::MultiPeek;
 use logos::Logos;
 
-pub type Lexer<'src> = MultiPeek<Box<dyn Iterator<Item = Result<Tok, Range<u32>>> + 'src>>;
-
 /// Produces an iterator over tokens extracted from the source.
-pub fn lex(src: &str) -> Lexer<'_> {
-    let iter = TokKind::lexer(src).spanned().map(|(tok, span)| {
-        let span = u32::try_from(span.start).expect("file too long")
-            ..u32::try_from(span.end).expect("file too long");
-        match tok {
-            Ok(tok) => Ok(tok.span(span)),
-            Err(()) => Err(Range::from(span)),
-        }
-    });
-    let boxed_iter: Box<dyn Iterator<Item = _>> = Box::new(iter);
-    itertools::multipeek(boxed_iter)
+pub fn lex(src: &str) -> Vec<Result<Tok, Range<u32>>> {
+    TokKind::lexer(src)
+        .spanned()
+        .map(|(tok, span)| {
+            let span = u32::try_from(span.start).expect("file too long")
+                ..u32::try_from(span.end).expect("file too long");
+            match tok {
+                Ok(tok) => Ok(tok.span(span)),
+                Err(()) => Err(Range::from(span)),
+            }
+        })
+        .collect()
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -275,9 +273,6 @@ pub enum TokKind {
     /// whitespace.
     #[regex(r"\p{Pattern_White_Space}+")]
     Whitespace,
-    /// end-of-file.
-    #[cfg_attr(test, proptest(skip))]
-    Eof,
 }
 
 impl TokKind {

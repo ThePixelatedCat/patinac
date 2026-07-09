@@ -6,24 +6,27 @@ mod scope;
 #[cfg(test)]
 mod test;
 
+use std::range::Range;
+
 use foldhash::{HashMap, HashMapExt as _};
 use ident::Ident;
 use slotmap::SecondaryMap;
 
-use errors::{ErrorHandler, Result, SpanError as _, TryCollectEager as _};
+use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
     ast::{self, Ast, Binding, BlockItem, Pat, PatKind, Path, TyItem, TyItemKind, TyKind, VisItem},
     hir::{self, Field, Hir, Param, TyId, TyInfo, VarId, VarInfo},
 };
 
-use crate::{error::ErrorKind, scope::Scope};
+use crate::{error::ErrorKind, scope::ScopeInfo};
 
 struct ResolveInfo<'pkg, 'err> {
     package: &'pkg Package,
     asts: &'pkg SecondaryMap<ModuleId, Ast>,
     handler: ErrorHandler<'err>,
     hir: Hir,
+    scopes: ScopeInfo,
 }
 
 /// Resolves and lowers the provided [`Package`] into a single [`Hir`].
@@ -40,32 +43,31 @@ pub fn resolve(
         asts,
         handler,
         hir: Hir::default(),
+        scopes: ScopeInfo::new(package),
     };
-    let mut package_scope = Scope::new(info.package.root());
-    info.resolve_module(info.package.root(), &mut package_scope, true);
+    info.resolve_module(package.root(), true);
     info.handler.checked(info.hir)
 }
 
 impl ResolveInfo<'_, '_> {
-    fn resolve_module(&mut self, module: ModuleId, parent_scope: &mut Scope, is_root: bool) {
-        let mut scope = Scope::new(module);
+    fn resolve_module(&mut self, module: ModuleId, is_root: bool) {
+        self.scopes.set_module(module);
 
         for &child in &self.package.get(module).children {
             scope.add_path(&self.package.get(child).name.into());
-            self.resolve_module(child, &mut scope, false);
+            self.resolve_module(child, false);
         }
         let ast = &self.asts[module];
 
         for ty in &ast.ty_items {
             let id = self.hir.reserve_ty(ty.ident);
-            if scope.add_ty(&ty.ident.ident.into(), id).is_some() {
-                self.handler
-                    .err(ErrorKind::DupItem(ty.ident.ident).span(ty.ident.span, scope.module()));
+            if self.scopes.add_ty(ty.ident.ident, id).is_some() {
+                self.err(ErrorKind::DupItem(ty.ident.ident), ty.ident.span);
             }
         }
 
         for ty in &ast.ty_items {
-            self.resolve_ty_item(&mut scope, ty);
+            self.resolve_ty_item(ty);
         }
 
         for block in &ast.block_items {
@@ -79,13 +81,10 @@ impl ResolveInfo<'_, '_> {
                             ident: item.ident,
                             mutable: false,
                             global: true,
-                            module: scope.module(),
+                            module: self.scopes.module(),
                         });
-                        if scope.add_var(&path, id).is_some() {
-                            self.handler.err(
-                                ErrorKind::DupItem(item.ident.ident)
-                                    .span(item.ident.span, scope.module()),
-                            );
+                        if self.scopes.add_var(&path, id).is_some() {
+                            self.err(ErrorKind::DupItem(item.ident.ident), item.ident.span);
                         }
                     }
                 }
@@ -97,12 +96,10 @@ impl ResolveInfo<'_, '_> {
                 ident: exec.ident,
                 mutable: false,
                 global: true,
-                module: scope.module(),
+                module: self.scopes.module(),
             });
-            if scope.add_var(&exec.ident.ident.into(), id).is_some() {
-                self.handler.err(
-                    ErrorKind::DupItem(exec.ident.ident).span(exec.ident.span, scope.module()),
-                );
+            if self.scopes.add_var(exec.ident.ident, id).is_some() {
+                self.err(ErrorKind::DupItem(exec.ident.ident), exec.ident.span);
             }
         }
 
@@ -127,17 +124,15 @@ impl ResolveInfo<'_, '_> {
         }
 
         for block in &ast.block_items {
-            self.resolve_block_item(&mut scope, block);
+            self.resolve_block_item(block);
         }
 
         let main_index = is_root
-            .then(|| self.find_main(scope.module(), &ast.exec_items).ok()?)
+            .then(|| self.find_main(&ast.exec_items).ok()?)
             .flatten();
 
         for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) =
-                self.resolve_exec_item(&mut scope, &exec.ident.ident.into(), exec, None)
-            {
+            if let Ok(exec) = self.resolve_exec_item(&exec.ident.ident.into(), exec, None) {
                 if main_index.is_some_and(|main_index| main_index == index) {
                     self.hir.set_main(exec);
                 } else {
@@ -147,7 +142,7 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn find_main(&mut self, module: ModuleId, execs: &[ast::ExecItem]) -> Result<Option<usize>> {
+    fn find_main(&mut self, execs: &[ast::ExecItem]) -> Result<Option<usize>> {
         for (idx, item) in execs.iter().enumerate() {
             if let ast::ExecKind::Func { params, ret_ty, .. } = &item.kind
                 && item.ident.ident == "main"
@@ -155,9 +150,7 @@ impl ResolveInfo<'_, '_> {
                 return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
                     Ok(Some(idx))
                 } else {
-                    Err(self
-                        .handler
-                        .err(ErrorKind::InvalidMain.span(item.ident.span, module)))
+                    Err(self.err(ErrorKind::InvalidMain, item.ident.span))
                 };
             }
         }
@@ -165,9 +158,10 @@ impl ResolveInfo<'_, '_> {
         Ok(None)
     }
 
-    fn resolve_ty_item(&mut self, scope: &mut Scope, item: &TyItem) {
-        let id = scope
-            .get_ty(&item.ident.ident.into())
+    fn resolve_ty_item(&mut self, item: &TyItem) {
+        let id = self
+            .scopes
+            .resolve_ty(&item.ident.ident.into())
             .expect("all items should have already been inserted into the scope");
 
         if !item.generics.is_empty() {
@@ -182,7 +176,7 @@ impl ResolveInfo<'_, '_> {
             TyItemKind::Record(old_fields) => {
                 let mut fields = HashMap::new();
                 for old_field in old_fields {
-                    let Ok(ty) = self.resolve_ty(scope, &old_field.ty) else {
+                    let Ok(ty) = self.resolve_ty(&old_field.ty) else {
                         continue;
                     };
                     let field = Field {
@@ -190,10 +184,7 @@ impl ResolveInfo<'_, '_> {
                         ty,
                     };
                     if fields.insert(old_field.ident.ident, field).is_some() {
-                        self.handler.err(
-                            ErrorKind::DupFields(old_field.ident.ident)
-                                .span(item.ident.span, scope.module()),
-                        );
+                        self.err(ErrorKind::DupFields(old_field.ident.ident), item.ident.span);
                     }
                 }
 
@@ -212,10 +203,10 @@ impl ResolveInfo<'_, '_> {
                     ident: item.ident,
                     mutable: false,
                     global: true,
-                    module: scope.module(),
+                    module: self.scopes.module(),
                 });
                 self.hir.add_var_ty(ctor, constructor_ty);
-                scope.add_var(&item.ident.ident.into(), ctor);
+                self.scopes.add_var(item.ident.ident, ctor);
 
                 self.hir.fulfill_ty(id, TyInfo { fields, ctor });
             }
@@ -225,45 +216,43 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn resolve_block_item(&mut self, scope: &mut Scope, item: &BlockItem) {
+    fn resolve_block_item(&mut self, item: &BlockItem) -> Result<()> {
         match item {
             BlockItem::Impl { ty, items } => {
-                let Some(ty) = scope.get_ty(ty_path) else {
-                    self.handler
-                        .err(ErrorKind::UnknownType(ty_path.end()).span(ty.span, scope.module()));
-                    return;
-                };
+                let ty = self.resolve_ty(ty)?;
 
                 for item in items {
                     let mut path = ty_path.clone();
                     path.push(item.ident.ident);
-                    if let Ok(exec) = self.resolve_exec_item(scope, &path, item, Some(ty)) {
+                    if let Ok(exec) = self.resolve_exec_item(&path, item, Some(&ty)) {
                         self.hir.add_exec(exec);
                     }
                 }
+
+                Ok(())
             }
         }
     }
 
     fn resolve_exec_item(
         &mut self,
-        scope: &mut Scope,
         path: &Path,
         item: &ast::ExecItem,
-        parent_ty: Option<TyId>,
+        parent_ty: Option<&hir::Ty>,
     ) -> Result<hir::ExecItem> {
-        let id = scope
-            .get_var(path)
+        let id = self
+            .scopes
+            .resolve_var(path)
             .expect("all items should have already been inserted into the scope");
 
         match &item.kind {
             ast::ExecKind::Const { ty, val } => {
-                let val = self.resolve_expr(scope, val);
-                let ty = self.resolve_ty(scope, ty)?;
+                let val = self.resolve_expr(val);
+                let ty = self.resolve_ty(ty)?;
                 self.hir.add_var_ty(id, ty);
 
                 Ok(hir::ExecItem {
-                    module: scope.module(),
+                    module: self.scopes.module(),
                     var: id,
                     kind: hir::ExecKind::Const(val?),
                 })
@@ -279,16 +268,13 @@ impl ResolveInfo<'_, '_> {
                     todo!("Generics")
                 }
 
-                scope.push();
+                self.scopes.push_ty_scope();
 
                 let self_param = self_param.map(|(mutable, span)| {
                     let Some(ty) = parent_ty else {
-                        return Err(self
-                            .handler
-                            .err(ErrorKind::SelfOutsideImpl.span(span, scope.module())));
+                        return Err(self.err(ErrorKind::SelfOutsideImpl, span));
                     };
                     let id = self.resolve_pat(
-                        scope,
                         &ast::PatKind::Ident(Ident::new("self")).span((span.end - 4)..span.end),
                         mutable,
                         Some(hir::Ty::Named(ty)),
@@ -306,8 +292,8 @@ impl ResolveInfo<'_, '_> {
                 let params = self_param
                     .into_iter()
                     .chain(params.iter().map(|p| {
-                        let ty = self.resolve_ty(scope, &p.ty)?;
-                        let id = self.resolve_pat(scope, &p.pat, p.mutable, Some(ty.clone()));
+                        let ty = self.resolve_ty(&p.ty)?;
+                        let id = self.resolve_pat(&p.pat, p.mutable, Some(ty.clone()));
                         Ok((
                             id,
                             Param {
@@ -319,18 +305,18 @@ impl ResolveInfo<'_, '_> {
                     }))
                     .try_collect_eager();
 
-                let body = self.resolve_expr(scope, body);
+                let body = self.resolve_expr(body);
 
-                scope.pop();
+                self.scopes.pop_var_scope();
 
-                let ret_ty = self.resolve_ty(scope, ret_ty)?;
+                let ret_ty = self.resolve_ty(ret_ty)?;
                 let (params, param_tys) = params?;
 
                 self.hir
                     .add_var_ty(id, hir::Ty::Func(param_tys, Box::new(ret_ty)));
 
                 Ok(hir::ExecItem {
-                    module: scope.module(),
+                    module: self.scopes.module(),
                     var: id,
                     kind: hir::ExecKind::Func {
                         params,
@@ -341,36 +327,36 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn resolve_binding(&mut self, scope: &mut Scope, binding: &Binding) -> Result<VarId> {
+    fn resolve_binding(&mut self, binding: &Binding) -> Result<VarId> {
         let ty = binding
             .ty
             .as_ref()
-            .map(|ty| self.resolve_ty(scope, ty))
+            .map(|ty| self.resolve_ty(ty))
             .transpose()?;
-        Ok(self.resolve_pat(scope, &binding.pat, binding.mutable, ty))
+        Ok(self.resolve_pat(&binding.pat, binding.mutable, ty))
     }
 
-    fn resolve_ty(&mut self, scope: &Scope, ty: &ast::Ty) -> Result<hir::Ty> {
+    fn resolve_ty(&mut self, ty: &ast::Ty) -> Result<hir::Ty> {
         match &ty.kind {
             TyKind::Int => Ok(hir::Ty::Int),
             TyKind::UInt => Ok(hir::Ty::UInt),
             TyKind::Byte => Ok(hir::Ty::Byte),
             TyKind::Float => Ok(hir::Ty::Float),
             TyKind::Bool => Ok(hir::Ty::Bool),
-            TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(self.resolve_ty(scope, ty)?))),
-            TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(self.resolve_tys(scope, tys)?)),
+            TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(self.resolve_ty(ty)?))),
+            TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(self.resolve_tys(tys)?)),
             TyKind::Func(params, ret_ty) => {
                 let params = params
                     .iter()
                     .map(|param| {
                         Ok(Param {
-                            ty: self.resolve_ty(scope, &param.ty)?,
+                            ty: self.resolve_ty(&param.ty)?,
                             mutable: param.mutable,
                             span: param.span,
                         })
                     })
                     .try_collect_eager();
-                let ret_ty = Box::new(self.resolve_ty(scope, ret_ty)?);
+                let ret_ty = Box::new(self.resolve_ty(ret_ty)?);
                 Ok(hir::Ty::Func(params?, ret_ty))
             }
             TyKind::Named(path, args) => {
@@ -378,59 +364,55 @@ impl ResolveInfo<'_, '_> {
                     todo!("Generics")
                 }
 
-                match scope.get_ty(path) {
+                match self.scopes.resolve_ty(path) {
                     Some(id) => Ok(hir::Ty::Named(id)),
-                    None => Err(self
-                        .handler
-                        .err(ErrorKind::UnknownType(path.end()).span(ty.span, scope.module()))),
+                    None => Err(self.err(ErrorKind::UnknownType(path.end()), ty.span)),
                 }
             }
         }
     }
 
-    fn resolve_tys(&mut self, scope: &Scope, tys: &[ast::Ty]) -> Result<Vec<hir::Ty>> {
-        tys.iter()
-            .map(|ty| self.resolve_ty(scope, ty))
-            .try_collect_eager()
+    fn resolve_tys(&mut self, tys: &[ast::Ty]) -> Result<Vec<hir::Ty>> {
+        tys.iter().map(|ty| self.resolve_ty(ty)).try_collect_eager()
     }
 
-    fn resolve_pat(
-        &mut self,
-        scope: &mut Scope,
-        pat: &Pat,
-        mutable: bool,
-        ty: Option<hir::Ty>,
-    ) -> VarId {
+    fn resolve_pat(&mut self, pat: &Pat, mutable: bool, ty: Option<hir::Ty>) -> VarId {
         match pat.kind {
             PatKind::Ident(ident) => {
                 let id = self.hir.add_var(VarInfo {
                     ident: ident.span(pat.span),
                     mutable,
                     global: false,
-                    module: scope.module(),
+                    module: self.scopes.module(),
                 });
                 if let Some(ty) = ty {
                     self.hir.add_var_ty(id, ty);
                 }
-                scope.add_var(&ident.into(), id);
+                self.scopes.add_var(ident, id);
                 id
             }
             _ => todo!("Pattern Matching"),
         }
+    }
+
+    fn err(&mut self, error: ErrorKind, span: Range<u32>) -> HandledError {
+        self.handler.err(error.span(span, self.scopes.module()))
     }
 }
 
 #[cfg(any(test, feature = "test"))]
 #[allow(clippy::unwrap_used, reason = "test utility")]
 pub fn test_resolve_expr(input: &str) -> Result<(hir::ExprId, Hir)> {
+    let package = &Package::default();
     let mut info = ResolveInfo {
-        package: &Package::default(),
+        package,
         asts: &SecondaryMap::default(),
         handler: ErrorHandler::TEST,
         hir: Hir::default(),
+        scopes: ScopeInfo::new(package),
     };
     let expr = parse::Parser::parse_expr(input).unwrap();
-    let expr = info.resolve_expr(&mut Scope::new(ModuleId::default()), &expr)?;
+    let expr = info.resolve_expr(&expr)?;
     Ok((expr, info.hir))
 }
 
@@ -456,7 +438,8 @@ pub fn test_resolve_ast(src: &str) -> Result<Hir> {
         asts: &asts,
         handler: ErrorHandler::TEST,
         hir: Hir::default(),
+        scopes: ScopeInfo::new(&package),
     };
-    info.resolve_module(package.root(), &mut Scope::new(ModuleId::default()), true);
+    info.resolve_module(package.root(), true);
     info.handler.checked(info.hir)
 }
