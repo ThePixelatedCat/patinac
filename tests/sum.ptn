@@ -1,0 +1,5 @@
+fn sum(n: Int, m: Int): Int = {
+    let mut foo = n
+    foo = foo + 1
+    foo + {m - 1}
+}

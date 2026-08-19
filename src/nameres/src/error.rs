@@ -9,10 +9,14 @@ use ident::Ident;
 pub enum ErrorKind {
     #[display("unresolved item `{_0}`")]
     UnknownItem(Ident),
+    #[display("unresolved module `{_0}`")]
+    UnknownModule(Ident),
     #[display("unresolved type `{_0}`")]
     UnknownType(Ident),
     #[display("unresolved variable `{_0}`")]
     UnknownVar(Ident),
+    #[display("item `{_0}` is not visible")]
+    PrivateItem(Ident),
     #[display("cannot mutate this immutable value")]
     Mutation,
     #[display("expected this to be a mutable place")]

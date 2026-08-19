@@ -1,6 +1,6 @@
 //! Error-handling utilities.
 
-use std::{range::Range, result};
+use std::{cell::Cell, range::Range, result};
 
 use derive_more::{Display, Error};
 use smol_str::SmolStr;
@@ -119,13 +119,16 @@ pub type HandlerCallback<'cb> = &'cb dyn Fn(&str, Range<u32>, ModuleId, Diagnost
 #[derive(Clone)]
 pub struct ErrorHandler<'cb> {
     f: HandlerCallback<'cb>,
-    has_err: bool,
+    has_err: Cell<bool>,
 }
 
 impl<'callback> ErrorHandler<'callback> {
     /// Constructs a new `ErrorHandler` with the provided reporting callback.
     pub const fn new(f: HandlerCallback<'callback>) -> Self {
-        Self { f, has_err: false }
+        Self {
+            f,
+            has_err: Cell::new(false),
+        }
     }
 
     /// Reports the provided error and produces a [`HandledError`] for the caller to use.
@@ -133,8 +136,8 @@ impl<'callback> ErrorHandler<'callback> {
         clippy::needless_pass_by_value,
         reason = "Semantically useful to enforce that an error can only be reported once"
     )]
-    pub fn err<E: ToString>(&mut self, error: Error<E>) -> HandledError {
-        self.has_err = true;
+    pub fn err<E: ToString>(&self, error: Error<E>) -> HandledError {
+        self.has_err.set(true);
         (self.f)(
             &error.msg(),
             error.span(),
@@ -154,7 +157,7 @@ impl<'callback> ErrorHandler<'callback> {
     /// # Errors
     /// [`HandledError`] if this handler has reported any errors.
     pub fn checked<T>(&self, val: T) -> Result<T> {
-        if self.has_err {
+        if self.has_err.get() {
             Err(HandledError)
         } else {
             Ok(val)

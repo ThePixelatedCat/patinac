@@ -3,13 +3,13 @@ use std::range::Range;
 use derive_more::From;
 
 use ident::SpanIdent;
-use irs::ast::{BlockItem, ExecItem, ExecKind, Field, Param, TyItem, TyItemKind, Variant, VisItem};
+use irs::ast::{BlockItem, ExecItem, ExecKind, Field, Import, Param, TyItem, TyItemKind, Variant};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
 #[derive(Debug, PartialEq, From)]
 pub enum Item {
-    VisItem(VisItem),
+    Import(Import),
     TyItem(TyItem),
     BlockItem(BlockItem),
     ExecItem(ExecItem),
@@ -19,7 +19,6 @@ impl Parser<'_> {
     pub(crate) fn item(&mut self) -> Result<Item> {
         match self.peek()?.kind {
             TokKind::Import => self.import_item().map(Item::from),
-            TokKind::Export => self.export_item().map(Item::from),
             TokKind::Opaque => {
                 self.consume(TokKind::Opaque)?;
                 match self.peek()?.kind {
@@ -33,20 +32,17 @@ impl Parser<'_> {
             TokKind::Impl => self.impl_item().map(Item::from),
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
-            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
+            _ => {
+                eprintln!("Item");
+                Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"]))
+            }
         }
     }
 
-    fn import_item(&mut self) -> Result<VisItem> {
+    fn import_item(&mut self) -> Result<Import> {
         self.consume(TokKind::Import)?;
         let (path, span) = self.path()?;
-        Ok(VisItem::Import(path, span))
-    }
-
-    fn export_item(&mut self) -> Result<VisItem> {
-        self.consume(TokKind::Export)?;
-        let (idents, _) = self.delimited_list(Self::ident, TokKind::LBrace, TokKind::RBrace)?;
-        Ok(VisItem::Export(idents))
+        Ok(Import(path, span))
     }
 
     fn record_item(&mut self, opaque: bool) -> Result<TyItem> {

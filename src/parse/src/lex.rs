@@ -188,10 +188,6 @@ pub enum TokKind {
     #[display("import")]
     #[token("import")]
     Import,
-    /// `export`.
-    #[display("export")]
-    #[token("export")]
-    Export,
     /// `opaque`.
     #[display("opaque")]
     #[token("opaque")]
@@ -273,6 +269,9 @@ pub enum TokKind {
     /// whitespace.
     #[regex(r"\p{Pattern_White_Space}+")]
     Whitespace,
+    /// end-of-file.
+    #[cfg_attr(test, proptest(skip))]
+    Eof,
 }
 
 impl TokKind {

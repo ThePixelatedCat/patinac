@@ -64,24 +64,25 @@ impl LowerInfo<'_, '_> {
                 mir::Expr::Call { func, args, ret_ty }
             }
             hir::Expr::MethodCall { base, method, args } => {
-                let method = self.hir.methods[&method.ident];
-                let hir::Ty::Func(args, ret_ty) = self.hir.var_ty(method) else {
-                    unreachable!("")
-                }
-                let base = mir::Arg {
-                    ty: self.lower_expr_ty(*base),
-                    value: self.lower_expr(*base),
-                    mutable: self.hir.var_ty(method).,
-                };
-                let args = iter::once(base)
-                    .chain(args.iter().map(|arg| mir::Arg {
-                        ty: self.lower_expr_ty(arg.value),
-                        value: self.lower_expr(arg.value),
-                        mutable: arg.mutable,
-                    }))
-                    .collect();
-                let ret_ty = self.lower_expr_ty(expr);
-                mir::Expr::Call { func, args, ret_ty }
+                todo!("Method Lowering")
+                // let method = self.hir.methods[&method.ident];
+                // let hir::Ty::Func(args, ret_ty) = self.hir.var_ty(method) else {
+                //     unreachable!("")
+                // }
+                // let base = mir::Arg {
+                //     ty: self.lower_expr_ty(*base),
+                //     value: self.lower_expr(*base),
+                //     mutable: self.hir.var_ty(method).,
+                // };
+                // let args = iter::once(base)
+                //     .chain(args.iter().map(|arg| mir::Arg {
+                //         ty: self.lower_expr_ty(arg.value),
+                //         value: self.lower_expr(arg.value),
+                //         mutable: arg.mutable,
+                //     }))
+                //     .collect();
+                // let ret_ty = self.lower_expr_ty(expr);
+                // mir::Expr::Call { func, args, ret_ty }
             }
             hir::Expr::Lambda {
                 params,

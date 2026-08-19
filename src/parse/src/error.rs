@@ -8,8 +8,6 @@ use crate::TokKind;
 pub enum ErrorKind {
     #[display("invalid token")]
     BadToken,
-    #[display("unexpectedly reached end of file")]
-    Eof,
     #[display("unexpected token {_0}")]
     Unexpected(TokKind),
     #[display("expected {expected}, found {found}")]

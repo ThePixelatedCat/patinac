@@ -14,8 +14,8 @@ use ident::{Ident, SpanIdent};
 /// For easier manipulation, these items are split into [ type definitions][TyItem] and "[executable items][ExecItem]" (items containing expressions).
 #[derive(Default)]
 pub struct Ast {
-    /// The `import`s and `export`s of a module.
-    pub vis_items: Vec<VisItem>,
+    /// The `import`s of a module.
+    pub imports: Vec<Import>,
     /// The type definitions of a module, containing both `union` and `record` definitions.
     pub ty_items: Vec<TyItem>,
     /// The block items of a module, with each block containing other nested item. This includes `impl` blocks.
@@ -108,14 +108,9 @@ impl From<Ident> for Path {
     }
 }
 
-/// An `import` or `export`.
+/// An `import` item, abbreviating the path required to refer to an item.
 #[derive(Debug, PartialEq, Eq)]
-pub enum VisItem {
-    /// An `import` item, abbreviating the path required to refer to an item.
-    Import(Path, Range<u32>),
-    /// An `export` item, exposing the listed local items to the parent module.
-    Export(Vec<SpanIdent>),
-}
+pub struct Import(pub Path, pub Range<u32>);
 
 /// The definition of a type, either a `record` or a `union`.
 #[derive(Debug, PartialEq, Eq)]

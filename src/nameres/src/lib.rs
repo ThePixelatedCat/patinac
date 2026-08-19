@@ -15,18 +15,21 @@ use slotmap::SecondaryMap;
 use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
-    ast::{self, Ast, Binding, BlockItem, Pat, PatKind, Path, TyItem, TyItemKind, TyKind, VisItem},
+    ast::{self, Ast, Binding, BlockItem, Import, Pat, PatKind, Path, TyItem, TyItemKind, TyKind},
     hir::{self, Field, Hir, Param, TyId, TyInfo, VarId, VarInfo},
 };
 
-use crate::{error::ErrorKind, scope::ScopeInfo};
+use crate::{
+    error::ErrorKind,
+    scope::{ScopeInfo, Visibility},
+};
 
 struct ResolveInfo<'pkg, 'err> {
     package: &'pkg Package,
     asts: &'pkg SecondaryMap<ModuleId, Ast>,
     handler: ErrorHandler<'err>,
     hir: Hir,
-    scopes: ScopeInfo,
+    scopes: ScopeInfo<'pkg>,
 }
 
 /// Resolves and lowers the provided [`Package`] into a single [`Hir`].
@@ -54,14 +57,18 @@ impl ResolveInfo<'_, '_> {
         self.scopes.set_module(module);
 
         for &child in &self.package.get(module).children {
-            scope.add_path(&self.package.get(child).name.into());
             self.resolve_module(child, false);
         }
+
         let ast = &self.asts[module];
 
         for ty in &ast.ty_items {
             let id = self.hir.reserve_ty(ty.ident);
-            if self.scopes.add_ty(ty.ident.ident, id).is_some() {
+            if self
+                .scopes
+                .add_ty(Visibility::Public, ty.ident.ident, id)
+                .is_some()
+            {
                 self.err(ErrorKind::DupItem(ty.ident.ident), ty.ident.span);
             }
         }
@@ -73,20 +80,7 @@ impl ResolveInfo<'_, '_> {
         for block in &ast.block_items {
             match block {
                 BlockItem::Impl { ty, items } => {
-                    for item in items {
-                        let mut path = ty_path.clone();
-                        path.push(item.ident.ident);
-
-                        let id = self.hir.add_var(VarInfo {
-                            ident: item.ident,
-                            mutable: false,
-                            global: true,
-                            module: self.scopes.module(),
-                        });
-                        if self.scopes.add_var(&path, id).is_some() {
-                            self.err(ErrorKind::DupItem(item.ident.ident), item.ident.span);
-                        }
-                    }
+                    todo!()
                 }
             }
         }
@@ -98,28 +92,18 @@ impl ResolveInfo<'_, '_> {
                 global: true,
                 module: self.scopes.module(),
             });
-            if self.scopes.add_var(exec.ident.ident, id).is_some() {
+            if self
+                .scopes
+                .add_def(Visibility::Public, exec.ident.ident, id)
+                .is_some()
+            {
                 self.err(ErrorKind::DupItem(exec.ident.ident), exec.ident.span);
             }
         }
 
-        for vis in &ast.vis_items {
-            if let VisItem::Import(path, span) = vis {
-                scope
-                    .import(path)
-                    .map_err(|error| self.handler.err(error.span(*span, scope.module())))
-                    .ok();
-            }
-        }
-
-        for vis in &ast.vis_items {
-            if let VisItem::Export(idents) = vis {
-                for ident in idents {
-                    scope
-                        .export(self.package.get(module).name, ident.ident, parent_scope)
-                        .map_err(|error| self.handler.err(error.span(ident.span, scope.module())))
-                        .ok();
-                }
+        for Import(path, span) in &ast.imports {
+            if let Err(e) = self.scopes.import(path) {
+                self.err(e, *span);
             }
         }
 
@@ -132,7 +116,7 @@ impl ResolveInfo<'_, '_> {
             .flatten();
 
         for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) = self.resolve_exec_item(&exec.ident.ident.into(), exec, None) {
+            if let Ok(exec) = self.resolve_exec_item(&exec.ident.ident.into(), exec) {
                 if main_index.is_some_and(|main_index| main_index == index) {
                     self.hir.set_main(exec);
                 } else {
@@ -219,27 +203,23 @@ impl ResolveInfo<'_, '_> {
     fn resolve_block_item(&mut self, item: &BlockItem) -> Result<()> {
         match item {
             BlockItem::Impl { ty, items } => {
-                let ty = self.resolve_ty(ty)?;
+                todo!("Impl Blocks")
+                // let ty = self.resolve_ty(ty)?;
 
-                for item in items {
-                    let mut path = ty_path.clone();
-                    path.push(item.ident.ident);
-                    if let Ok(exec) = self.resolve_exec_item(&path, item, Some(&ty)) {
-                        self.hir.add_exec(exec);
-                    }
-                }
+                // for item in items {
+                //     let mut path = ty_path.clone();
+                //     path.push(item.ident.ident);
+                //     if let Ok(exec) = self.resolve_exec_item(&path, item, Some(&ty)) {
+                //         self.hir.add_exec(exec);
+                //     }
+                // }
 
-                Ok(())
+                // Ok(())
             }
         }
     }
 
-    fn resolve_exec_item(
-        &mut self,
-        path: &Path,
-        item: &ast::ExecItem,
-        parent_ty: Option<&hir::Ty>,
-    ) -> Result<hir::ExecItem> {
+    fn resolve_exec_item(&mut self, path: &Path, item: &ast::ExecItem) -> Result<hir::ExecItem> {
         let id = self
             .scopes
             .resolve_var(path)
@@ -268,25 +248,26 @@ impl ResolveInfo<'_, '_> {
                     todo!("Generics")
                 }
 
-                self.scopes.push_ty_scope();
+                self.scopes.push_scope();
 
                 let self_param = self_param.map(|(mutable, span)| {
-                    let Some(ty) = parent_ty else {
-                        return Err(self.err(ErrorKind::SelfOutsideImpl, span));
-                    };
-                    let id = self.resolve_pat(
-                        &ast::PatKind::Ident(Ident::new("self")).span((span.end - 4)..span.end),
-                        mutable,
-                        Some(hir::Ty::Named(ty)),
-                    );
-                    Ok((
-                        id,
-                        Param {
-                            ty: hir::Ty::Named(ty),
-                            mutable,
-                            span,
-                        },
-                    ))
+                    todo!("Methods")
+                    // let Some(ty) = parent_ty else {
+                    //     return Err(self.err(ErrorKind::SelfOutsideImpl, span));
+                    // };
+                    // let id = self.resolve_pat(
+                    //     &ast::PatKind::Ident(Ident::new("self")).span((span.end - 4)..span.end),
+                    //     mutable,
+                    //     Some(hir::Ty::Named(ty)),
+                    // );
+                    // Ok((
+                    //     id,
+                    //     Param {
+                    //         ty: hir::Ty::Named(ty),
+                    //         mutable,
+                    //         span,
+                    //     },
+                    // ))
                 });
 
                 let params = self_param
@@ -307,7 +288,7 @@ impl ResolveInfo<'_, '_> {
 
                 let body = self.resolve_expr(body);
 
-                self.scopes.pop_var_scope();
+                self.scopes.pop_scope();
 
                 let ret_ty = self.resolve_ty(ret_ty)?;
                 let (params, param_tys) = params?;
@@ -365,8 +346,8 @@ impl ResolveInfo<'_, '_> {
                 }
 
                 match self.scopes.resolve_ty(path) {
-                    Some(id) => Ok(hir::Ty::Named(id)),
-                    None => Err(self.err(ErrorKind::UnknownType(path.end()), ty.span)),
+                    Ok(id) => Ok(hir::Ty::Named(id)),
+                    Err(e) => Err(self.err(e, ty.span)),
                 }
             }
         }

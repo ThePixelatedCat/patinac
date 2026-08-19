@@ -3,7 +3,8 @@ use std::range::Range;
 use derive_more::Display;
 use ena::unify::{EqUnifyValue, UnifyKey};
 
-use irs::hir::{Ty, TyId};
+use irs::hir::{self, Ty, TyId};
+use itertools::Itertools;
 
 use crate::Table;
 
@@ -91,6 +92,42 @@ impl From<&Ty> for PartialTy {
                 Self::Fn(params, ret)
             }
             Ty::Named(id) => Self::Named(*id),
+        }
+    }
+}
+
+impl TryFrom<PartialTy> for Ty {
+    type Error = ();
+
+    fn try_from(value: PartialTy) -> Result<Self, Self::Error> {
+        match value {
+            PartialTy::Int => Ok(Self::Int),
+            PartialTy::UInt => Ok(Self::UInt),
+            PartialTy::Byte => Ok(Self::Byte),
+            PartialTy::Float => Ok(Self::Float),
+            PartialTy::Bool => Ok(Self::Bool),
+            PartialTy::Tuple(elem_tys) => elem_tys
+                .into_iter()
+                .map(Self::try_from)
+                .try_collect()
+                .map(Self::Tuple),
+            PartialTy::Array(elem_ty) => Self::try_from(*elem_ty).map(Box::new).map(Self::Array),
+            PartialTy::Fn(params, ret_ty) => {
+                let params = params
+                    .into_iter()
+                    .map(|param| {
+                        param.ty.try_into().map(|ty| hir::Param {
+                            ty,
+                            mutable: param.mutable,
+                            span: param.span,
+                        })
+                    })
+                    .try_collect()?;
+                let ret_ty = Box::new(Self::try_from(*ret_ty)?);
+                Ok(Self::Func(params, ret_ty))
+            }
+            PartialTy::Named(ty_id) => Ok(Self::Named(ty_id)),
+            PartialTy::Var(_) | PartialTy::IntVar(_) => Err(()),
         }
     }
 }

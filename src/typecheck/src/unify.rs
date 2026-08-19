@@ -2,7 +2,10 @@ use std::{iter, range::Range};
 
 use errors::{Error, SpanError as _};
 use ident::SpanIdent;
-use irs::{ModuleId, hir::Hir};
+use irs::{
+    ModuleId,
+    hir::{Hir, Ty},
+};
 
 use crate::{
     Constraint, Table, TypeChecker,
@@ -88,33 +91,24 @@ fn unify_method_ty(
     method_name: SpanIdent,
     module: ModuleId,
 ) -> Result<(), Error<ErrorKind>> {
-    let base_ty = normalize_ty(table, base_ty);
+    let base_ty: Ty = normalize_ty(table, base_ty)
+        .try_into()
+        .map_err(|()| ErrorKind::UninferredVarType.span(base_span, module))?;
 
-    let base_id = match base_ty {
-        PartialTy::Named(id) => id,
-        PartialTy::Var(_) => {
-            return Err(ErrorKind::UninferredVarType
-                .span(base_span, module)
-                .with_static_ctx("type must be known by this point"));
-        }
-        no_fields_ty => {
-            return Err(ErrorKind::NoFieldsType(no_fields_ty).span(base_span, module));
-        }
-    };
+    todo!("Method Resolution")
+    // let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
+    //     return Err(
+    //         ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span, module)
+    //     );
+    // };
 
-    let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
-        return Err(
-            ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span, module)
-        );
-    };
-
-    unify_ty_ty(
-        table,
-        field_name.span,
-        module,
-        field_ty,
-        &PartialTy::from(&field.ty),
-    )
+    // unify_ty_ty(
+    //     table,
+    //     field_name.span,
+    //     module,
+    //     field_ty,
+    //     &PartialTy::from(&field.ty),
+    // )
 }
 
 /// Recursively traverse two types until at least one is a type variable,

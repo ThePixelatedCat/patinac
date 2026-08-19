@@ -255,4 +255,9 @@ proptest! {
     fn doesnt_crash(s in r"\PC{1,1024}") {
         let _ = test_lex(&s);
     }
+
+    #[test]
+    fn no_repeat_whitespace(s in r"\PC{1,1024}") {
+        prop_assert!(lex::lex(&s).array_windows().all(|[a, b]| [a.map(|t| t.kind), b.map(|t| t.kind)] != [Ok(T::Whitespace), Ok(T::Whitespace)]))
+    }
 }

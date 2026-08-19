@@ -56,7 +56,7 @@ new_key_type! {
     pub struct ModuleId;
 }
 
-/// A module, generic over it's contents.
+/// A module.
 #[derive(Debug)]
 pub struct Module {
     /// The parent module of this module, unless this is the root module.

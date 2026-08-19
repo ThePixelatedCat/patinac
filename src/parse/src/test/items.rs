@@ -4,29 +4,20 @@ use pretty_assertions::assert_eq;
 
 use ident::Ident;
 use irs::ast::{
-    BlockItem, ExecItem, ExecKind, ExprKind, Field, InfixOp, Param, PatKind, Path, TyItem,
-    TyItemKind, TyKind, Variant, VisItem,
+    BlockItem, ExecItem, ExecKind, ExprKind, Field, Import, InfixOp, Param, PatKind, Path, TyItem,
+    TyItemKind, TyKind, Variant,
 };
 
 use crate::{Parser, items::Item};
 
 #[test]
-fn vis_items() {
+fn imports() {
     assert_eq!(
         Parser::new_test("import foo::bar::baz",).item(),
-        Ok(Item::VisItem(VisItem::Import(
+        Ok(Item::Import(Import(
             Path::new_const([Ident::new("foo"), Ident::new("bar"), Ident::new("baz")]),
             Range::from(7..20)
         )))
-    );
-
-    assert_eq!(
-        Parser::new_test("export { foo, bar, baz, }",).item(),
-        Ok(Item::VisItem(VisItem::Export(vec![
-            Ident::new("foo").span(9..12),
-            Ident::new("bar").span(14..17),
-            Ident::new("baz").span(19..22)
-        ])))
     );
 }
 

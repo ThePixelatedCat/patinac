@@ -13,10 +13,8 @@ impl ResolveInfo<'_, '_> {
     pub fn resolve_expr(&mut self, expr: &ast::Expr) -> Result<ExprId> {
         let new_expr = match &expr.kind {
             ExprKind::Var(path) => match self.scopes.resolve_var(path) {
-                Some(id) => hir::Expr::Var(id),
-                None => {
-                    return Err(self.err(ErrorKind::UnknownVar(path.end()), expr.span));
-                }
+                Ok(id) => hir::Expr::Var(id),
+                Err(e) => return Err(self.err(e, expr.span)),
             },
             ExprKind::Lit(lit) => {
                 let lit = match lit {
@@ -130,7 +128,7 @@ impl ResolveInfo<'_, '_> {
                 }
             }
             ExprKind::Lambda { params, body } => {
-                self.scopes.push_var_scope();
+                self.scopes.push_scope();
 
                 // Rebind all captures within the lambda body, making them all immutable.
                 let mut captures = HashSet::default();
@@ -154,7 +152,7 @@ impl ResolveInfo<'_, '_> {
                     .try_collect_eager();
                 let body = self.resolve_expr(body);
 
-                self.scopes.pop_var_scope();
+                self.scopes.pop_scope();
 
                 hir::Expr::Lambda {
                     params: params?,
@@ -179,10 +177,10 @@ impl ResolveInfo<'_, '_> {
             ExprKind::For { pat, iter, body } => {
                 let iter = self.resolve_expr(iter);
 
-                self.scopes.push_var_scope();
+                self.scopes.push_scope();
                 let id = self.resolve_pat(pat, false, None);
                 let body = self.resolve_block_expr(body);
-                self.scopes.pop_var_scope();
+                self.scopes.pop_scope();
 
                 hir::Expr::For {
                     id,
@@ -209,7 +207,7 @@ impl ResolveInfo<'_, '_> {
     }
 
     fn resolve_block_expr(&mut self, block_expr: &ast::BlockExpr) -> Result<hir::BlockExpr> {
-        self.scopes.push_var_scope();
+        self.scopes.push_scope();
         let stmts = block_expr
             .stmts
             .iter()
@@ -231,7 +229,7 @@ impl ResolveInfo<'_, '_> {
                 ast::Stmt::Expr(expr) => self.resolve_expr(expr).map(hir::Stmt::Expr),
             })
             .try_collect_eager()?;
-        self.scopes.pop_var_scope();
+        self.scopes.pop_scope();
 
         Ok(hir::BlockExpr {
             stmts,
@@ -299,7 +297,7 @@ impl ResolveInfo<'_, '_> {
         match &expr.kind {
             ExprKind::Var(path) => {
                 // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
-                if let Some(id) = self.scopes.resolve_var(path)
+                if let Ok(id) = self.scopes.resolve_var(path)
                     && !self.hir.var_info(id).global
                 {
                     captures.insert(id);

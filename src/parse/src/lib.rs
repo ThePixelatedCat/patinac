@@ -51,6 +51,12 @@ impl<'src> Parser<'src> {
         }
     }
 
+    /// Constructs a [`Parser`] for `src`, using testing-suitable defaults for the [`ModuleId`] and [`ErrorHandler`].
+    #[cfg(any(test, feature = "test"))]
+    pub fn new_test(src: &'src str) -> Self {
+        Self::new(ModuleId::default(), src, ErrorHandler::TEST)
+    }
+
     /// Parses the source this [`Parser`] was constructed with into an [`Ast`].
     ///
     /// # Errors
@@ -59,9 +65,9 @@ impl<'src> Parser<'src> {
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
-        while self.pos < self.toks.len() {
+        while !self.at_end() {
             match self.item() {
-                Ok(Item::VisItem(item)) => ast.vis_items.push(item),
+                Ok(Item::Import(item)) => ast.imports.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
                 Ok(Item::ExecItem(item)) => ast.exec_items.push(item),
                 Ok(Item::BlockItem(item)) => ast.block_items.push(item),
@@ -72,10 +78,15 @@ impl<'src> Parser<'src> {
         self.handler.checked(ast)
     }
 
-    /// Constructs a [`Parser`] for `src`, using testing-suitable defaults for the [`ModuleId`] and [`ErrorHandler`].
-    #[cfg(any(test, feature = "test"))]
-    pub fn new_test(src: &'src str) -> Self {
-        Self::new(ModuleId::default(), src, ErrorHandler::TEST)
+    fn at_end(&self) -> bool {
+        match self.get_tok(self.pos).map(|tok| tok.kind) {
+            Ok(TokKind::Whitespace) => self
+                .get_tok(self.pos + 1)
+                .is_ok_and(|tok| tok.kind == TokKind::Eof),
+            Ok(TokKind::Eof) => true,
+            Ok(_) => false,
+            Err(_) => false,
+        }
     }
 
     /// Lexes the source and parses an expression in one function call, to simplify tests.
@@ -94,36 +105,43 @@ impl<'src> Parser<'src> {
         &self.src[start..end]
     }
 
+    fn get_tok(&self, pos: usize) -> Result<Tok> {
+        self.toks
+            .get(pos)
+            .copied()
+            .unwrap_or_else(|| {
+                let src_len = u32::try_from(self.src.len()).expect("file too long");
+                Ok(TokKind::Eof.span(src_len..src_len))
+            })
+            .map_err(|span| self.err(ErrorKind::BadToken, span))
+    }
+
     /// Consumes the next token. Ignores whitespace.
     fn next(&mut self) -> Result<Tok> {
-        self.peek_ws().and_then(|tok| {
-            self.pos += 1;
-            match tok.kind {
-                TokKind::Whitespace => self.next(),
-                _ => Ok(tok),
+        let tok = self.get_tok(self.pos)?;
+        self.pos += 1;
+        match tok.kind {
+            TokKind::Whitespace => {
+                let tok = self.get_tok(self.pos);
+                self.pos += 1;
+                tok
             }
-        })
+            _ => Ok(tok),
+        }
     }
 
     /// Peeks the current token. Ignores whitespace.
-    fn peek(&mut self) -> Result<Tok> {
-        // Next handles the actual logic, we just reset our position after it's done.
-        let pos = self.pos;
-        let tok = self.next();
-        self.pos = pos;
-        tok
+    fn peek(&self) -> Result<Tok> {
+        let tok = self.get_tok(self.pos)?;
+        match tok.kind {
+            TokKind::Whitespace => self.get_tok(self.pos + 1),
+            _ => Ok(tok),
+        }
     }
 
     // Peeks the current token. Respects whitespace.
-    fn peek_ws(&mut self) -> Result<Tok> {
-        self.toks
-            .get(self.pos)
-            .copied()
-            .ok_or_else(|| {
-                let src_len = u32::try_from(self.src.len()).expect("file too long");
-                self.err(ErrorKind::Eof, src_len..src_len)
-            })?
-            .map_err(|span| self.err(ErrorKind::BadToken, span))
+    fn peek_ws(&self) -> Result<Tok> {
+        self.get_tok(self.pos)
     }
 
     /// Checks if the next token is of the given kind. Ignores whitespace.
@@ -160,7 +178,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn err(&mut self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {
+    fn err(&self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {
         self.handler.err(error.span(span, self.module))
     }
 
