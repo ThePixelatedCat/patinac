@@ -69,6 +69,7 @@ impl Parser<'_> {
                     TokKind::Match => ["`match` is postfix"].as_slice(),
                     _ => [].as_slice(),
                 };
+                eprintln!("expr_inner");
                 Err(self.err_next(ErrorKind::Unexpected, ctx))
             }
         }?;

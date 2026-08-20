@@ -354,7 +354,7 @@ impl Ty {
             Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool | Self::Array(_) => {
                 self.size()
             }
-            Self::Fields(field_tys) => field_tys.iter().map(Self::alignment).max().unwrap_or(0),
+            Self::Fields(field_tys) => field_tys.iter().map(Self::alignment).max().unwrap_or(1),
             Self::Func(_, _) => Self::PTR_SIZE,
         }
     }

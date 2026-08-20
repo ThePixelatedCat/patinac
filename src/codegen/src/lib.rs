@@ -13,8 +13,6 @@ mod config;
 mod exprs;
 mod layout;
 mod runtime;
-#[cfg(test)]
-mod test;
 mod witnesses;
 
 use std::fmt::Write as _;
@@ -24,6 +22,7 @@ use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
+    data_layout::DataLayout,
     llvm_sys::LLVMCallConv,
     module::{Linkage, Module},
     passes::PassBuilderOptions,
@@ -270,11 +269,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             "ty: {ty:?}"
         );
         assert_eq!(
-            u64::from(
-                self.target
-                    .get_target_data()
-                    .get_preferred_alignment(&lowered_ty)
-            ),
+            u64::from(self.target.get_target_data().get_abi_alignment(&lowered_ty)),
             ty.alignment(),
             "ty: {ty:?}"
         );

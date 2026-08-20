@@ -11,13 +11,5 @@ irs.path = "../irs"
 inkwell = { version = "0.9.0", features = ["llvm22-1"] }
 slotmap = "1.1.1"
 
-[dev-dependencies]
-# Internal
-errors.path = "../errors"
-parse.path = "../parse"
-nameres = { path = "../nameres", features = ["test"] }
-typecheck.path = "../typecheck"
-lower.path = "../lower"
-
 [lints]
 workspace = true

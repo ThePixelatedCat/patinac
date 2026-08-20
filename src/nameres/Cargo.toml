@@ -15,11 +15,6 @@ derive_more = { version = "2.1.1", features = ["display"] }
 itertools = "0.14.0"
 parse = { path = "../parse", features = ["test"], optional = true }
 
-[dev-dependencies]
-# Internal
-parse = { path = "../parse", features = ["test"] }
-# External
-
 [lints]
 workspace = true
 

@@ -28,12 +28,6 @@ fn check_expr(src: &str) -> Result<Ty> {
     Ok(checker.sub_all(&mut hir)?.remove(expr).unwrap())
 }
 
-#[allow(clippy::unwrap_used, reason = "test utility")]
-fn check_full(src: &str) -> Result<()> {
-    let mut hir = nameres::test_resolve_ast(src).unwrap();
-    crate::type_hir(&mut hir, ErrorHandler::TEST).map(|_| ())
-}
-
 #[test]
 fn type_of_if_single_branch() {
     let input = "if true {false ()}";
@@ -125,71 +119,4 @@ fn shadowing() {
     }";
 
     assert_eq!(check_expr(input), Ok(Ty::Float));
-}
-
-#[test]
-fn recursion() {
-    let input = "
-fn fac(n: UInt): UInt = 
-    if n == 0 { 1 } else { n * fac(n - 1) }      
-";
-    assert_matches!(check_full(input), Ok(()));
-}
-
-#[test]
-fn consts() {
-    let input = "
-    const B: UInt = A * 2
-    const A: UInt = 5
-";
-    assert_matches!(check_full(input), Ok(()));
-}
-
-#[test]
-fn fields() {
-    let input = "
-    record Foo(x: Int)
-
-    fn bar(foo: Foo): Int = foo.x
-";
-    assert_matches!(check_full(input), Ok(()));
-
-    let input = "
-    record Foo(x: Int)
-
-    fn bar(foo: Foo): Int = foo.y
-";
-    assert_matches!(check_full(input), Err(_));
-
-    let input = "
-    record Point(x: Float, y: Float)
-    fn main(): () = {
-        let point = Point(0.0, 1.0)
-        print point.x
-    }
-";
-    assert_matches!(check_full(input), Ok(()));
-}
-
-#[test]
-fn method() {
-    let input = "
-    record Vec2(x: Float, y: Float)
-    impl Vec2 {
-        fn dot(self, rhs: Vec2): Float = self.x * rhs.x + self.y * rhs.y
-        fn double(mut self): () = {
-            self.x = self.x * 2
-            self.y = self.y * 2
-        }
-    }
-
-    fn main(): () = {
-        let a = Vec2(1.0, 1.0)
-        let mut b = a
-        b.double()
-        Vec2::double(mut b)
-        print a.dot(b)
-    }
-";
-    assert_matches!(check_full(input), Ok(()))
 }

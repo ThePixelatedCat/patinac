@@ -1,0 +1,5 @@
+const A: UInt = 5
+const A: UInt = 6
+
+record Foo()
+record Foo(val: UInt)

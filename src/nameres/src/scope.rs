@@ -3,7 +3,7 @@ use ident::Ident;
 use irs::{
     ModuleId, Package,
     ast::Path,
-    hir::{Ty, TyId, VarId},
+    hir::{TyId, VarId},
 };
 use slotmap::SecondaryMap;
 
@@ -140,7 +140,7 @@ impl<'pkg> ScopeInfo<'pkg> {
     }
 
     fn mod_scope(&self) -> &ModuleScope {
-        &self.modules[dbg!(self.module)]
+        &self.modules[self.module]
     }
 
     fn mod_scope_mut(&mut self) -> &mut ModuleScope {

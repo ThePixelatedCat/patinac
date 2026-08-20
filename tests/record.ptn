@@ -1,0 +1,12 @@
+record Point(x: Float, y: Float)
+
+fn get_x(this: Point): Float = this.x
+
+fn make_point(x: Float): Point = Point(x, 0.0)
+
+fn main(): () = {
+    let point = make_point(1.0)
+    get_x(point)
+    // add assert in future
+    print point == Point(1.0, 0.0)
+}

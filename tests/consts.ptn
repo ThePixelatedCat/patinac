@@ -1,0 +1,2 @@
+const B: UInt = A * 2
+const A: UInt = 5

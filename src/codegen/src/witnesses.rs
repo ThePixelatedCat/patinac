@@ -571,8 +571,8 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         // Save the builder's current insertion block to restore at the end
         let old_insert_block = self.builder.get_insert_block().unwrap();
 
-        // Create the drop function
-        let func = self.add_func(func_name, self.drop_func_ty(), false);
+        // Create the function
+        let func = self.add_func(func_name, self.equals_func_ty(), false);
         self.builder
             .position_at_end(self.ctx.append_basic_block(func, "entry"));
         let lhs = func.get_nth_param(0).unwrap();

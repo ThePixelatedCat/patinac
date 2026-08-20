@@ -3,20 +3,17 @@
 mod error;
 mod exprs;
 mod scope;
-#[cfg(test)]
-mod test;
 
 use std::range::Range;
 
 use foldhash::{HashMap, HashMapExt as _};
-use ident::Ident;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
     ast::{self, Ast, Binding, BlockItem, Import, Pat, PatKind, Path, TyItem, TyItemKind, TyKind},
-    hir::{self, Field, Hir, Param, TyId, TyInfo, VarId, VarInfo},
+    hir::{self, Field, Hir, Param, TyInfo, VarId, VarInfo},
 };
 
 use crate::{
@@ -190,7 +187,8 @@ impl ResolveInfo<'_, '_> {
                     module: self.scopes.module(),
                 });
                 self.hir.add_var_ty(ctor, constructor_ty);
-                self.scopes.add_var(item.ident.ident, ctor);
+                self.scopes
+                    .add_def(Visibility::Public, item.ident.ident, ctor);
 
                 self.hir.fulfill_ty(id, TyInfo { fields, ctor });
             }
@@ -395,32 +393,4 @@ pub fn test_resolve_expr(input: &str) -> Result<(hir::ExprId, Hir)> {
     let expr = parse::Parser::parse_expr(input).unwrap();
     let expr = info.resolve_expr(&expr)?;
     Ok((expr, info.hir))
-}
-
-#[cfg(any(test, feature = "test"))]
-#[allow(clippy::unwrap_used, reason = "test utility")]
-pub fn test_resolve_ast(src: &str) -> Result<Hir> {
-    use ident::Ident;
-    use irs::Module;
-
-    let package = Package::new(Module {
-        parent: None,
-        name: Ident::new("root"),
-        children: Vec::new(),
-    });
-    let mut asts = SecondaryMap::new();
-    asts.insert(
-        package.root(),
-        parse::Parser::new_test(src).parse().unwrap(),
-    );
-
-    let mut info = ResolveInfo {
-        package: &package,
-        asts: &asts,
-        handler: ErrorHandler::TEST,
-        hir: Hir::default(),
-        scopes: ScopeInfo::new(&package),
-    };
-    info.resolve_module(package.root(), true);
-    info.handler.checked(info.hir)
 }

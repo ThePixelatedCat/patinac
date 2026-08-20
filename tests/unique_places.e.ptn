@@ -1,0 +1,17 @@
+record Box(v: Int)
+fn field(): () = {
+    let f = fn(mut a, b: Box) -> { a = a + b.v }
+    let g = fn(mut a) -> f(mut a.v, a)
+}
+
+fn same_swap(): () = {
+    let mut a = 1
+    swap(mut a, mut a)
+}
+fn swap(mut a: Int, mut b: Int): () = {}
+
+fn array_same_swap(): () = {
+    let mut foo = [1, 1]
+    swap(mut foo.[0], mut foo.[0])
+}
+fn swap(mut a: Int, mut b: Int): () = {}

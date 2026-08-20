@@ -1,0 +1,13 @@
+fn main(): () = {
+    let f = make_closure
+    let closure = f()
+    // add assert later
+    print apply(closure, 2)
+}
+
+fn make_closure(): Fn(UInt) -> Int = {
+    let array: [Int] = [1, 2, 3, 4, 5]
+    fn(index) -> array.[index]
+}
+
+fn apply(f: Fn(UInt) -> Int, v: UInt): Int = f(v)

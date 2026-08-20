@@ -118,25 +118,34 @@ impl<'src> Parser<'src> {
 
     /// Consumes the next token. Ignores whitespace.
     fn next(&mut self) -> Result<Tok> {
-        let tok = self.get_tok(self.pos)?;
+        let mut tok = self.get_tok(self.pos)?;
         self.pos += 1;
-        match tok.kind {
-            TokKind::Whitespace => {
-                let tok = self.get_tok(self.pos);
-                self.pos += 1;
-                tok
-            }
-            _ => Ok(tok),
+        while tok.kind == TokKind::Whitespace {
+            tok = self.get_tok(self.pos)?;
+            self.pos += 1;
         }
+        debug_assert_ne!(
+            tok.kind,
+            TokKind::Whitespace,
+            "`next` should never return a whitespace token"
+        );
+        Ok(tok)
     }
 
     /// Peeks the current token. Ignores whitespace.
     fn peek(&self) -> Result<Tok> {
-        let tok = self.get_tok(self.pos)?;
-        match tok.kind {
-            TokKind::Whitespace => self.get_tok(self.pos + 1),
-            _ => Ok(tok),
+        let mut tok = self.get_tok(self.pos)?;
+        let mut offset = 1;
+        while tok.kind == TokKind::Whitespace {
+            tok = self.get_tok(self.pos + offset)?;
+            offset += 1;
         }
+        debug_assert_ne!(
+            tok.kind,
+            TokKind::Whitespace,
+            "`peek` should never return a whitespace token"
+        );
+        Ok(tok)
     }
 
     // Peeks the current token. Respects whitespace.

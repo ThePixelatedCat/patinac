@@ -15,12 +15,10 @@ use ident::Ident;
 use slotmap::SecondaryMap;
 use yansi::Paint as _;
 
-use codegen::{CodegenMode, Target};
+use codegen::{CodegenMode, OptLevel, Target};
 use errors::{DiagnosticKind, ErrorHandler, HandlerCallback};
 use irs::{Module, ModuleId, Package};
 use parse::Parser;
-
-pub use codegen::OptLevel;
 
 #[derive(FromArgs)]
 #[argh(description = "The compiler for Patina")]
@@ -38,7 +36,11 @@ pub struct Args {
 
     #[argh(switch)]
     /// dump LLVM IR to stderr rather than emitting a binary
-    pub dump: bool,
+    pub llvmir: bool,
+
+    #[argh(switch)]
+    /// emit nothing, only checking if the compilation would succeed
+    pub check: bool,
     // #[argh(option, short = 'T')]
     // /// the target platform to compile for, defaulting to the host platform
     // pub target: Option<Target>,
@@ -122,7 +124,9 @@ pub fn compile(args: Args) -> ExitCode {
     let mir = lower::lower(handler.clone(), &hir, &expr_tys);
 
     eprintln!("Emitting...");
-    let mode = if args.dump {
+    let mode = if args.check {
+        CodegenMode::Silent
+    } else if args.llvmir {
         CodegenMode::IRDump
     } else {
         CodegenMode::Emit(args.src_path.with_extension("o"))
@@ -310,7 +314,9 @@ fn should_search(entry: &DirEntry, parent: &Path) -> bool {
 fn print_diagnostic(msg: &str, span: Range<u32>, kind: DiagnosticKind, src: &str) {
     let start = usize::try_from(span.start).expect("why are you on 16bit");
     let end = usize::try_from(span.end).expect("why are you on 16bit");
-    let line_start = src[..=start].rfind(['\n', '\r']).map_or(0, |i| i + 1);
+    let line_start = src[..=start]
+        .rfind(['\n', '\r'])
+        .map_or(0, |i| (i + 1).min(start));
     let line_end = src[end..]
         .find(['\n', '\r'])
         .map_or_else(|| src.len(), |pos| pos + end);

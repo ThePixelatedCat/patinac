@@ -1,0 +1,7 @@
+fn foo(a: Bool, n: Float): Float = {   
+    let mut m = n
+    if n < 0.0 { 
+        m = if a { 2.0 } else { 5.0 } 
+    }
+    m *. 2.0
+}
