@@ -32,10 +32,7 @@ impl Parser<'_> {
             TokKind::Impl => self.impl_item().map(Item::from),
             TokKind::Const => self.const_item().map(Item::from),
             TokKind::Fn => self.func_item().map(Item::from),
-            _ => {
-                eprintln!("Item");
-                Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"]))
-            }
+            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
         }
     }
 

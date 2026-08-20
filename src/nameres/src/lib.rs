@@ -51,11 +51,11 @@ pub fn resolve(
 
 impl ResolveInfo<'_, '_> {
     fn resolve_module(&mut self, module: ModuleId, is_root: bool) {
-        self.scopes.set_module(module);
-
         for &child in &self.package.get(module).children {
             self.resolve_module(child, false);
         }
+
+        self.scopes.set_module(module);
 
         let ast = &self.asts[module];
 

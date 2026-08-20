@@ -65,7 +65,7 @@ impl<'src> Parser<'src> {
     pub fn parse(mut self) -> Result<Ast> {
         let mut ast = Ast::default();
 
-        while !self.at_end() {
+        while !self.peek().is_ok_and(|tok| tok.kind == TokKind::Eof) {
             match self.item() {
                 Ok(Item::Import(item)) => ast.imports.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
@@ -76,17 +76,6 @@ impl<'src> Parser<'src> {
         }
 
         self.handler.checked(ast)
-    }
-
-    fn at_end(&self) -> bool {
-        match self.get_tok(self.pos).map(|tok| tok.kind) {
-            Ok(TokKind::Whitespace) => self
-                .get_tok(self.pos + 1)
-                .is_ok_and(|tok| tok.kind == TokKind::Eof),
-            Ok(TokKind::Eof) => true,
-            Ok(_) => false,
-            Err(_) => false,
-        }
     }
 
     fn src_of(&self, tok: Tok) -> &'src str {
@@ -100,7 +89,7 @@ impl<'src> Parser<'src> {
             .get(pos)
             .copied()
             .unwrap_or_else(|| {
-                let src_len = u32::try_from(self.src.len()).expect("file too long");
+                let src_len = u32::try_from(self.src.len()).expect("file too long") - 1;
                 Ok(TokKind::Eof.span(src_len..src_len))
             })
             .map_err(|span| self.err(ErrorKind::BadToken, span))
