@@ -1,6 +1,6 @@
 fn main(): () = {
     let mut a = 1
-    lib::replace(mut a, 3)
+    print lib::replace(mut a, 3)
     print a
 }
 
