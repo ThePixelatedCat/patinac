@@ -27,7 +27,7 @@ impl Parser<'_> {
         }
     }
 
-    pub(crate) fn expr(&mut self) -> Result<Expr> {
+    pub fn expr(&mut self) -> Result<Expr> {
         self.expr_inner(0)
     }
 

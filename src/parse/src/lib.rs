@@ -89,16 +89,6 @@ impl<'src> Parser<'src> {
         }
     }
 
-    /// Lexes the source and parses an expression in one function call, to simplify tests.
-    /// # Errors
-    /// If the source cannot be parsed as an expression.
-    /// # Panics
-    /// If the lexer produces an error.
-    #[cfg(any(test, feature = "test"))]
-    pub fn parse_expr(src: &'src str) -> Result<irs::ast::Expr> {
-        Self::new_test(src).expr()
-    }
-
     fn src_of(&self, tok: Tok) -> &'src str {
         let start = usize::try_from(tok.span.start).expect("why are you on 16bit");
         let end = usize::try_from(tok.span.end).expect("why are you on 16bit");

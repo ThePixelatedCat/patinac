@@ -193,33 +193,3 @@ impl<'hir> LowerInfo<'hir, '_> {
             .expect("too many fields")
     }
 }
-
-// #[cfg(any(test, feature = "test"))]
-// #[allow(clippy::unwrap_used, reason = "test utility")]
-// pub fn test_resolve_expr(input: &str) -> Result<(ExprId, self.hir)> {
-//     let expr = parse::Parser::parse_expr(input).unwrap();
-//     let mut self.hir = self.hir::default();
-//     let mut handler = ErrorHandler::TEST;
-//     let expr = exprs::resolve_expr(
-//         &Scope::new(ModuleId::default()),
-//         &mut self.hir,
-//         &mut handler,
-//         expr,
-//     )?;
-//     Ok((expr, self.hir))
-// }
-
-// #[cfg(any(test, feature = "test"))]
-// #[allow(clippy::unwrap_used, reason = "test utility")]
-// pub fn test_resolve_ast(src: &str) -> Result<Hir> {
-//     let mut self.hir = self.hir::default();
-//     let mut handler = ErrorHandler::TEST;
-//     resolve_ast(
-//         &mut Scope::new(ModuleId::default()),
-//         parse::Parser::new_test(src).parse().unwrap(),
-//         &mut self.hir,
-//         &mut handler,
-//         true,
-//     );
-//     handler.checked(hir)
-// }

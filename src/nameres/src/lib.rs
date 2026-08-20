@@ -390,7 +390,7 @@ pub fn test_resolve_expr(input: &str) -> Result<(hir::ExprId, Hir)> {
         hir: Hir::default(),
         scopes: ScopeInfo::new(package),
     };
-    let expr = parse::Parser::parse_expr(input).unwrap();
+    let expr = parse::Parser::new_test(input).expr().unwrap();
     let expr = info.resolve_expr(&expr)?;
     Ok((expr, info.hir))
 }
