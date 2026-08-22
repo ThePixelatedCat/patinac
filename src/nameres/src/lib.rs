@@ -17,7 +17,7 @@ use irs::{
 };
 
 use crate::{
-    error::ErrorKind,
+    error::{ErrorKind, ItemKind},
     scope::{ScopeInfo, Visibility},
 };
 
@@ -66,7 +66,10 @@ impl ResolveInfo<'_, '_> {
                 .add_ty(Visibility::Public, ty.ident.ident, id)
                 .is_some()
             {
-                self.err(ErrorKind::DupItem(ty.ident.ident), ty.ident.span);
+                self.err(
+                    ErrorKind::DupItem(ItemKind::Type, ty.ident.ident),
+                    ty.ident.span,
+                );
             }
         }
 
@@ -94,7 +97,10 @@ impl ResolveInfo<'_, '_> {
                 .add_def(Visibility::Public, exec.ident.ident, id)
                 .is_some()
             {
-                self.err(ErrorKind::DupItem(exec.ident.ident), exec.ident.span);
+                self.err(
+                    ErrorKind::DupItem(ItemKind::Value, exec.ident.ident),
+                    exec.ident.span,
+                );
             }
         }
 

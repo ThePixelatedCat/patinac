@@ -7,7 +7,7 @@ use irs::{
 };
 use slotmap::SecondaryMap;
 
-use crate::error::ErrorKind;
+use crate::error::{ErrorKind, ItemKind};
 
 #[derive(Debug)]
 pub struct ScopeInfo<'pkg> {
@@ -20,7 +20,7 @@ pub struct ScopeInfo<'pkg> {
 impl<'pkg> ScopeInfo<'pkg> {
     pub fn new(package: &'pkg Package) -> Self {
         let mut modules = SecondaryMap::new();
-        modules.insert(package.root(), ModuleScope::new());
+        modules.insert(package.root(), Self::new_module(package, package.root()));
         Self {
             package,
             module: package.root(),
@@ -46,7 +46,20 @@ impl<'pkg> ScopeInfo<'pkg> {
         self.modules
             .entry(module)
             .expect("key still valid")
-            .or_default();
+            .or_insert_with(|| Self::new_module(self.package, module));
+    }
+
+    fn new_module(package: &Package, module: ModuleId) -> ModuleScope {
+        let mut scope = ModuleScope::default();
+        scope.modules.extend(
+            package
+                .get(module)
+                .children
+                .iter()
+                .copied()
+                .map(|module| (package.get(module).name, (Visibility::Public, module))),
+        );
+        scope
     }
 
     pub fn add_ty(&mut self, vis: Visibility, ident: Ident, id: TyId) -> Option<TyId> {
@@ -74,9 +87,9 @@ impl<'pkg> ScopeInfo<'pkg> {
         let module = self.resolve_base(path)?;
         let (vis, id) = self.modules[module]
             .get_ty(path.end())
-            .ok_or_else(|| ErrorKind::UnknownType(path.end()))?;
+            .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Type, path.end()))?;
         if module != self.module && vis == Visibility::Private {
-            Err(ErrorKind::PrivateItem(path.end()))
+            Err(ErrorKind::PrivateItem(ItemKind::Type, path.end()))
         } else {
             Ok(id)
         }
@@ -89,14 +102,14 @@ impl<'pkg> ScopeInfo<'pkg> {
                 .rev()
                 .find_map(|scope| scope.get(&path.end()).copied())
                 .or_else(|| self.mod_scope().get_def(path.end()).map(|(_, id)| id))
-                .ok_or_else(|| ErrorKind::UnknownVar(path.end()))
+                .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, path.end()))
         } else {
             let module = self.resolve_base(path)?;
             let (vis, id) = self.modules[module]
                 .get_def(path.end())
-                .ok_or_else(|| ErrorKind::UnknownVar(path.end()))?;
-            if module != self.module && vis == Visibility::Private {
-                Err(ErrorKind::PrivateItem(path.end()))
+                .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, path.end()))?;
+            if vis == Visibility::Private {
+                Err(ErrorKind::PrivateItem(ItemKind::Value, path.end()))
             } else {
                 Ok(id)
             }
@@ -107,36 +120,83 @@ impl<'pkg> ScopeInfo<'pkg> {
     pub fn resolve_base(&self, path: &Path) -> Result<ModuleId, ErrorKind> {
         let mut curr_mod = self.module;
         for segment in path.iter().take(path.len() - 1) {
-            curr_mod = self.get_child(curr_mod, segment)?;
+            let (vis, new_mod) = self.get_child(curr_mod, segment)?;
+
+            if curr_mod != self.module && vis == Visibility::Private {
+                return Err(ErrorKind::PrivateItem(ItemKind::Module, path.end()));
+            }
+
+            curr_mod = new_mod;
         }
         Ok(curr_mod)
     }
 
-    fn get_child(&self, parent: ModuleId, ident: Ident) -> Result<ModuleId, ErrorKind> {
-        self.package
-            .get(parent)
-            .children
-            .iter()
-            .copied()
-            .find(|&child| self.package.get(child).name == ident)
-            .ok_or_else(|| ErrorKind::UnknownModule(ident))
+    fn get_child(
+        &self,
+        parent: ModuleId,
+        ident: Ident,
+    ) -> Result<(Visibility, ModuleId), ErrorKind> {
+        self.modules[parent]
+            .get_mod(ident)
+            .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Module, ident))
     }
 
     pub fn import(&mut self, path: &Path) -> Result<(), ErrorKind> {
-        let module = self.resolve_base(path)?;
-        let ty = self.modules[module].get_ty(path.end());
-        let def = self.modules[module].get_def(path.end());
+        let base = self.resolve_base(path)?;
+        let module = self.modules[base].get_mod(path.end());
+        let ty = self.modules[base].get_ty(path.end());
+        let def = self.modules[base].get_def(path.end());
 
-        if ty.is_none() && def.is_none() {
-            return Err(ErrorKind::UnknownItem(path.end()));
+        if module.is_none() && ty.is_none() && def.is_none() {
+            return Err(ErrorKind::UnknownName(ItemKind::Unknown, path.end()));
         }
-        todo!()
 
-        // if module != self.module && vis == Visibility::Private {
-        //     Err(ErrorKind::PrivateItem(path.end()))
-        // } else {
-        //     Ok(id)
-        // }
+        if let Some((vis, module)) = module {
+            if base != self.module && vis == Visibility::Private {
+                return Err(ErrorKind::PrivateItem(ItemKind::Module, path.end()));
+            }
+
+            if self
+                .mod_scope_mut()
+                .modules
+                .insert(path.end(), (Visibility::Private, module))
+                .is_some()
+            {
+                return Err(ErrorKind::DupItem(ItemKind::Module, path.end()));
+            }
+        }
+
+        if let Some((vis, ty)) = ty {
+            if base != self.module && vis == Visibility::Private {
+                return Err(ErrorKind::PrivateItem(ItemKind::Type, path.end()));
+            }
+
+            if self
+                .mod_scope_mut()
+                .tys
+                .insert(path.end(), (Visibility::Private, ty))
+                .is_some()
+            {
+                return Err(ErrorKind::DupItem(ItemKind::Type, path.end()));
+            }
+        }
+
+        if let Some((vis, def)) = def {
+            if base != self.module && vis == Visibility::Private {
+                return Err(ErrorKind::PrivateItem(ItemKind::Value, path.end()));
+            }
+
+            if self
+                .mod_scope_mut()
+                .defs
+                .insert(path.end(), (Visibility::Private, def))
+                .is_some()
+            {
+                return Err(ErrorKind::DupItem(ItemKind::Value, path.end()));
+            }
+        }
+
+        Ok(())
     }
 
     fn mod_scope(&self) -> &ModuleScope {
@@ -152,12 +212,12 @@ impl<'pkg> ScopeInfo<'pkg> {
 struct ModuleScope {
     defs: HashMap<Ident, (Visibility, VarId)>,
     tys: HashMap<Ident, (Visibility, TyId)>,
-    //child_visibilities: SecondaryMap<ModuleId, Visibility>,
+    modules: HashMap<Ident, (Visibility, ModuleId)>,
 }
 
 impl ModuleScope {
-    fn new() -> Self {
-        Self::default()
+    pub fn get_mod(&self, ident: Ident) -> Option<(Visibility, ModuleId)> {
+        self.modules.get(&ident).copied()
     }
 
     pub fn get_ty(&self, ident: Ident) -> Option<(Visibility, TyId)> {

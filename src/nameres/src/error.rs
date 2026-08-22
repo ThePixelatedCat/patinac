@@ -7,24 +7,18 @@ use ident::Ident;
 
 #[derive(Debug, Display, PartialEq, Eq)]
 pub enum ErrorKind {
-    #[display("unresolved item `{_0}`")]
-    UnknownItem(Ident),
-    #[display("unresolved module `{_0}`")]
-    UnknownModule(Ident),
-    #[display("unresolved type `{_0}`")]
-    UnknownType(Ident),
-    #[display("unresolved variable `{_0}`")]
-    UnknownVar(Ident),
-    #[display("item `{_0}` is not visible")]
-    PrivateItem(Ident),
+    #[display("unresolved {_0} `{_1}`")]
+    UnknownName(ItemKind, Ident),
+    #[display("{_0} `{_1}` is not visible")]
+    PrivateItem(ItemKind, Ident),
     #[display("cannot mutate this immutable value")]
     Mutation,
     #[display("expected this to be a mutable place")]
     NotPlaceExpr,
     #[display("these mutable arguments overlap")]
     OverlappingPlaces(Range<u32>, Range<u32>),
-    #[display("duplicate item `{_0}`")]
-    DupItem(Ident),
+    #[display("duplicate {_0} `{_1}`")]
+    DupItem(ItemKind, Ident),
     #[display("duplicate field `{_0}`")]
     DupFields(Ident),
     #[display(
@@ -33,6 +27,18 @@ pub enum ErrorKind {
     InvalidMain,
     #[display("`self` parameters can only appear on functions within `impl` blocks")]
     SelfOutsideImpl,
+}
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq)]
+pub enum ItemKind {
+    #[display("module")]
+    Module,
+    #[display("type")]
+    Type,
+    #[display("value")]
+    Value,
+    #[display("item")]
+    Unknown,
 }
 
 impl SpanError for ErrorKind {}
