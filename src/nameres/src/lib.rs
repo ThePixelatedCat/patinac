@@ -80,7 +80,7 @@ impl ResolveInfo<'_, '_> {
         for block in &ast.block_items {
             match block {
                 BlockItem::Impl { ty, items } => {
-                    todo!()
+                    todo!("Impl Blocks")
                 }
             }
         }
@@ -119,7 +119,7 @@ impl ResolveInfo<'_, '_> {
             .flatten();
 
         for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) = self.resolve_exec_item(&exec.ident.ident.into(), exec) {
+            if let Ok(exec) = self.resolve_def_item(&exec.ident.ident.into(), exec) {
                 if main_index.is_some_and(|main_index| main_index == index) {
                     self.hir.set_main(exec);
                 } else {
@@ -129,9 +129,9 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn find_main(&mut self, execs: &[ast::ExecItem]) -> Result<Option<usize>> {
+    fn find_main(&mut self, execs: &[ast::DefItem]) -> Result<Option<usize>> {
         for (idx, item) in execs.iter().enumerate() {
-            if let ast::ExecKind::Func { params, ret_ty, .. } = &item.kind
+            if let ast::DefKind::Func { params, ret_ty, .. } = &item.kind
                 && item.ident.ident == "main"
             {
                 return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
@@ -223,25 +223,25 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn resolve_exec_item(&mut self, path: &Path, item: &ast::ExecItem) -> Result<hir::ExecItem> {
+    fn resolve_def_item(&mut self, path: &Path, item: &ast::DefItem) -> Result<hir::DefItem> {
         let id = self
             .scopes
             .resolve_var(path)
             .expect("all items should have already been inserted into the scope");
 
         match &item.kind {
-            ast::ExecKind::Const { ty, val } => {
+            ast::DefKind::Const { ty, val } => {
                 let val = self.resolve_expr(val);
                 let ty = self.resolve_ty(ty)?;
                 self.hir.add_var_ty(id, ty);
 
-                Ok(hir::ExecItem {
+                Ok(hir::DefItem {
                     module: self.scopes.module(),
                     var: id,
-                    kind: hir::ExecKind::Const(val?),
+                    kind: hir::DefKind::Const(val?),
                 })
             }
-            ast::ExecKind::Func {
+            ast::DefKind::Func {
                 generics,
                 self_param,
                 params,
@@ -300,10 +300,10 @@ impl ResolveInfo<'_, '_> {
                 self.hir
                     .add_var_ty(id, hir::Ty::Func(param_tys, Box::new(ret_ty)));
 
-                Ok(hir::ExecItem {
+                Ok(hir::DefItem {
                     module: self.scopes.module(),
                     var: id,
-                    kind: hir::ExecKind::Func {
+                    kind: hir::DefKind::Func {
                         params,
                         body: body?,
                     },

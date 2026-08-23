@@ -99,7 +99,7 @@ impl LowerInfo<'_, '_> {
                 th: self.lower_block_expr(th),
                 el: el.as_ref().map(|el| self.lower_block_expr(el)),
             },
-            hir::Expr::For { .. } => todo!("Traits"),
+            hir::Expr::For { .. } => todo!("For Loops"),
             hir::Expr::Loop(body) => mir::Expr::Loop(self.lower_block_expr(body)),
             hir::Expr::Break => todo!("Unconditional Control Flow"),
             hir::Expr::Continue => todo!("Unconditional Control Flow"),

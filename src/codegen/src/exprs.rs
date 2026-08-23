@@ -20,10 +20,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
-            Expr::Index {
-                array: arr,
-                index: idx,
-            } => self.emit_index(*arr, *idx),
+            Expr::Index { array, index } => self.emit_index(expr, *array, *index),
             Expr::Call { func, args, ret_ty } => self.emit_call(*func, args, ret_ty),
             Expr::Closure { func, captures } => self.emit_closure(*func, captures),
             Expr::Assign { place, value } => self.emit_assign(*place, *value),
@@ -86,7 +83,18 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Expr::Index { array, index } => {
                 let array = self.emit_place(*array);
                 let index = self.emit_expr(*index);
-                self.build_index(array, index)
+                let LayoutValue::Scalar(
+                    ScalarKind::Array(elem_ty),
+                    ScalarLayout::Indirect(array_ptr),
+                ) = array
+                else {
+                    unreachable!("attempted to access direct array as place")
+                };
+                let array_ptr = self
+                    .builder
+                    .build_load(self.ptr_ty(), array_ptr, "")
+                    .unwrap();
+                self.build_index(LayoutValue::array(elem_ty, array_ptr), index)
             }
             _ => unreachable!("not a place"),
         }
@@ -106,9 +114,19 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Expr::Index { array, index } => {
                 let array = self.emit_unique_place(*array);
                 let index = self.emit_expr(*index);
-                let (elem_ty, array_ptr) = array.as_array();
+                let LayoutValue::Scalar(
+                    ScalarKind::Array(elem_ty),
+                    ScalarLayout::Indirect(array_ptr),
+                ) = array
+                else {
+                    unreachable!("attempted to access direct array as place")
+                };
+                let array_ptr = self
+                    .builder
+                    .build_load(self.ptr_ty(), array_ptr, "")
+                    .unwrap();
                 self.build_call(self.array_unique(elem_ty), &[array_ptr.into()]);
-                self.build_index(array, index)
+                self.build_index(LayoutValue::array(elem_ty, array_ptr), index)
             }
             _ => unreachable!("not a place"),
         }
@@ -289,20 +307,23 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         result
     }
 
-    fn emit_index(&mut self, array: ExprId, index: ExprId) -> LayoutValue<'mir, 'ctx> {
-        let (array, needs_drop) = if self.is_place(array) {
-            (self.emit_place(array), false)
+    fn emit_index(
+        &mut self,
+        expr: ExprId,
+        array: ExprId,
+        index: ExprId,
+    ) -> LayoutValue<'mir, 'ctx> {
+        if self.is_place(array) {
+            let elem_ptr = self.emit_place(expr);
+            self.build_dup(elem_ptr)
         } else {
-            (self.emit_expr(array), true)
-        };
-        let index = self.emit_expr(index);
-        let elem_ptr = self.build_index(array, index);
-
-        let result = self.build_dup(elem_ptr);
-        if needs_drop {
-            self.build_drop(array)
-        };
-        result
+            let array = self.emit_expr(array);
+            let index = self.emit_expr(index);
+            let elem_ptr = self.build_index(array, index);
+            let result = self.build_dup(elem_ptr);
+            self.build_drop(array);
+            result
+        }
     }
 
     fn emit_call(

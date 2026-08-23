@@ -14,7 +14,7 @@ use errors::ErrorHandler;
 use ident::Ident;
 use irs::{
     ModuleId,
-    hir::{self, ExecItem, ExecKind, Hir, TyId},
+    hir::{self, DefItem, DefKind, Hir, TyId},
     mir::{self, Item, ItemKind, Mir, VarInfo},
 };
 
@@ -112,11 +112,11 @@ impl<'hir> LowerInfo<'hir, '_> {
         });
     }
 
-    fn lower_item(&mut self, item: &ExecItem) -> Item {
+    fn lower_item(&mut self, item: &DefItem) -> Item {
         self.module = item.module;
         let kind = match &item.kind {
-            ExecKind::Const(val) => ItemKind::Const(self.lower_expr(*val)),
-            ExecKind::Func { params, body } => {
+            DefKind::Const(val) => ItemKind::Const(self.lower_expr(*val)),
+            DefKind::Func { params, body } => {
                 let params = params.iter().map(|var| self.lower_var(*var)).collect();
                 let body = self.lower_expr(*body);
                 ItemKind::Func { params, body }

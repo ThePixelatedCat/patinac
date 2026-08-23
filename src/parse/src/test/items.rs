@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 
 use ident::Ident;
 use irs::ast::{
-    BlockItem, ExecItem, ExecKind, ExprKind, Field, Import, InfixOp, Param, PatKind, Path, TyItem,
+    BlockItem, DefItem, DefKind, ExprKind, Field, Import, InfixOp, Param, PatKind, Path, TyItem,
     TyItemKind, TyKind, Variant,
 };
 
@@ -128,9 +128,9 @@ fn impls() {
         Ok(Item::BlockItem(BlockItem::Impl {
             ty: TyKind::named("Foo").span(10..13),
             items: vec![
-                ExecItem {
+                DefItem {
                     ident: Ident::new("bar").span(27..30),
-                    kind: ExecKind::Func {
+                    kind: DefKind::Func {
                         generics: vec![],
                         self_param: Some((true, Range::from(31..39))),
                         params: vec![],
@@ -138,9 +138,9 @@ fn impls() {
                         body: ExprKind::unit().span(47..49)
                     }
                 },
-                ExecItem {
+                DefItem {
                     ident: Ident::new("BAZ").span(64..67),
-                    kind: ExecKind::Const {
+                    kind: DefKind::Const {
                         ty: TyKind::unit().span(69..71),
                         val: ExprKind::unit().span(74..76)
                     }
@@ -154,9 +154,9 @@ fn impls() {
 fn consts() {
     assert_eq!(
         Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
-        Ok(Item::ExecItem(ExecItem {
+        Ok(Item::ExecItem(DefItem {
             ident: Ident::new("hello_world").span(6..17),
-            kind: ExecKind::Const {
+            kind: DefKind::Const {
                 ty: TyKind::named("String").span(19..25),
                 val: ExprKind::string("Hello, World!").span(28..43)
             },
@@ -168,9 +168,9 @@ fn consts() {
 fn functions() {
     assert_eq!(
         Parser::new_test("fn sum(mut a: Byte, b: Byte): () = a = a + b").item(),
-        Ok(Item::ExecItem(ExecItem {
+        Ok(Item::ExecItem(DefItem {
             ident: Ident::new("sum").span(3..6),
-            kind: ExecKind::Func {
+            kind: DefKind::Func {
                 generics: vec![],
                 self_param: None,
                 params: vec![
@@ -209,9 +209,9 @@ fn functions() {
 fn primitive_types() {
     assert_eq!(
         Parser::new_test("const Int: Int = 0").item(),
-        Ok(Item::ExecItem(ExecItem {
+        Ok(Item::ExecItem(DefItem {
             ident: Ident::new("Int").span(6..9),
-            kind: ExecKind::Const {
+            kind: DefKind::Const {
                 ty: TyKind::Int.span(11..14),
                 val: ExprKind::int(0).span(17..18)
             }

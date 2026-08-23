@@ -585,15 +585,18 @@ impl<'ctx> CodegenState<'_, 'ctx> {
             .builder
             .build_load(self.ptr_ty(), equals_func, "equalsfn")
             .unwrap();
-        self.builder
+        let result = self
+            .builder
             .build_indirect_call(
                 self.equals_func_ty(),
                 equals_func.into_pointer_value(),
                 &[lhs.into(), rhs.into()],
                 "",
             )
-            .unwrap();
-        self.builder.build_return(None).unwrap();
+            .unwrap()
+            .try_as_basic_value()
+            .unwrap_basic();
+        self.builder.build_return(Some(&result)).unwrap();
 
         self.builder.position_at_end(old_insert_block);
 

@@ -195,8 +195,15 @@ impl TypeChecker<'_> {
             }
             Expr::For { id, iter, body } => {
                 let iter_ty = self.infer_expr(hir, module, *iter);
+                let item_ty = PartialTy::var(&mut self.table);
                 let var_ty = self.var_ty(hir, *id).clone();
-                self.constrain_eq(var_ty, iter_ty, hir.expr_span(*iter), module);
+                self.constrain_eq(
+                    iter_ty,
+                    PartialTy::Array(Box::new(item_ty.clone())),
+                    hir.expr_span(*iter),
+                    module,
+                );
+                self.constrain_eq(var_ty, item_ty, hir.expr_span(*iter), module);
                 self.infer_block_expr(hir, module, body);
                 PartialTy::unit()
             }

@@ -12,8 +12,8 @@ use super::ModuleId;
 /// An AST-like structure, with additional metadata in the form of type information and resolved variable identifiers.
 #[derive(Debug, Default)]
 pub struct Hir {
-    main: Option<ExecItem>,
-    execs: Vec<ExecItem>,
+    main: Option<DefItem>,
+    execs: Vec<DefItem>,
     tys: SlotMap<TyId, SpanIdent>,
     ty_info: SecondaryMap<TyId, TyInfo>,
     exprs: SlotMap<ExprId, (Expr, Range<u32>)>,
@@ -24,22 +24,22 @@ pub struct Hir {
 
 impl Hir {
     /// Returns all of the "executable items". These are the items that contain expressions.
-    pub fn execs(&self) -> &[ExecItem] {
+    pub fn execs(&self) -> &[DefItem] {
         &self.execs
     }
 
     /// Adds an "executable item". These are the items that contain expressions.
-    pub fn add_exec(&mut self, exec: ExecItem) {
+    pub fn add_exec(&mut self, exec: DefItem) {
         self.execs.push(exec);
     }
 
     /// Returns the main function, if it exists.
-    pub const fn main(&self) -> Option<&ExecItem> {
+    pub const fn main(&self) -> Option<&DefItem> {
         self.main.as_ref()
     }
 
     /// Sets the main function.
-    pub fn set_main(&mut self, main: ExecItem) {
+    pub fn set_main(&mut self, main: DefItem) {
         self.main = Some(main);
     }
 }
@@ -162,18 +162,18 @@ pub struct Field {
 
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ExecItem {
+pub struct DefItem {
     /// The variable the item is associated with.
     pub var: VarId,
     /// The kind of the item (constant or function).
-    pub kind: ExecKind,
+    pub kind: DefKind,
     /// The module containing the item's definition.
     pub module: ModuleId,
 }
 
 /// The information of an [`ExecItem`] specific to whether it's a constant or function.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ExecKind {
+pub enum DefKind {
     /// A constant item.
     Const(ExprId),
     /// A function item.

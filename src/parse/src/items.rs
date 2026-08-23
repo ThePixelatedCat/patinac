@@ -3,7 +3,7 @@ use std::range::Range;
 use derive_more::From;
 
 use ident::SpanIdent;
-use irs::ast::{BlockItem, ExecItem, ExecKind, Field, Import, Param, TyItem, TyItemKind, Variant};
+use irs::ast::{BlockItem, DefItem, DefKind, Field, Import, Param, TyItem, TyItemKind, Variant};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -12,7 +12,7 @@ pub enum Item {
     Import(Import),
     TyItem(TyItem),
     BlockItem(BlockItem),
-    ExecItem(ExecItem),
+    ExecItem(DefItem),
 }
 
 impl Parser<'_> {
@@ -118,7 +118,7 @@ impl Parser<'_> {
         Ok(BlockItem::Impl { ty, items })
     }
 
-    fn const_item(&mut self) -> Result<ExecItem> {
+    fn const_item(&mut self) -> Result<DefItem> {
         self.consume(TokKind::Const)?;
 
         let ident = self.ident();
@@ -127,13 +127,13 @@ impl Parser<'_> {
         self.consume(TokKind::Eq)?;
         let val = self.expr();
 
-        Ok(ExecItem {
+        Ok(DefItem {
             ident: ident?,
-            kind: ExecKind::Const { ty: ty?, val: val? },
+            kind: DefKind::Const { ty: ty?, val: val? },
         })
     }
 
-    fn func_item(&mut self) -> Result<ExecItem> {
+    fn func_item(&mut self) -> Result<DefItem> {
         self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
@@ -189,9 +189,9 @@ impl Parser<'_> {
         self.consume(TokKind::Eq)?;
         let body = self.expr()?;
 
-        Ok(ExecItem {
+        Ok(DefItem {
             ident,
-            kind: ExecKind::Func {
+            kind: DefKind::Func {
                 generics,
                 self_param,
                 params,

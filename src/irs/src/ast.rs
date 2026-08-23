@@ -21,7 +21,7 @@ pub struct Ast {
     /// The block items of a module, with each block containing other nested item. This includes `impl` blocks.
     pub block_items: Vec<BlockItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
-    pub exec_items: Vec<ExecItem>,
+    pub exec_items: Vec<DefItem>,
 }
 
 /// A path made of one or more identifiers.
@@ -160,22 +160,22 @@ pub enum BlockItem {
         /// The type this impl block is associated with.
         ty: Ty,
         /// The items within the block.
-        items: Vec<ExecItem>,
+        items: Vec<DefItem>,
     },
 }
 
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
 #[derive(Debug, PartialEq)]
-pub struct ExecItem {
+pub struct DefItem {
     /// The name of the item.
     pub ident: SpanIdent,
     /// The kind of the item (constant or function).
-    pub kind: ExecKind,
+    pub kind: DefKind,
 }
 
 /// The information of an [`ExecItem`] specific to whether it's a constant or function.
 #[derive(Debug, PartialEq)]
-pub enum ExecKind {
+pub enum DefKind {
     /// A constant item.
     Const {
         /// The constant's type.

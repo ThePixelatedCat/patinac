@@ -1,2 +1,0 @@
-record Foo()
-const Foo: Foo = Foo()
