@@ -9,7 +9,6 @@ fn run_test(name: &str) -> ExitCode {
     eprintln!("Running test {:?}", name);
     let mut src_path = Path::new(file!()).parent().unwrap().to_path_buf();
     src_path.push(name);
-    src_path.add_extension("ptn");
     compile::compile(Args {
         src_path,
         opt_level: OptLevel::O0,
@@ -23,11 +22,25 @@ macro_rules! test {
     ($name:ident; $($tail:tt)*) => {
         #[test]
         fn $name() -> ExitCode {
-            run_test(stringify!($name))
+            run_test(concat!(stringify!($name), ".ptn"))
         }
         test! { $($tail)* }
     };
     (fails $name:ident; $($tail:tt)*) => {
+        #[test]
+        fn $name() -> ExitCode {
+            if run_test(concat!(stringify!($name), ".ptn")) == ExitCode::FAILURE { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+        }
+        test! { $($tail)* }
+    };
+    (dir $name:ident; $($tail:tt)*) => {
+        #[test]
+        fn $name() -> ExitCode {
+            run_test(stringify!($name))
+        }
+        test! { $($tail)* }
+    };
+    (fails dir $name:ident; $($tail:tt)*) => {
         #[test]
         fn $name() -> ExitCode {
             if run_test(stringify!($name)) == ExitCode::FAILURE { ExitCode::SUCCESS } else { ExitCode::FAILURE }
@@ -53,4 +66,6 @@ test! {
     unique_places;
     fails unresolved;
     zsts;
+    dir opaque;
+    dir opaque_err;
 }

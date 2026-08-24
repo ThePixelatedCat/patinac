@@ -16,9 +16,11 @@ pub enum ErrorKind {
     #[display("could not infer a concrete type for this variable")]
     UninferredVarType,
     #[display("type `{_0}` does not have a field named `{_1}`")]
-    MissingField(PartialTy, Ident),
+    MissingField(Ident, Ident),
     #[display("ype {_0} does not have any fields")]
     NoFieldsType(PartialTy),
+    #[display("type `{_0}` is opaque")]
+    OpaqueType(Ident),
     #[display("type `{_0}` does not have a method named `{_1}`")]
     MissingMethod(PartialTy, Ident),
 }

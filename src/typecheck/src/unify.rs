@@ -67,9 +67,16 @@ fn unify_field_ty(
         }
     };
 
-    let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
+    let ty_info = hir.ty_info(base_id);
+
+    if ty_info.opaque && ty_info.module != module {
+        return Err(ErrorKind::OpaqueType(hir.ty_ident(base_id).ident).span(base_span, module));
+    }
+
+    let Some(field) = ty_info.fields.get(&field_name.ident) else {
         return Err(
-            ErrorKind::MissingField(base_ty, field_name.ident).span(field_name.span, module)
+            ErrorKind::MissingField(hir.ty_ident(base_id).ident, field_name.ident)
+                .span(field_name.span, module),
         );
     };
 

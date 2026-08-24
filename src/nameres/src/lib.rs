@@ -155,10 +155,6 @@ impl ResolveInfo<'_, '_> {
             todo!("Generics")
         }
 
-        if item.opaque {
-            todo!("Opaque Types")
-        }
-
         match &item.kind {
             TyItemKind::Record(old_fields) => {
                 let mut fields = HashMap::new();
@@ -192,11 +188,23 @@ impl ResolveInfo<'_, '_> {
                     global: true,
                     module: self.scopes.module(),
                 });
+                let ctor_vis = if item.opaque {
+                    Visibility::Private
+                } else {
+                    Visibility::Public
+                };
                 self.hir.add_var_ty(ctor, constructor_ty);
-                self.scopes
-                    .add_def(Visibility::Public, item.ident.ident, ctor);
+                self.scopes.add_def(ctor_vis, item.ident.ident, ctor);
 
-                self.hir.fulfill_ty(id, TyInfo { fields, ctor });
+                self.hir.fulfill_ty(
+                    id,
+                    TyInfo {
+                        opaque: item.opaque,
+                        fields,
+                        ctor,
+                        module: self.scopes.module(),
+                    },
+                );
             }
             TyItemKind::Union(_) => {
                 todo!("Pattern Matching");

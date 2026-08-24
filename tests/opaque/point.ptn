@@ -1,0 +1,5 @@
+opaque record Point(x: Float, y: Float)
+
+fn new_point(x: Float, y: Float): Point = Point(x, y)
+
+fn get_x(this: Point): Float = this.x

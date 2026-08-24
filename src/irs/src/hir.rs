@@ -145,10 +145,14 @@ new_key_type! {
 /// Information for a user-defined type.
 #[derive(Debug, PartialEq, Eq)]
 pub struct TyInfo {
+    /// Whether the type is opaque (meaning it's fields/variants are private).
+    pub opaque: bool,
     /// The fields of the type.
     pub fields: HashMap<Ident, Field>,
     /// The ID of the type's constructor function.
     pub ctor: VarId,
+    /// The module containing the type's definition.
+    pub module: ModuleId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
