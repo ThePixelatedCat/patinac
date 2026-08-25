@@ -17,21 +17,23 @@ pub enum Item {
 
 impl Parser<'_> {
     pub(crate) fn item(&mut self) -> Result<Item> {
+        let public = self.consume_at(TokKind::Pub);
+
         match self.peek()?.kind {
             TokKind::Import => self.import_item().map(Item::from),
             TokKind::Opaque => {
                 self.consume(TokKind::Opaque)?;
                 match self.peek()?.kind {
-                    TokKind::Record => self.record_item(true).map(Item::from),
-                    TokKind::Union => self.union_item(true).map(Item::from),
-                    _ => Err(self.err_next(ErrorKind::Unexpected, &["expected a record or union"])),
+                    TokKind::Record => self.record_item(public.is_some(), true).map(Item::from),
+                    TokKind::Union => self.union_item(public.is_some(), true).map(Item::from),
+                    _ => Err(self.err_next(ErrorKind::Unexpected, &["expected a type item"])),
                 }
             }
-            TokKind::Record => self.record_item(false).map(Item::from),
-            TokKind::Union => self.union_item(false).map(Item::from),
+            TokKind::Record => self.record_item(public.is_some(), false).map(Item::from),
+            TokKind::Union => self.union_item(public.is_some(), false).map(Item::from),
             TokKind::Impl => self.impl_item().map(Item::from),
-            TokKind::Const => self.const_item().map(Item::from),
-            TokKind::Fn => self.func_item().map(Item::from),
+            TokKind::Const => self.const_item(public.is_some()).map(Item::from),
+            TokKind::Fn => self.func_item(public.is_some()).map(Item::from),
             _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
         }
     }
@@ -42,7 +44,7 @@ impl Parser<'_> {
         Ok(Import(path, span))
     }
 
-    fn record_item(&mut self, opaque: bool) -> Result<TyItem> {
+    fn record_item(&mut self, public: bool, opaque: bool) -> Result<TyItem> {
         self.consume(TokKind::Record)?;
 
         let ident = self.ident();
@@ -52,6 +54,7 @@ impl Parser<'_> {
         let ident = ident?;
 
         Ok(TyItem {
+            public,
             opaque,
             ident,
             generics,
@@ -59,7 +62,7 @@ impl Parser<'_> {
         })
     }
 
-    fn union_item(&mut self, opaque: bool) -> Result<TyItem> {
+    fn union_item(&mut self, public: bool, opaque: bool) -> Result<TyItem> {
         self.consume(TokKind::Union)?;
 
         let ident = self.ident();
@@ -77,6 +80,7 @@ impl Parser<'_> {
         let ident = ident?;
 
         Ok(TyItem {
+            public,
             opaque,
             ident,
             generics,
@@ -118,7 +122,7 @@ impl Parser<'_> {
         Ok(BlockItem::Impl { ty, items })
     }
 
-    fn const_item(&mut self) -> Result<DefItem> {
+    fn const_item(&mut self, public: bool) -> Result<DefItem> {
         self.consume(TokKind::Const)?;
 
         let ident = self.ident();
@@ -128,12 +132,13 @@ impl Parser<'_> {
         let val = self.expr();
 
         Ok(DefItem {
+            public,
             ident: ident?,
             kind: DefKind::Const { ty: ty?, val: val? },
         })
     }
 
-    fn func_item(&mut self) -> Result<DefItem> {
+    fn func_item(&mut self, public: bool) -> Result<DefItem> {
         self.consume(TokKind::Fn)?;
 
         let ident = self.ident()?;
@@ -190,6 +195,7 @@ impl Parser<'_> {
         let body = self.expr()?;
 
         Ok(DefItem {
+            public,
             ident,
             kind: DefKind::Func {
                 generics,

@@ -18,6 +18,10 @@ pub enum ErrorKind {
     BadUnicodeEscape,
     #[display("primitive type cannot have generic parameters")]
     PrimitiveGenerics,
+    #[display("only type and def items can be public")]
+    BadPub,
+    #[display("only type  items can be opaque")]
+    BadOpaque,
 }
 
 impl SpanError for ErrorKind {}

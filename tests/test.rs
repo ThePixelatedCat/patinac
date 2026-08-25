@@ -67,5 +67,6 @@ test! {
     fails unresolved;
     zsts;
     dir opaque;
-    dir opaque_err;
+    fails dir opaque_err;
+    fails dir rexport;
 }

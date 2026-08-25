@@ -115,6 +115,8 @@ pub struct Import(pub Path, pub Range<u32>);
 /// The definition of a type, either a `record` or a `union`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct TyItem {
+    /// Whether the type is public.
+    pub public: bool,
     /// Whether the type is opaque (meaning it's fields/variants are private).
     pub opaque: bool,
     /// The name of the type.
@@ -167,6 +169,8 @@ pub enum BlockItem {
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
 #[derive(Debug, PartialEq)]
 pub struct DefItem {
+    /// Whether the definition is public.
+    pub public: bool,
     /// The name of the item.
     pub ident: SpanIdent,
     /// The kind of the item (constant or function).

@@ -188,6 +188,10 @@ pub enum TokKind {
     #[display("import")]
     #[token("import")]
     Import,
+    /// `pub`.
+    #[display("pub")]
+    #[token("pub")]
+    Pub,
     /// `opaque`.
     #[display("opaque")]
     #[token("opaque")]
