@@ -9,7 +9,7 @@ use std::range::Range;
 use foldhash::{HashMap, HashMapExt as _};
 use slotmap::SecondaryMap;
 
-use errors::{ErrorHandler, HandledError, Result, SpanError as _, TryCollectEager as _};
+use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
     ast::{self, Ast, Binding, BlockItem, Import, Pat, PatKind, Path, TyItem, TyItemKind, TyKind},
@@ -61,13 +61,14 @@ impl ResolveInfo<'_, '_> {
 
         for ty in &ast.ty_items {
             let id = self.hir.reserve_ty(ty.ident);
-            if self
-                .scopes
-                .add_ty(Visibility::Public, ty.ident.ident, id)
-                .is_some()
-            {
+            let vis = if ty.public {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            };
+            if self.scopes.add_ty(vis, ty.ident.ident, id).is_some() {
                 self.err(
-                    ErrorKind::DupItem(ItemKind::Type, ty.ident.ident),
+                    ErrorKind::DuplicateItem(ItemKind::Type, ty.ident.ident),
                     ty.ident.span,
                 );
             }
@@ -79,27 +80,28 @@ impl ResolveInfo<'_, '_> {
 
         for block in &ast.block_items {
             match block {
-                BlockItem::Impl { ty, items } => {
+                BlockItem::Impl { span, ty, items } => {
                     todo!("Impl Blocks")
                 }
             }
         }
 
-        for exec in &ast.exec_items {
+        for def in &ast.exec_items {
             let id = self.hir.add_var(VarInfo {
-                ident: exec.ident,
+                ident: def.ident,
                 mutable: false,
                 global: true,
                 module: self.scopes.module(),
             });
-            if self
-                .scopes
-                .add_def(Visibility::Public, exec.ident.ident, id)
-                .is_some()
-            {
+            let vis = if def.public {
+                Visibility::Public
+            } else {
+                Visibility::Private
+            };
+            if self.scopes.add_def(vis, def.ident.ident, id).is_some() {
                 self.err(
-                    ErrorKind::DupItem(ItemKind::Value, exec.ident.ident),
-                    exec.ident.span,
+                    ErrorKind::DuplicateItem(ItemKind::Value, def.ident.ident),
+                    def.ident.span,
                 );
             }
         }
@@ -188,7 +190,7 @@ impl ResolveInfo<'_, '_> {
                     global: true,
                     module: self.scopes.module(),
                 });
-                let ctor_vis = if item.opaque {
+                let ctor_vis = if item.opaque || !item.public {
                     Visibility::Private
                 } else {
                     Visibility::Public
@@ -207,14 +209,14 @@ impl ResolveInfo<'_, '_> {
                 );
             }
             TyItemKind::Union(_) => {
-                todo!("Pattern Matching");
+                todo!("Unions");
             }
         }
     }
 
     fn resolve_block_item(&mut self, item: &BlockItem) -> Result<()> {
         match item {
-            BlockItem::Impl { ty, items } => {
+            BlockItem::Impl { span, ty, items } => {
                 todo!("Impl Blocks")
                 // let ty = self.resolve_ty(ty)?;
 
@@ -389,7 +391,7 @@ impl ResolveInfo<'_, '_> {
     }
 
     fn err(&mut self, error: ErrorKind, span: Range<u32>) -> HandledError {
-        self.handler.err(error.span(span, self.scopes.module()))
+        self.handler.report(error, span, self.scopes.module())
     }
 }
 

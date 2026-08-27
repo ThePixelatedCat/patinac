@@ -12,7 +12,7 @@ pub enum Item {
     Import(Import),
     TyItem(TyItem),
     BlockItem(BlockItem),
-    ExecItem(DefItem),
+    DefItem(DefItem),
 }
 
 impl Parser<'_> {
@@ -26,7 +26,7 @@ impl Parser<'_> {
                 match self.peek()?.kind {
                     TokKind::Record => self.record_item(public.is_some(), true).map(Item::from),
                     TokKind::Union => self.union_item(public.is_some(), true).map(Item::from),
-                    _ => Err(self.err_next(ErrorKind::Unexpected, &["expected a type item"])),
+                    _ => Err(self.unexpected(Some("opaque must be followed by a type item"))),
                 }
             }
             TokKind::Record => self.record_item(public.is_some(), false).map(Item::from),
@@ -34,7 +34,7 @@ impl Parser<'_> {
             TokKind::Impl => self.impl_item().map(Item::from),
             TokKind::Const => self.const_item(public.is_some()).map(Item::from),
             TokKind::Fn => self.func_item(public.is_some()).map(Item::from),
-            _ => Err(self.err_next(ErrorKind::Unexpected, &["expected the start of an item"])),
+            _ => Err(self.unexpected(None)),
         }
     }
 
@@ -102,24 +102,28 @@ impl Parser<'_> {
     }
 
     fn impl_item(&mut self) -> Result<BlockItem> {
-        self.consume(TokKind::Impl)?;
+        let span = self.consume(TokKind::Impl)?.span;
 
         let ty = self.ty()?;
 
         self.consume(TokKind::LBrace)?;
         let mut items = vec![];
         while self.consume_at(TokKind::RBrace).is_none() {
-            let item = match self.peek()?.kind {
-                TokKind::Const => self.const_item(),
-                TokKind::Fn => self.func_item(),
-                _ => {
-                    Err(self.err_next(ErrorKind::Unexpected, &["expected a function or constant"]))
+            let item = match self.item()? {
+                Item::Import(item) => return Err(self.err(ErrorKind::NotDefInImpl, item.1)),
+                Item::TyItem(item) => {
+                    return Err(self.err(ErrorKind::NotDefInImpl, item.ident.span));
                 }
-            }?;
+                Item::BlockItem(BlockItem::Impl { span, .. }) => {
+                    return Err(self.err(ErrorKind::NotDefInImpl, span));
+                }
+                Item::DefItem(item) => item,
+            };
+
             items.push(item);
         }
 
-        Ok(BlockItem::Impl { ty, items })
+        Ok(BlockItem::Impl { span, ty, items })
     }
 
     fn const_item(&mut self, public: bool) -> Result<DefItem> {

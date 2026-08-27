@@ -1,25 +1,27 @@
 use std::mem;
 
 use itertools::Itertools as _;
-
-use errors::{Result, SpanError as _, TryCollectEager as _};
-use irs::hir::{ExprId, Hir, Param, Ty};
 use slotmap::SecondaryMap;
+
+use errors::{Result, TryCollectEager as _};
+use irs::hir::{ExprId, Hir, Param, Ty};
 
 use crate::{Table, TypeChecker, error::ErrorKind, types::PartialTy};
 
 impl TypeChecker<'_> {
     pub(super) fn sub_all(&mut self, hir: &mut Hir) -> Result<SecondaryMap<ExprId, Ty>> {
-        // Don't even try if we have outstanding errors
+        // Don't even try if we have previous errors
         self.handler.checked(())?;
 
         let expr_map = mem::take(&mut self.substitution)
             .iter()
             .map(|(expr, (ty, module))| match sub_ty(&mut self.table, ty) {
                 Ok(ty) => Ok((expr, ty)),
-                Err(()) => Err(self
-                    .handler
-                    .err(ErrorKind::UninferredExprType.span(hir.expr_span(expr), *module))),
+                Err(()) => Err(self.handler.report(
+                    ErrorKind::UninferredExprType,
+                    hir.expr_span(expr),
+                    *module,
+                )),
             })
             .try_collect_eager();
 
@@ -32,8 +34,10 @@ impl TypeChecker<'_> {
                 }
                 Err(()) => {
                     let var_info = hir.var_info(var);
-                    Err(self.handler.err(
-                        ErrorKind::UninferredVarType.span(var_info.ident.span, var_info.module),
+                    Err(self.handler.report(
+                        ErrorKind::UninferredVarType,
+                        var_info.ident.span,
+                        var_info.module,
                     ))
                 }
             })

@@ -15,7 +15,7 @@ use std::range::Range;
 
 use itertools::Itertools as _;
 
-use errors::{ErrorHandler, HandledError, Result, SpanError as _};
+use errors::{ErrorHandler, HandledError, Result};
 use ident::{Ident, SpanIdent};
 use irs::{
     ModuleId,
@@ -69,7 +69,7 @@ impl<'src> Parser<'src> {
             match self.item() {
                 Ok(Item::Import(item)) => ast.imports.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
-                Ok(Item::ExecItem(item)) => ast.exec_items.push(item),
+                Ok(Item::DefItem(item)) => ast.exec_items.push(item),
                 Ok(Item::BlockItem(item)) => ast.block_items.push(item),
                 Err(_) => {}
             }
@@ -166,29 +166,16 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn err(&self, error: ErrorKind, span: impl Into<Range<u32>>) -> HandledError {
-        self.handler.err(error.span(span, self.module))
+    fn err(&self, error: ErrorKind, span: Range<u32>) -> HandledError {
+        self.handler.report(error, span, self.module)
     }
 
-    fn err_ctx(
-        &mut self,
-        error: ErrorKind,
-        span: impl Into<Range<u32>>,
-        ctx: &[&'static str],
-    ) -> HandledError {
-        let mut error = error.span(span, self.module);
-        for ctx in ctx {
-            error = error.with_static_ctx(ctx);
-        }
-        self.handler.err(error)
-    }
-
-    fn err_next(&mut self, f: impl Fn(TokKind) -> ErrorKind, ctx: &[&'static str]) -> HandledError {
+    fn unexpected(&mut self, msg: Option<&'static str>) -> HandledError {
         let token = match self.next() {
             Ok(t) => t,
             Err(e) => return e,
         };
-        self.err_ctx(f(token.kind), token.span, ctx)
+        self.err(ErrorKind::Unexpected(token.kind, msg), token.span)
     }
 
     fn ty_annot(&mut self) -> Result<Option<Ty>> {

@@ -1,28 +1,64 @@
-use derive_more::Display;
-
-use errors::SpanError;
+use errors::{Diagnostic, Report};
 use ident::Ident;
 
 use crate::types::PartialTy;
 
-#[derive(Debug, Display, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
-    #[display("expected `{_1}`, found `{_0}`")]
-    TypesNotEqual(PartialTy, PartialTy),
-    #[display("infinite (TEMP)")]
+    TypeMismatch {
+        expected: PartialTy,
+        found: PartialTy,
+    },
+    MutMismatch {
+        should_be_mut: bool,
+    },
+    ArgCount {
+        expected: usize,
+        found: usize,
+    },
     Infinite,
-    #[display("could not infer a concrete type for this expression")]
     UninferredExprType,
-    #[display("could not infer a concrete type for this variable")]
     UninferredVarType,
-    #[display("type `{_0}` does not have a field named `{_1}`")]
-    MissingField(Ident, Ident),
-    #[display("ype {_0} does not have any fields")]
+    NoSuchField(Ident, Ident),
+    NoSuchMethod(PartialTy, Ident),
     NoFieldsType(PartialTy),
-    #[display("type `{_0}` is opaque")]
     OpaqueType(Ident),
-    #[display("type `{_0}` does not have a method named `{_1}`")]
-    MissingMethod(PartialTy, Ident),
 }
 
-impl SpanError for ErrorKind {}
+impl Diagnostic for ErrorKind {
+    fn report(self) -> Report {
+        match self {
+            Self::TypeMismatch { expected, found } => Report::error("mismatched types")
+                .with_label(format!("expected type {expected}, found type {found}")),
+            Self::MutMismatch { should_be_mut } => {
+                let report = Report::error("incorrect argument mutability");
+                if should_be_mut {
+                    report.with_label("argument should be mutable")
+                } else {
+                    report.with_label("argument should not be mutable")
+                }
+            }
+            Self::ArgCount { expected, found } => {
+                let report = Report::error("wrong number of arguments");
+                match expected {
+                    1 => report.with_label(format!("expected 1 argument, found {found}")),
+                    _ => report.with_label(format!("expected {expected} arguments, found {found}")),
+                }
+            }
+            Self::Infinite => Report::error("infinite type")
+                .with_label("the type of this expression recurses infinitely"),
+            Self::UninferredExprType => Report::error("uninferred type")
+                .with_label("could not infer a concrete type for this expression"),
+            Self::UninferredVarType => Report::error("uninferred type")
+                .with_label("could not infer a concrete type for this variable"),
+            Self::NoSuchField(ty, field) => Report::error("field not found")
+                .with_label(format!("type {ty} does not have a field named {field}")),
+            Self::NoSuchMethod(ty, method) => Report::error("method not found")
+                .with_label(format!("type {ty} does not have a method named {method}")),
+            Self::NoFieldsType(ty) => Report::error("field access on type with no fields")
+                .with_label(format!("type {ty} does not have fields")),
+            Self::OpaqueType(ident) => Report::error("field not accessible")
+                .with_label(format!("type `{ident}` is opaque")),
+        }
+    }
+}

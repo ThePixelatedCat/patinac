@@ -11,8 +11,7 @@ irs.path = "../irs"
 # External
 slotmap = "1.1.1"
 foldhash = "0.2.0"
-derive_more = { version = "2.1.1", features = ["display"] }
-itertools = "0.14.0"
+itertools = "0.15.0"
 parse = { path = "../parse", features = ["test"], optional = true }
 
 [lints]

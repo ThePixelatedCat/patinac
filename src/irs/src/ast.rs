@@ -159,6 +159,8 @@ pub struct Field {
 pub enum BlockItem {
     /// An `impl` block, associating it's nested items with a type.
     Impl {
+        /// The span of the `impl` token.
+        span: Range<u32>,
         /// The type this impl block is associated with.
         ty: Ty,
         /// The items within the block.

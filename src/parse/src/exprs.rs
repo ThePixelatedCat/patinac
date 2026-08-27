@@ -62,15 +62,14 @@ impl Parser<'_> {
                 Ok(ExprKind::Print(Box::new(expr)).span(span))
             }
             err_tok => {
-                let ctx = match err_tok {
+                let msg = match err_tok {
                     TokKind::Let => {
-                        ["`let` is a statement, and can only be used within a block"].as_slice()
+                        Some("`let` is a statement, and can only be used within a block")
                     }
-                    TokKind::Match => ["`match` is postfix"].as_slice(),
-                    _ => [].as_slice(),
+                    TokKind::Match => Some("`match` is postfix"),
+                    _ => None,
                 };
-                eprintln!("expr_inner");
-                Err(self.err_next(ErrorKind::Unexpected, ctx))
+                Err(self.unexpected(msg))
             }
         }?;
 
@@ -214,7 +213,7 @@ impl Parser<'_> {
         char::from_u32(value).ok_or_else(|| {
             self.err(
                 ErrorKind::BadUnicodeEscape,
-                start + start_offset..start + end_offset + 1,
+                Range::from(start + start_offset..start + end_offset + 1),
             )
         })
     }
@@ -248,11 +247,7 @@ impl Parser<'_> {
             TokKind::True => LitExpr::Bool(true),
             TokKind::False => LitExpr::Bool(false),
             _ => {
-                return Err(self.err_ctx(
-                    ErrorKind::Unexpected(tok.kind),
-                    tok.span,
-                    &["Expected a literal"],
-                ));
+                return Err(self.err(ErrorKind::Unexpected(tok.kind, None), tok.span));
             }
         };
         Ok((lit, tok.span))
@@ -427,10 +422,7 @@ impl Parser<'_> {
                 }
                 .span(span))
             }
-            _ => Err(self.err_next(
-                ErrorKind::Unexpected,
-                &["Expected indexing, match, or field access"],
-            )),
+            _ => Err(self.unexpected(None)),
         }
     }
 

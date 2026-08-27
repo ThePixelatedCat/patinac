@@ -1,9 +1,10 @@
 use std::iter;
 
+use errors::ReportKind;
 use ident::Ident;
 use irs::{
     hir,
-    mir::{self, Expr::Print, Item, ItemKind},
+    mir::{self, Item, ItemKind},
 };
 
 use crate::LowerInfo;
@@ -118,10 +119,13 @@ impl LowerInfo<'_, '_> {
             &hir::LitExpr::Int(value) => match self.expr_ty(expr) {
                 hir::Ty::Int => {
                     let i = i64::try_from(value).unwrap_or_else(|_| {
-                        self.handler.warn(
-                            &format!(
-                                "int literal {value} overflowed and was clamped to {}",
-                                i64::MAX
+                        self.handler.report(
+                            (
+                                format!(
+                                    "int literal {value} overflowed and was clamped to {}",
+                                    i64::MAX
+                                ),
+                                ReportKind::Warning,
                             ),
                             self.hir.expr_span(expr),
                             self.module,
@@ -133,10 +137,13 @@ impl LowerInfo<'_, '_> {
                 hir::Ty::UInt => mir::LitExpr::UInt(value),
                 hir::Ty::Byte => {
                     let b = u8::try_from(value).unwrap_or_else(|_| {
-                        self.handler.warn(
-                            &format!(
-                                "byte literal {value} overflowed and was clamped to {}",
-                                u8::MAX
+                        self.handler.report(
+                            (
+                                format!(
+                                    "byte literal {value} overflowed and was clamped to {}",
+                                    u8::MAX
+                                ),
+                                ReportKind::Warning,
                             ),
                             self.hir.expr_span(expr),
                             self.module,

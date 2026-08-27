@@ -82,7 +82,7 @@ impl ResolveInfo<'_, '_> {
                     .filter(|(a, b)| a.mutable || b.mutable)
                     .try_for_each(|(a, b)| {
                         if self.overlaps(a.value, b.value) {
-                            Err(self.err(ErrorKind::OverlappingPlaces(a.span, b.span), a.span))
+                            Err(self.err(ErrorKind::OverlappingArgs(a.span, b.span), a.span))
                         } else {
                             Ok(())
                         }
@@ -115,7 +115,7 @@ impl ResolveInfo<'_, '_> {
                     .filter(|(a, b)| a.mutable || b.mutable)
                     .try_for_each(|(a, b)| {
                         if self.overlaps(a.value, b.value) {
-                            Err(self.err(ErrorKind::OverlappingPlaces(a.span, b.span), a.span))
+                            Err(self.err(ErrorKind::OverlappingArgs(a.span, b.span), a.span))
                         } else {
                             Ok(())
                         }
@@ -240,8 +240,12 @@ impl ResolveInfo<'_, '_> {
     fn assert_is_place(&mut self, place: ExprId) {
         match self.hir.expr(place) {
             hir::Expr::Var(id) => {
-                if !self.hir.var_info(*id).mutable {
-                    self.err(ErrorKind::Mutation, self.hir.expr_span(place));
+                let info = self.hir.var_info(*id);
+                if !info.mutable {
+                    self.err(
+                        ErrorKind::Mutation(info.ident.ident),
+                        self.hir.expr_span(place),
+                    );
                 }
             }
             hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {

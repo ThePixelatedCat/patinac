@@ -1,6 +1,6 @@
 use std::{iter, range::Range};
 
-use errors::{Error, SpanError as _};
+use errors::ErrorHandler;
 use ident::SpanIdent;
 use irs::{
     ModuleId,
@@ -19,22 +19,26 @@ impl TypeChecker<'_> {
         for constr in &self.constraints {
             match constr {
                 Constraint::Eq(ty_a, ty_b, span, module) => {
-                    if let Err(err) = unify_ty_ty(&mut self.table, *span, *module, ty_a, ty_b) {
-                        self.handler.err(err);
-                    }
+                    unify_ty_ty(
+                        &mut self.table,
+                        &mut self.handler,
+                        *span,
+                        *module,
+                        ty_a,
+                        ty_b,
+                    );
                 }
                 Constraint::Field(base_ty, base_span, field_ty, field_name, module) => {
-                    if let Err(err) = unify_field_ty(
+                    unify_field_ty(
                         &mut self.table,
+                        &mut self.handler,
                         hir,
                         base_ty,
                         *base_span,
                         field_ty,
                         *field_name,
                         *module,
-                    ) {
-                        self.handler.err(err);
-                    }
+                    );
                 }
                 Constraint::Method(base_ty, base_span, method_ty, method_name, module) => {
                     todo!()
@@ -46,42 +50,51 @@ impl TypeChecker<'_> {
 
 fn unify_field_ty(
     table: &mut Table,
+    handler: &mut ErrorHandler,
     hir: &Hir,
     base_ty: &PartialTy,
     base_span: Range<u32>,
     field_ty: &PartialTy,
     field_name: SpanIdent,
     module: ModuleId,
-) -> Result<(), Error<ErrorKind>> {
+) {
     let base_ty = normalize_ty(table, base_ty);
 
     let base_id = match base_ty {
         PartialTy::Named(id) => id,
         PartialTy::Var(_) => {
-            return Err(ErrorKind::UninferredVarType
-                .span(base_span, module)
-                .with_static_ctx("type must be known by this point"));
+            handler.report(ErrorKind::UninferredVarType, base_span, module);
+            return;
         }
         no_fields_ty => {
-            return Err(ErrorKind::NoFieldsType(no_fields_ty).span(base_span, module));
+            handler.report(ErrorKind::NoFieldsType(no_fields_ty), base_span, module);
+            return;
         }
     };
 
     let ty_info = hir.ty_info(base_id);
 
     if ty_info.opaque && ty_info.module != module {
-        return Err(ErrorKind::OpaqueType(hir.ty_ident(base_id).ident).span(base_span, module));
+        handler.report(
+            ErrorKind::OpaqueType(hir.ty_ident(base_id).ident),
+            base_span,
+            module,
+        );
+        return;
     }
 
     let Some(field) = ty_info.fields.get(&field_name.ident) else {
-        return Err(
-            ErrorKind::MissingField(hir.ty_ident(base_id).ident, field_name.ident)
-                .span(field_name.span, module),
+        handler.report(
+            ErrorKind::NoSuchField(hir.ty_ident(base_id).ident, field_name.ident),
+            field_name.span,
+            module,
         );
+        return;
     };
 
     unify_ty_ty(
         table,
+        handler,
         field_name.span,
         module,
         field_ty,
@@ -91,16 +104,18 @@ fn unify_field_ty(
 
 fn unify_method_ty(
     table: &mut Table,
+    handler: &mut ErrorHandler,
     hir: &Hir,
     base_ty: &PartialTy,
     base_span: Range<u32>,
     method_ty: &PartialTy,
     method_name: SpanIdent,
     module: ModuleId,
-) -> Result<(), Error<ErrorKind>> {
-    let base_ty: Ty = normalize_ty(table, base_ty)
-        .try_into()
-        .map_err(|()| ErrorKind::UninferredVarType.span(base_span, module))?;
+) {
+    let Ok(base_ty) = Ty::try_from(normalize_ty(table, base_ty)) else {
+        handler.report(ErrorKind::UninferredVarType, base_span, module);
+        return;
+    };
 
     todo!("Method Resolution")
     // let Some(field) = hir.ty_info(base_id).fields.get(&field_name.ident) else {
@@ -124,11 +139,12 @@ fn unify_method_ty(
 /// at which point we error.
 fn unify_ty_ty(
     table: &mut Table,
+    handler: &mut ErrorHandler,
     span: Range<u32>,
     module: ModuleId,
     unnorm_lhs: &PartialTy,
     unnorm_rhs: &PartialTy,
-) -> Result<(), Error<ErrorKind>> {
+) {
     let lhs = normalize_ty(table, unnorm_lhs);
     let rhs = normalize_ty(table, unnorm_rhs);
 
@@ -137,46 +153,63 @@ fn unify_ty_ty(
         | (PartialTy::UInt, PartialTy::UInt)
         | (PartialTy::Byte, PartialTy::Byte)
         | (PartialTy::Float, PartialTy::Float)
-        | (PartialTy::Bool, PartialTy::Bool) => Ok(()),
+        | (PartialTy::Bool, PartialTy::Bool) => {}
         (PartialTy::Tuple(lhs_elems), PartialTy::Tuple(rhs_elems)) => {
             if lhs_elems.len() != rhs_elems.len() {
-                return Err(ErrorKind::TypesNotEqual(
-                    PartialTy::Tuple(lhs_elems),
-                    PartialTy::Tuple(rhs_elems),
-                )
-                .span(span, module));
+                handler.report(
+                    ErrorKind::TypeMismatch {
+                        expected: PartialTy::Tuple(lhs_elems),
+                        found: PartialTy::Tuple(rhs_elems),
+                    },
+                    span,
+                    module,
+                );
+                return;
             }
-            iter::zip(lhs_elems, rhs_elems)
-                .try_for_each(|(l, r)| unify_ty_ty(table, span, module, &l, &r))
+            for (l, r) in iter::zip(lhs_elems, rhs_elems) {
+                unify_ty_ty(table, handler, span, module, &l, &r)
+            }
         }
         (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
-            unify_ty_ty(table, span, module, &lhs_inner, &rhs_inner)
+            unify_ty_ty(table, handler, span, module, &lhs_inner, &rhs_inner)
         }
         (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
-            if lhs_params.len() != rhs_params.len()
-                || iter::zip(&lhs_params, &rhs_params).any(|(l, r)| l.mutable != r.mutable)
-            {
-                return Err(ErrorKind::TypesNotEqual(
-                    PartialTy::Fn(lhs_params, lhs_ret),
-                    PartialTy::Fn(rhs_params, rhs_ret),
-                )
-                .span(span, module));
+            unify_ty_ty(table, handler, span, module, &lhs_ret, &rhs_ret);
+            if lhs_params.len() != rhs_params.len() {
+                handler.report(
+                    ErrorKind::ArgCount {
+                        expected: lhs_params.len(),
+                        found: rhs_params.len(),
+                    },
+                    span,
+                    module,
+                );
+                return;
             }
-            // Intentionally compare the right parameter to the left one for proper errors.
-            iter::zip(rhs_params, lhs_params)
-                .try_for_each(|(r, l)| unify_ty_ty(table, r.span, module, &r.ty, &l.ty))?;
-            unify_ty_ty(table, span, module, &lhs_ret, &rhs_ret)
+            for (l, r) in iter::zip(lhs_params, rhs_params) {
+                unify_ty_ty(table, handler, r.span, module, &l.ty, &r.ty);
+                if l.mutable != r.mutable {
+                    handler.report(
+                        ErrorKind::MutMismatch {
+                            should_be_mut: l.mutable,
+                        },
+                        r.span,
+                        module,
+                    );
+                }
+            }
         }
-        (PartialTy::Named(a), PartialTy::Named(b)) if a == b => Ok(()),
+        (PartialTy::Named(a), PartialTy::Named(b)) if a == b => {}
         (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
-        | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => table
-            .unify_var_var(lhs_var, rhs_var)
-            .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span, module)),
+        | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
+            unify_var_var(table, handler, span, module, lhs_var, rhs_var)
+        }
         (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
             if occurs_check(&ty, var) {
-                return Err(ErrorKind::Infinite.span(span, module));
+                handler.report(ErrorKind::Infinite, span, module);
+                return;
             }
-            unify_var_value(table, span, module, var, ty)
+            unify_var_value(table, handler, span, module, var, ty)
         }
         (
             PartialTy::IntVar(int_var),
@@ -185,21 +218,58 @@ fn unify_ty_ty(
         | (
             int_ty @ (PartialTy::Int | PartialTy::UInt | PartialTy::Byte),
             PartialTy::IntVar(int_var),
-        ) => unify_var_value(table, span, module, int_var, int_ty),
-        (lhs, rhs) => Err(ErrorKind::TypesNotEqual(lhs, rhs).span(span, module)),
+        ) => unify_var_value(table, handler, span, module, int_var, int_ty),
+        (lhs, rhs) => {
+            handler.report(
+                ErrorKind::TypeMismatch {
+                    expected: lhs,
+                    found: rhs,
+                },
+                span,
+                module,
+            );
+        }
+    }
+}
+
+fn unify_var_var(
+    table: &mut Table,
+    handler: &mut ErrorHandler,
+    span: Range<u32>,
+    module: ModuleId,
+    l: TyVar,
+    r: TyVar,
+) {
+    if let Err((l, r)) = table.unify_var_var(l, r) {
+        handler.report(
+            ErrorKind::TypeMismatch {
+                expected: l,
+                found: r,
+            },
+            span,
+            module,
+        );
     }
 }
 
 fn unify_var_value(
     table: &mut Table,
+    handler: &mut ErrorHandler,
     span: Range<u32>,
     module: ModuleId,
     var: TyVar,
     ty: PartialTy,
-) -> Result<(), Error<ErrorKind>> {
-    table
-        .unify_var_value(var, Some(ty))
-        .map_err(|(l, r)| ErrorKind::TypesNotEqual(l, r).span(span, module))
+) {
+    if let Err((l, r)) = table.unify_var_value(var, Some(ty)) {
+        handler.report(
+            ErrorKind::TypeMismatch {
+                expected: l,
+                found: r,
+            },
+            span,
+            module,
+        );
+    }
 }
 
 fn normalize_ty(table: &mut Table, ty: &PartialTy) -> PartialTy {

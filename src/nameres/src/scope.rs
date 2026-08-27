@@ -162,7 +162,7 @@ impl<'pkg> ScopeInfo<'pkg> {
                 .insert(path.end(), (Visibility::Private, module))
                 .is_some()
             {
-                return Err(ErrorKind::DupItem(ItemKind::Module, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Module, path.end()));
             }
         }
 
@@ -177,7 +177,7 @@ impl<'pkg> ScopeInfo<'pkg> {
                 .insert(path.end(), (Visibility::Private, ty))
                 .is_some()
             {
-                return Err(ErrorKind::DupItem(ItemKind::Type, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Type, path.end()));
             }
         }
 
@@ -192,7 +192,7 @@ impl<'pkg> ScopeInfo<'pkg> {
                 .insert(path.end(), (Visibility::Private, def))
                 .is_some()
             {
-                return Err(ErrorKind::DupItem(ItemKind::Value, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Value, path.end()));
             }
         }
 

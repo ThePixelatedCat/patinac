@@ -1,7 +1,7 @@
 use ident::SpanIdent;
 use irs::ast::{Pat, PatKind};
 
-use crate::{ErrorKind, Parser, Result, TokKind};
+use crate::{Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn pattern(&mut self) -> Result<Pat> {
@@ -45,7 +45,7 @@ impl Parser<'_> {
             TokKind::LParen => self
                 .delimited_list(Self::pattern, TokKind::LParen, TokKind::RParen)
                 .map(|(pats, span)| PatKind::Tuple(pats).span(span)),
-            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
+            _ => Err(self.unexpected(None)),
         }
     }
 }

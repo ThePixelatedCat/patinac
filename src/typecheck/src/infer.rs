@@ -1,3 +1,5 @@
+use std::iter;
+
 use irs::{
     ModuleId,
     hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt},
@@ -107,10 +109,10 @@ impl TypeChecker<'_> {
             }
             Expr::Call { func, args } => {
                 let func_ty = self.infer_expr(hir, module, *func);
-                let arg_tys = args
+                let arg_tys: Vec<_> = args
                     .iter()
                     .map(|arg| Param {
-                        ty: self.infer_expr(hir, module, arg.value),
+                        ty: self.infer_expr(hir, module, arg.value), //PartialTy::var(&mut self.table),
                         mutable: arg.mutable,
                         span: arg.span,
                     })
@@ -118,10 +120,14 @@ impl TypeChecker<'_> {
                 let ret_ty = PartialTy::var(&mut self.table);
                 self.constrain_eq(
                     func_ty,
-                    PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
-                    hir.expr_span(expr),
+                    PartialTy::Fn(arg_tys.clone(), Box::new(ret_ty.clone())),
+                    hir.expr_span(*func),
                     module,
                 );
+                // for (arg, arg_var) in iter::zip(args, arg_tys) {
+                //     let arg_ty = self.infer_expr(hir, module, arg.value);
+                //     self.constrain_eq(arg_var.ty.clone(), arg_ty, arg.span, module);
+                // }
                 ret_ty
             }
             Expr::MethodCall { base, method, args } => {

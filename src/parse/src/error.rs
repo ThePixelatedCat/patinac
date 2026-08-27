@@ -1,27 +1,39 @@
-use derive_more::Display;
-
-use errors::SpanError;
+use errors::{Diagnostic, Report};
 
 use crate::TokKind;
 
-#[derive(Debug, Display, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ErrorKind {
-    #[display("invalid token")]
     BadToken,
-    #[display("unexpected token {_0}")]
-    Unexpected(TokKind),
-    #[display("expected {expected}, found {found}")]
+    Unexpected(TokKind, Option<&'static str>),
     Mismatched { expected: TokKind, found: TokKind },
-    #[display("`self` must be the first parameter")]
+    //#[display("`self` must be the first parameter")]
     SelfNotFirst,
-    #[display("invalid unicode codepoint")]
     BadUnicodeEscape,
-    #[display("primitive type cannot have generic parameters")]
-    PrimitiveGenerics,
-    #[display("only type and def items can be public")]
+    //#[display("only type and def items can be public")]
     BadPub,
-    #[display("only type  items can be opaque")]
-    BadOpaque,
+    NotDefInImpl,
 }
 
-impl SpanError for ErrorKind {}
+impl Diagnostic for ErrorKind {
+    fn report(self) -> Report {
+        match self {
+            Self::BadToken => Report::error("invalid token"),
+            Self::Unexpected(found, msg) => {
+                let report = Report::error("unexpected token").with_label(format!("found {found}"));
+                match msg {
+                    Some(msg) => report.with_note(msg),
+                    None => report,
+                }
+            }
+            Self::Mismatched { expected, found } => Report::error("unexpected token")
+                .with_label(format!("expected {expected}, found {found}")),
+            Self::SelfNotFirst => todo!(),
+            Self::BadUnicodeEscape => Report::error("invalid unicode escape").with_note(
+                "unicode escapes must be less than 0x110000 and not between 0xD800 and 0xE000",
+            ),
+            Self::BadPub => todo!(),
+            Self::NotDefInImpl => Report::error("impl blocks can only contain definition items"),
+        }
+    }
+}

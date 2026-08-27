@@ -2,7 +2,7 @@ use std::{ops::Deref as _, range::Range};
 
 use irs::ast::{ParamTy, Ty, TyKind};
 
-use crate::{ErrorKind, Parser, Result, TokKind};
+use crate::{Parser, Result, TokKind};
 
 impl Parser<'_> {
     pub(crate) fn ty(&mut self) -> Result<Ty> {
@@ -47,16 +47,13 @@ impl Parser<'_> {
                         _ => None,
                     };
                     if let Some(ty) = prim_ty {
-                        if !generics.is_empty() {
-                            self.err(ErrorKind::PrimitiveGenerics, span);
-                        }
                         return Ok(ty.span(span));
                     }
                 }
 
                 Ok(TyKind::Named(path, generics).span(span))
             }
-            _ => Err(self.err_next(ErrorKind::Unexpected, &[])),
+            _ => Err(self.unexpected(None)),
         }
     }
 

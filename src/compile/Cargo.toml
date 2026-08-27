@@ -19,6 +19,7 @@ argh = { version = "0.1.19", features = ["help"], default-features = false }
 derive_more = { version = "2.1.1", features = [
     "display",
     "from",
+    "error",
     "into_iterator",
 ] }
 slotmap = "1.1.1"

@@ -73,22 +73,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
-name = "borsh"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd1e3f8955a5d7de9fab72fc8373fade9fb8a703968cb200ae3dc6cf08e185a"
-dependencies = [
- "bytes",
- "cfg_aliases",
-]
-
-[[package]]
-name = "bytes"
-version = "1.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
-
-[[package]]
 name = "cc"
 version = "1.2.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -103,12 +87,6 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "cfg_aliases"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "codegen"
@@ -211,9 +189,7 @@ dependencies = [
 name = "errors"
 version = "0.1.0"
 dependencies = [
- "derive_more",
  "irs",
- "smol_str",
 ]
 
 [[package]]
@@ -358,7 +334,7 @@ dependencies = [
  "derive_more",
  "foldhash 0.2.0",
  "ident",
- "itertools",
+ "itertools 0.14.0",
  "slotmap",
 ]
 
@@ -367,6 +343,15 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -474,12 +459,11 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 name = "nameres"
 version = "0.1.0"
 dependencies = [
- "derive_more",
  "errors",
  "foldhash 0.2.0",
  "ident",
  "irs",
- "itertools",
+ "itertools 0.15.0",
  "parse",
  "slotmap",
 ]
@@ -507,7 +491,7 @@ dependencies = [
  "errors",
  "ident",
  "irs",
- "itertools",
+ "itertools 0.14.0",
  "logos",
  "pretty_assertions",
  "proptest",
@@ -776,16 +760,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "smol_str"
-version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523"
-dependencies = [
- "borsh",
- "serde_core",
-]
-
-[[package]]
 name = "string-interner"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -848,7 +822,7 @@ dependencies = [
  "errors",
  "ident",
  "irs",
- "itertools",
+ "itertools 0.14.0",
  "nameres",
  "slotmap",
 ]

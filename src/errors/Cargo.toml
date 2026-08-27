@@ -7,8 +7,6 @@ edition = "2024"
 # Internal
 irs.path = "../irs"
 # External
-smol_str = "0.3.6"
-derive_more = { version = "2.1.1", features = ["display", "error"] }
 
 [lints]
 workspace = true

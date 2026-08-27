@@ -69,4 +69,6 @@ test! {
     dir opaque;
     fails dir opaque_err;
     fails dir rexport;
+    dir vis;
+    fails dir vis_err;
 }

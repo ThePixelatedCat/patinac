@@ -24,8 +24,9 @@ fn imports() {
 #[test]
 fn records() {
     assert_eq!(
-        Parser::new_test("opaque record Point(x: Int, y: Int)",).item(),
+        Parser::new_test("pub opaque record Point(x: Int, y: Int)",).item(),
         Ok(Item::TyItem(TyItem {
+            public: true,
             opaque: true,
             ident: Ident::new("Point").span(14..19),
             generics: vec![],
@@ -50,6 +51,7 @@ record Foo[T, U](
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
+            public: false,
             opaque: false,
             ident: Ident::new("Foo").span(8..11),
             generics: vec![Ident::new("T").span(12..13), Ident::new("U").span(15..16),],
@@ -80,7 +82,7 @@ record Foo[T, U](
 #[test]
 fn unions() {
     let input = "
-union XY {
+pub union XY {
     X(),
     Y(baz: Baz, fizz: Buzz),
 }
@@ -89,6 +91,7 @@ union XY {
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::TyItem(TyItem {
+            public: true,
             opaque: false,
             ident: Ident::new("XY").span(7..9),
             generics: vec![],
@@ -120,15 +123,17 @@ fn impls() {
     let input = "
     impl Foo {
         fn bar(mut self): () = ()
-        const BAZ: () = ()
+        pub const BAZ: () = ()
     }
 ";
     assert_eq!(
         Parser::new_test(input).item(),
         Ok(Item::BlockItem(BlockItem::Impl {
+            span: (5..9).into(),
             ty: TyKind::named("Foo").span(10..13),
             items: vec![
                 DefItem {
+                    public: false,
                     ident: Ident::new("bar").span(27..30),
                     kind: DefKind::Func {
                         generics: vec![],
@@ -139,6 +144,7 @@ fn impls() {
                     }
                 },
                 DefItem {
+                    public: true,
                     ident: Ident::new("BAZ").span(64..67),
                     kind: DefKind::Const {
                         ty: TyKind::unit().span(69..71),
@@ -154,7 +160,8 @@ fn impls() {
 fn consts() {
     assert_eq!(
         Parser::new_test(r#"const hello_world: String = "Hello, World!""#,).item(),
-        Ok(Item::ExecItem(DefItem {
+        Ok(Item::DefItem(DefItem {
+            public: false,
             ident: Ident::new("hello_world").span(6..17),
             kind: DefKind::Const {
                 ty: TyKind::named("String").span(19..25),
@@ -167,8 +174,9 @@ fn consts() {
 #[test]
 fn functions() {
     assert_eq!(
-        Parser::new_test("fn sum(mut a: Byte, b: Byte): () = a = a + b").item(),
-        Ok(Item::ExecItem(DefItem {
+        Parser::new_test("pub fn sum(mut a: Byte, b: Byte): () = a = a + b").item(),
+        Ok(Item::DefItem(DefItem {
+            public: true,
             ident: Ident::new("sum").span(3..6),
             kind: DefKind::Func {
                 generics: vec![],
@@ -209,7 +217,8 @@ fn functions() {
 fn primitive_types() {
     assert_eq!(
         Parser::new_test("const Int: Int = 0").item(),
-        Ok(Item::ExecItem(DefItem {
+        Ok(Item::DefItem(DefItem {
+            public: false,
             ident: Ident::new("Int").span(6..9),
             kind: DefKind::Const {
                 ty: TyKind::Int.span(11..14),

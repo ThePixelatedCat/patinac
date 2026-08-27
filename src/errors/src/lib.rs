@@ -1,9 +1,12 @@
 //! Error-handling utilities.
 
-use std::{cell::Cell, range::Range, result};
-
-use derive_more::{Display, Error};
-use smol_str::SmolStr;
+use std::{
+    cell::Cell,
+    error::Error,
+    fmt::{self, Display, Formatter},
+    range::Range,
+    result,
+};
 
 use irs::ModuleId;
 
@@ -11,104 +14,85 @@ use irs::ModuleId;
 pub type Result<T, E = HandledError> = result::Result<T, E>;
 
 /// Indicates that an error occurred, and detailed information was provided to an [`ErrorHandler`].
-#[derive(Error, Debug, Display, Clone, Copy, PartialEq, Eq)]
-#[display("Detailed error was printed to stderr")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct HandledError;
 
-/// A general-purpose error type, wrapping a generic error kind with location information and context support.
-///
-/// The internal data is boxed to minimise the size of this type.
-#[derive(Debug, PartialEq, Eq)]
-pub struct Error<E>(Box<ErrorInner<E>>);
-
-impl<E> Error<E> {
-    /// Constructs a new error with the provided kind and span, and no context information.
-    pub fn new(kind: E, span: impl Into<Range<u32>>, module: ModuleId) -> Self {
-        Self(Box::new(ErrorInner {
-            kind,
-            span: span.into(),
-            module,
-            secondary_locs: Vec::new(),
-            ctx: Vec::new(),
-        }))
-    }
-
-    /// Appends the given context message to this error. Can be chained.
-    ///
-    /// Consider using [`Self::with_static_ctx()`] if your context message is a string literal.
-    #[must_use]
-    pub fn with_ctx(mut self, ctx: impl Into<SmolStr>) -> Self {
-        self.0.ctx.push(ctx.into());
-        self
-    }
-
-    /// Appends the given static context message to this error. Can be chained.
-    ///
-    /// Will never allocate for the context message, so may be more efficient than [`Self::with_ctx()`] for literal context messages.
-    #[must_use]
-    pub fn with_static_ctx(mut self, ctx: &'static str) -> Self {
-        self.0.ctx.push(SmolStr::new_static(ctx));
-        self
-    }
-
-    /// Adds an additional source location to the error.
-    #[must_use]
-    pub fn with_loc(mut self, span: impl Into<Range<u32>>, module: ModuleId) -> Self {
-        self.0.secondary_locs.push((span.into(), module));
-        self
-    }
-
-    /// Returns the underlying error kind.
-    pub fn kind(&self) -> &E {
-        &self.0.kind
-    }
-
-    /// Returns the span of the error.
-    pub fn span(&self) -> Range<u32> {
-        self.0.span
-    }
-
-    /// Returns the module this error occured in.
-    pub fn module(&self) -> ModuleId {
-        self.0.module
-    }
-
-    /// Returns any provided context information for the error.
-    pub fn ctx(&self) -> &[SmolStr] {
-        &self.0.ctx
+impl Display for HandledError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}: Detailed error was printed to stderr")
     }
 }
 
-impl<E: ToString> Error<E> {
-    /// Calls the [`ToString`] implementation of the underlying error kind.
-    pub fn msg(&self) -> String {
-        self.0.kind.to_string()
+impl Error for HandledError {}
+
+/// A trait for user-reportable diagnostics, including errors and warnings.
+pub trait Diagnostic {
+    /// Constructs a report from this diagnostic.
+    fn report(self) -> Report;
+}
+
+impl<S: Into<String>> Diagnostic for (S, ReportKind) {
+    fn report(self) -> Report {
+        Report {
+            name: self.0.into(),
+            kind: self.1,
+            label: None,
+            notes: Vec::new(),
+        }
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct ErrorInner<E> {
-    kind: E,
-    span: Range<u32>,
-    module: ModuleId,
-    secondary_locs: Vec<(Range<u32>, ModuleId)>,
-    ctx: Vec<SmolStr>,
+/// A textual report generated from a diagnostic.
+/// See [`Diagnostic`].
+#[derive(Debug)]
+pub struct Report {
+    /// The name of the diagnostic.
+    pub name: String,
+    /// Whether this report is for a warning or an error.
+    pub kind: ReportKind,
+    /// An optional label to be attached below the highlighted source span.
+    pub label: Option<String>,
+    /// A list of notes to be displayed after the main report.
+    pub notes: Vec<String>,
 }
 
-/// Extension trait to provide an easy method to construct an [`Error`].
-pub trait SpanError {
-    /// Constructs an [`Error`] wrapping `self` with the provided location information.
-    fn span(self, span: impl Into<Range<u32>>, module: ModuleId) -> Error<Self>
-    where
-        Self: Sized,
-    {
-        Error::new(self, span, module)
+impl Report {
+    /// Constructs a new error [`Report`].
+    pub fn error(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            kind: ReportKind::Error,
+            label: None,
+            notes: Vec::new(),
+        }
+    }
+
+    /// Constructs a new warning [`Report`].
+    pub fn warning(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            kind: ReportKind::Warning,
+            label: None,
+            notes: Vec::new(),
+        }
+    }
+
+    /// Sets the label of the [`Report`].
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// Attaches a note to the [`Report`].
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.notes.push(note.into());
+        self
     }
 }
 
 /// The type of the callback functions wrapped by [`ErrorHandler`].
-pub type HandlerCallback<'cb> = &'cb dyn Fn(&str, Range<u32>, ModuleId, DiagnosticKind);
+pub type HandlerCallback<'cb> = &'cb dyn Fn(Report, Range<u32>, ModuleId);
 
 /// A utility type to handle configurable, recoverable diagnostic reporting.
 ///
@@ -131,25 +115,23 @@ impl<'callback> ErrorHandler<'callback> {
         }
     }
 
-    /// Reports the provided error and produces a [`HandledError`] for the caller to use.
+    /// Reports the provided diagnostic and produces a [`HandledError`] for the caller to use.
     #[expect(
         clippy::needless_pass_by_value,
         reason = "Semantically useful to enforce that an error can only be reported once"
     )]
-    pub fn err<E: ToString>(&self, error: Error<E>) -> HandledError {
-        self.has_err.set(true);
-        (self.f)(
-            &error.msg(),
-            error.span(),
-            error.module(),
-            DiagnosticKind::Error,
-        );
+    pub fn report(
+        &self,
+        diagnostic: impl Diagnostic,
+        span: impl Into<Range<u32>>,
+        module: ModuleId,
+    ) -> HandledError {
+        let report = diagnostic.report();
+        if report.kind == ReportKind::Error {
+            self.has_err.set(true);
+        }
+        (self.f)(report, span.into(), module);
         HandledError
-    }
-
-    /// Reports a warning.
-    pub fn warn(&self, msg: &str, span: Range<u32>, module: ModuleId) {
-        (self.f)(msg, span, module, DiagnosticKind::Warning);
     }
 
     /// Returns the provided value wrapped in [`Ok`], or a [`HandledError`] if this handler has reported any errors.
@@ -169,16 +151,16 @@ impl<'callback> ErrorHandler<'callback> {
         clippy::use_debug,
         reason = "This handler is for use in tests, where debug output is desirable"
     )]
-    pub const TEST: Self = ErrorHandler::new(&|str, span, module, kind| {
-        eprintln!("{kind:?}: {str} (mod: {module:?}, span: {span:?})");
+    pub const TEST: Self = ErrorHandler::new(&|report, span, module| {
+        eprintln!("{report:?} (mod: {module:?}, span: {span:?})");
     });
     /// An error handler that discards the errors. Primarily for tests intended to produce errors, to avoid clogging the terminal.
-    pub const DUMMY: Self = ErrorHandler::new(&|_, _, _, _| {});
+    pub const DUMMY: Self = ErrorHandler::new(&|_, _, _| {});
 }
 
 /// Signals the kind of diagnostic being reported.
-#[derive(Debug, Clone, Copy)]
-pub enum DiagnosticKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReportKind {
     /// A fatal error.
     Error,
     /// A warning. Compilation can continue as normal, but the programmer should be notified of something.
