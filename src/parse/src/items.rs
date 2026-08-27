@@ -32,8 +32,7 @@ impl Parser<'_> {
             TokKind::Record => self.record_item(public.is_some(), false).map(Item::from),
             TokKind::Union => self.union_item(public.is_some(), false).map(Item::from),
             TokKind::Impl => self.impl_item().map(Item::from),
-            TokKind::Const => self.const_item(public.is_some()).map(Item::from),
-            TokKind::Fn => self.func_item(public.is_some()).map(Item::from),
+            TokKind::Def => self.def_item(public.is_some()).map(Item::from),
             _ => Err(self.unexpected(None)),
         }
     }
@@ -126,28 +125,34 @@ impl Parser<'_> {
         Ok(BlockItem::Impl { span, ty, items })
     }
 
-    fn const_item(&mut self, public: bool) -> Result<DefItem> {
-        self.consume(TokKind::Const)?;
+    fn def_item(&mut self, public: bool) -> Result<DefItem> {
+        self.consume(TokKind::Def)?;
 
-        let ident = self.ident();
+        let ident = self.ident()?;
+        let generics = self.generic_params()?;
+        let kind = if self.at(TokKind::LParen) {
+            self.func_kind()
+        } else {
+            self.const_kind()
+        }?;
+
+        Ok(DefItem {
+            public,
+            ident,
+            generics,
+            kind,
+        })
+    }
+
+    fn const_kind(&mut self) -> Result<DefKind> {
         self.consume(TokKind::Colon)?;
         let ty = self.ty();
         self.consume(TokKind::Eq)?;
         let val = self.expr();
-
-        Ok(DefItem {
-            public,
-            ident: ident?,
-            kind: DefKind::Const { ty: ty?, val: val? },
-        })
+        Ok(DefKind::Const { ty: ty?, val: val? })
     }
 
-    fn func_item(&mut self, public: bool) -> Result<DefItem> {
-        self.consume(TokKind::Fn)?;
-
-        let ident = self.ident()?;
-        let generics = self.generic_params()?;
-
+    fn func_kind(&mut self) -> Result<DefKind> {
         self.consume(TokKind::LParen)?;
 
         let mut self_param = None;
@@ -198,16 +203,11 @@ impl Parser<'_> {
         self.consume(TokKind::Eq)?;
         let body = self.expr()?;
 
-        Ok(DefItem {
-            public,
-            ident,
-            kind: DefKind::Func {
-                generics,
-                self_param,
-                params,
-                ret_ty,
-                body,
-            },
+        Ok(DefKind::Func {
+            self_param,
+            params,
+            ret_ty,
+            body,
         })
     }
 

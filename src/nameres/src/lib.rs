@@ -234,6 +234,10 @@ impl ResolveInfo<'_, '_> {
     }
 
     fn resolve_def_item(&mut self, path: &Path, item: &ast::DefItem) -> Result<hir::DefItem> {
+        if !item.generics.is_empty() {
+            todo!("Generics")
+        }
+
         let id = self
             .scopes
             .resolve_var(path)
@@ -252,16 +256,11 @@ impl ResolveInfo<'_, '_> {
                 })
             }
             ast::DefKind::Func {
-                generics,
                 self_param,
                 params,
                 ret_ty,
                 body,
             } => {
-                if !generics.is_empty() {
-                    todo!("Generics")
-                }
-
                 self.scopes.push_scope();
 
                 let self_param = self_param.map(|(mutable, span)| {

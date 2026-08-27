@@ -175,6 +175,8 @@ pub struct DefItem {
     pub public: bool,
     /// The name of the item.
     pub ident: SpanIdent,
+    /// The generic parameters of the item.
+    pub generics: Vec<SpanIdent>,
     /// The kind of the item (constant or function).
     pub kind: DefKind,
 }
@@ -191,8 +193,6 @@ pub enum DefKind {
     },
     /// A function item.
     Func {
-        /// The generic parameters.
-        generics: Vec<SpanIdent>,
         /// The mutability and span of the `self` parameter, if there is one.
         self_param: Option<(bool, Range<u32>)>,
         /// The value parameters.

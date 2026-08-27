@@ -1,0 +1,11 @@
+pub union Option[T] {
+    Some(value: T),
+    None
+}
+
+impl Option {
+    pub def map[U](self, f: Fn(T) -> U): Option[U] = self.match {
+        Some(value) -> Option::Some(f(value))
+        None -> None
+    }
+}

@@ -71,4 +71,5 @@ test! {
     fails dir rexport;
     dir vis;
     fails dir vis_err;
+    option;
 }

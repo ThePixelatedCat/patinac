@@ -208,10 +208,10 @@ pub enum TokKind {
     #[display("impl")]
     #[token("impl")]
     Impl,
-    /// `const`.
-    #[display("const")]
-    #[token("const")]
-    Const,
+    /// `def`.
+    #[display("def")]
+    #[token("def")]
+    Def,
     /// `fn`.
     #[display("fn")]
     #[token("fn")]
