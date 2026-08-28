@@ -4,15 +4,13 @@ pub mod ast;
 pub mod hir;
 pub mod mir;
 
-use derive_more::IntoIterator;
 use slotmap::{SlotMap, new_key_type};
 
 use ident::Ident;
 
 /// A whole package, comprised of one or more modules. Generic over the contents of each module.
-#[derive(Debug, Default, IntoIterator)]
+#[derive(Debug, Default)]
 pub struct Package {
-    #[into_iterator(ref)]
     modules: SlotMap<ModuleId, Module>,
     root_id: ModuleId,
 }
@@ -43,11 +41,6 @@ impl Package {
     /// Inserts the provided module into the package, returning an ID for it.
     pub fn insert(&mut self, module: Module) -> ModuleId {
         self.modules.insert(module)
-    }
-
-    /// Returns a by-reference iterator over the modules of this package.
-    pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
-        self.into_iter()
     }
 }
 

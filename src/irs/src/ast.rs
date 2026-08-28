@@ -21,7 +21,7 @@ pub struct Ast {
     /// The block items of a module, with each block containing other nested item. This includes `impl` blocks.
     pub block_items: Vec<BlockItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
-    pub exec_items: Vec<DefItem>,
+    pub def_items: Vec<DefItem>,
 }
 
 /// A path made of one or more identifiers.

@@ -326,17 +326,10 @@ impl Ty {
             Self::Byte | Self::Bool => 1,
             Self::Fields(field_tys) => {
                 let align = self.alignment();
-                if align == 0 {
-                    return 0;
-                }
 
                 let base_size = field_tys.iter().fold(0, |sum, ty| {
                     let align = ty.alignment();
-                    let padding = if align == 0 {
-                        0
-                    } else {
-                        (align - (sum % align)) % align
-                    };
+                    let padding = (align - (sum % align)) % align;
                     sum + padding + ty.size()
                 });
 

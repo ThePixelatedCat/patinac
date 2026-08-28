@@ -1,0 +1,4 @@
+def main(): () = {
+    let foo: Byte = 256
+    let bar: Int = 9223372036854775808
+}

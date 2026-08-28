@@ -1,6 +1,6 @@
 use std::iter;
 
-use errors::ReportKind;
+use errors::Report;
 use ident::Ident;
 use irs::{
     hir,
@@ -120,13 +120,10 @@ impl LowerInfo<'_, '_> {
                 hir::Ty::Int => {
                     let i = i64::try_from(value).unwrap_or_else(|_| {
                         self.handler.report(
-                            (
-                                format!(
-                                    "int literal {value} overflowed and was clamped to {}",
-                                    i64::MAX
-                                ),
-                                ReportKind::Warning,
-                            ),
+                            Report::warning(format!(
+                                "int literal {value} overflowed and was clamped to {}",
+                                i64::MAX
+                            )),
                             self.hir.expr_span(expr),
                             self.module,
                         );
@@ -138,13 +135,10 @@ impl LowerInfo<'_, '_> {
                 hir::Ty::Byte => {
                     let b = u8::try_from(value).unwrap_or_else(|_| {
                         self.handler.report(
-                            (
-                                format!(
-                                    "byte literal {value} overflowed and was clamped to {}",
-                                    u8::MAX
-                                ),
-                                ReportKind::Warning,
-                            ),
+                            Report::warning(format!(
+                                "byte literal {value} overflowed and was clamped to {}",
+                                u8::MAX
+                            )),
                             self.hir.expr_span(expr),
                             self.module,
                         );

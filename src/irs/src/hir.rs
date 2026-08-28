@@ -29,7 +29,7 @@ impl Hir {
     }
 
     /// Adds an "executable item". These are the items that contain expressions.
-    pub fn add_exec(&mut self, exec: DefItem) {
+    pub fn add_def(&mut self, exec: DefItem) {
         self.execs.push(exec);
     }
 

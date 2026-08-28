@@ -73,4 +73,5 @@ test! {
     fails dir vis_err;
     // option;
     types;
+    lit_overflow;
 }

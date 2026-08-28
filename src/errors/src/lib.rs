@@ -32,17 +32,6 @@ pub trait Diagnostic {
     fn report(self) -> Report;
 }
 
-impl<S: Into<String>> Diagnostic for (S, ReportKind) {
-    fn report(self) -> Report {
-        Report {
-            name: self.0.into(),
-            kind: self.1,
-            label: None,
-            notes: Vec::new(),
-        }
-    }
-}
-
 /// A textual report generated from a diagnostic.
 /// See [`Diagnostic`].
 #[derive(Debug)]
@@ -89,6 +78,12 @@ impl Report {
     #[must_use]
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
+        self
+    }
+}
+
+impl Diagnostic for Report {
+    fn report(self) -> Report {
         self
     }
 }

@@ -86,7 +86,7 @@ impl ResolveInfo<'_, '_> {
             }
         }
 
-        for def in &ast.exec_items {
+        for def in &ast.def_items {
             let id = self.hir.add_var(VarInfo {
                 ident: def.ident,
                 mutable: false,
@@ -117,15 +117,15 @@ impl ResolveInfo<'_, '_> {
         }
 
         let main_index = is_root
-            .then(|| self.find_main(&ast.exec_items).ok()?)
+            .then(|| self.find_main(&ast.def_items).ok()?)
             .flatten();
 
-        for (index, exec) in ast.exec_items.iter().enumerate() {
-            if let Ok(exec) = self.resolve_def_item(&exec.ident.ident.into(), exec) {
+        for (index, def) in ast.def_items.iter().enumerate() {
+            if let Ok(def) = self.resolve_def_item(&def.ident.ident.into(), def) {
                 if main_index.is_some_and(|main_index| main_index == index) {
-                    self.hir.set_main(exec);
+                    self.hir.set_main(def);
                 } else {
-                    self.hir.add_exec(exec);
+                    self.hir.add_def(def);
                 }
             }
         }

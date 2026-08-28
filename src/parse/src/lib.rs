@@ -69,7 +69,7 @@ impl<'src> Parser<'src> {
             match self.item() {
                 Ok(Item::Import(item)) => ast.imports.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
-                Ok(Item::DefItem(item)) => ast.exec_items.push(item),
+                Ok(Item::DefItem(item)) => ast.def_items.push(item),
                 Ok(Item::BlockItem(item)) => ast.block_items.push(item),
                 Err(_) => self.skip_to(&[
                     TokKind::Import,
