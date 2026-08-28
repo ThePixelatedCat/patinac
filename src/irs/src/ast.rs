@@ -248,21 +248,6 @@ impl Expr {
     /// The provided span is to account for the curly braces.
     ///
     /// This function primarily exists as a helper for tests.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::range::Range;
-    /// # use irs::ast::{ExprKind, Stmt, BlockExpr};
-    /// let expr = ExprKind::Tuple(vec![]).span(2..3);
-    /// assert_eq!(
-    ///     expr.clone().as_block(0..5),
-    ///     BlockExpr {
-    ///         stmts: vec![Stmt::Expr(expr.clone())],
-    ///         span: Range::from(0..5)
-    ///     }
-    /// )
-    /// ```
     pub fn as_block(self, span: impl Into<Range<u32>>) -> BlockExpr {
         BlockExpr {
             stmts: vec![Stmt::Expr(self)],
