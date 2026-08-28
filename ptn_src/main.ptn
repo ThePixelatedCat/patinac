@@ -1,8 +1,0 @@
-def main(): () = {
-    let mut a: Int = 1
-    print lib::replace(mut a, 3)
-    let mut foo = fn() -> 3
-    foo = fn() -> false
-    print a
-}
-

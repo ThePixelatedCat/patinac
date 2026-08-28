@@ -167,7 +167,7 @@ fn print_diagnostic(report: Report, span: Range<u32>, src: &str) {
     let span_start = start - line_start;
     let span_end = end - line_start;
 
-    let line_num = src[..=start].matches("\r\n").count();
+    let line_num = src[..=start].matches(['\n', '\r']).count();
 
     let kind_msg = match report.kind {
         ReportKind::Error => "error".bright_red(),
