@@ -253,7 +253,7 @@ impl Expr {
     ///
     /// ```
     /// # use std::range::Range;
-    /// # use ast::{ExprKind, Stmt, BlockExpr};
+    /// # use irs::ast::{ExprKind, Stmt, BlockExpr};
     /// let expr = ExprKind::Tuple(vec![]).span(2..3);
     /// assert_eq!(
     ///     expr.clone().as_block(0..5),
