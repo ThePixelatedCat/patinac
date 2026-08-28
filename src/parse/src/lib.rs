@@ -54,7 +54,7 @@ impl<'src> Parser<'src> {
     /// Constructs a [`Parser`] for `src`, using testing-suitable defaults for the [`ModuleId`] and [`ErrorHandler`].
     #[cfg(test)]
     pub fn new_test(src: &'src str) -> Self {
-        Self::new(ModuleId::default(), src, ErrorHandler::TEST)
+        Self::new(ModuleId::default(), src, ErrorHandler::test())
     }
 
     /// Parses the source this [`Parser`] was constructed with into an [`Ast`].
@@ -140,12 +140,12 @@ impl<'src> Parser<'src> {
     }
 
     /// Checks if the next token is of the given kind. Ignores whitespace.
-    fn at(&mut self, tok: TokKind) -> bool {
+    fn at(&self, tok: TokKind) -> bool {
         self.peek().is_ok_and(|t| t.kind == tok)
     }
 
     /// Checks if the next token is of the given kind. Respects whitespace.
-    fn at_ws(&mut self, tok: TokKind) -> bool {
+    fn at_ws(&self, tok: TokKind) -> bool {
         self.peek_ws().is_ok_and(|t| t.kind == tok)
     }
 

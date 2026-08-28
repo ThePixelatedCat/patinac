@@ -118,14 +118,10 @@ impl TypeChecker<'_> {
                 let ret_ty = PartialTy::var(&mut self.table);
                 self.constrain_eq(
                     func_ty,
-                    PartialTy::Fn(arg_tys.clone(), Box::new(ret_ty.clone())),
+                    PartialTy::Fn(arg_tys, Box::new(ret_ty.clone())),
                     hir.expr_span(*func),
                     module,
                 );
-                // for (arg, arg_var) in iter::zip(args, arg_tys) {
-                //     let arg_ty = self.infer_expr(hir, module, arg.value);
-                //     self.constrain_eq(arg_var.ty.clone(), arg_ty, arg.span, module);
-                // }
                 ret_ty
             }
             Expr::MethodCall { base, method, args } => {

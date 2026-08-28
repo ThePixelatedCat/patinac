@@ -131,7 +131,7 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn find_main(&mut self, execs: &[ast::DefItem]) -> Result<Option<usize>> {
+    fn find_main(&self, execs: &[ast::DefItem]) -> Result<Option<usize>> {
         for (idx, item) in execs.iter().enumerate() {
             if let ast::DefKind::Func { params, ret_ty, .. } = &item.kind
                 && item.ident.ident == "main"
@@ -389,7 +389,7 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn err(&mut self, error: ErrorKind, span: Range<u32>) -> HandledError {
+    fn err(&self, error: ErrorKind, span: Range<u32>) -> HandledError {
         self.handler.report(error, span, self.scopes.module())
     }
 }

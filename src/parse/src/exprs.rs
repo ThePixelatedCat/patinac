@@ -147,7 +147,7 @@ impl Parser<'_> {
             .map(|(path, span)| ExprKind::Var(path).span(span))
     }
 
-    fn process_escapes(&mut self, src: &str, start: u32) -> Result<String> {
+    fn process_escapes(&self, src: &str, start: u32) -> Result<String> {
         let mut chars = src.char_indices();
         let mut out = String::new();
         while let Some((_, c)) = chars.next() {
@@ -175,7 +175,7 @@ impl Parser<'_> {
     }
 
     fn process_unicode_escape(
-        &mut self,
+        &self,
         chars: &mut CharIndices<'_>,
         start: u32,
         start_offset: u32,

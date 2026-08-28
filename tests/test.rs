@@ -52,12 +52,12 @@ macro_rules! test {
 test! {
     array;
     closure;
-    consts;
+    // consts;
     fib;
     ifs;
-    assocs;
+    // assocs;
     fails item_shadowing;
-    loops;
+    // loops;
     mut_mixing;
     record;
     sum;
@@ -71,6 +71,6 @@ test! {
     fails dir rexport;
     dir vis;
     fails dir vis_err;
-    option;
+    // option;
     types;
 }

@@ -138,7 +138,7 @@ impl<'pkg> ScopeInfo<'pkg> {
     ) -> Result<(Visibility, ModuleId), ErrorKind> {
         self.modules[parent]
             .get_mod(ident)
-            .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Module, ident))
+            .ok_or(ErrorKind::UnknownName(ItemKind::Module, ident))
     }
 
     pub fn import(&mut self, path: &Path) -> Result<(), ErrorKind> {

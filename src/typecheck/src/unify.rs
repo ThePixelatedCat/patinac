@@ -41,7 +41,16 @@ impl TypeChecker<'_> {
                     );
                 }
                 Constraint::Method(base_ty, base_span, method_ty, method_name, module) => {
-                    todo!()
+                    unify_method_ty(
+                        &mut self.table,
+                        &mut self.handler,
+                        hir,
+                        base_ty,
+                        *base_span,
+                        method_ty,
+                        *method_name,
+                        *module,
+                    );
                 }
             }
         }
@@ -99,7 +108,7 @@ fn unify_field_ty(
         module,
         field_ty,
         &PartialTy::from(&field.ty),
-    )
+    );
 }
 
 fn unify_method_ty(
@@ -167,11 +176,11 @@ fn unify_ty_ty(
                 return;
             }
             for (l, r) in iter::zip(lhs_elems, rhs_elems) {
-                unify_ty_ty(table, handler, span, module, &l, &r)
+                unify_ty_ty(table, handler, span, module, &l, &r);
             }
         }
         (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
-            unify_ty_ty(table, handler, span, module, &lhs_inner, &rhs_inner)
+            unify_ty_ty(table, handler, span, module, &lhs_inner, &rhs_inner);
         }
         (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
             unify_ty_ty(table, handler, span, module, &lhs_ret, &rhs_ret);
@@ -202,14 +211,14 @@ fn unify_ty_ty(
         (PartialTy::Named(a), PartialTy::Named(b)) if a == b => {}
         (PartialTy::IntVar(lhs_var), PartialTy::IntVar(rhs_var))
         | (PartialTy::Var(lhs_var), PartialTy::Var(rhs_var)) => {
-            unify_var_var(table, handler, span, module, lhs_var, rhs_var)
+            unify_var_var(table, handler, span, module, lhs_var, rhs_var);
         }
         (PartialTy::Var(var), ty) | (ty, PartialTy::Var(var)) => {
             if occurs_check(&ty, var) {
                 handler.report(ErrorKind::Infinite, span, module);
                 return;
             }
-            unify_var_value(table, handler, span, module, var, ty)
+            unify_var_value(table, handler, span, module, var, ty);
         }
         (
             PartialTy::IntVar(int_var),

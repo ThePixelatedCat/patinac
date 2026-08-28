@@ -2,9 +2,9 @@ use std::range::Range;
 
 use derive_more::Display;
 use ena::unify::{EqUnifyValue, UnifyKey};
+use itertools::Itertools as _;
 
 use irs::hir::{self, Ty, TyId};
-use itertools::Itertools;
 
 use crate::Table;
 

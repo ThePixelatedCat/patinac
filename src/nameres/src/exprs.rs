@@ -249,7 +249,7 @@ impl ResolveInfo<'_, '_> {
                 }
             }
             hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
-                self.assert_is_place(*base)
+                self.assert_is_place(*base);
             }
             _ => {
                 self.err(ErrorKind::NotPlaceExpr, self.hir.expr_span(place));

@@ -302,8 +302,8 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         let result = self
             .build_dup(self.layout_indirect(&fields[usize::try_from(field).unwrap()], field_ptr));
         if needs_drop {
-            self.build_drop(base)
-        };
+            self.build_drop(base);
+        }
         result
     }
 

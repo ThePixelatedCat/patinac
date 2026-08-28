@@ -22,7 +22,6 @@ use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
-    data_layout::DataLayout,
     llvm_sys::LLVMCallConv,
     module::{Linkage, Module},
     passes::PassBuilderOptions,
@@ -217,6 +216,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         func
     }
 
+    #[expect(clippy::as_conversions, reason = "accessing enum discriminant")]
     fn build_call(
         &self,
         func: FunctionValue<'ctx>,
@@ -227,6 +227,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         call.try_as_basic_value().basic()
     }
 
+    #[expect(clippy::as_conversions, reason = "accessing enum discriminant")]
     fn build_c_call(
         &self,
         func: FunctionValue<'ctx>,
@@ -237,6 +238,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         call.try_as_basic_value().basic()
     }
 
+    #[expect(clippy::as_conversions, reason = "accessing enum discriminant")]
     fn build_indirect_call(
         &self,
         func_ty: FunctionType<'ctx>,
@@ -615,7 +617,7 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             }
             LayoutValue::Closure(_, ptr) => self.build_memcpy(dst, ptr, &self.closure_ty()),
             LayoutValue::Fields(fields, ptr) => {
-                self.build_memcpy(dst, ptr, &self.fields_ty(fields))
+                self.build_memcpy(dst, ptr, &self.fields_ty(fields));
             }
             LayoutValue::Zst => {}
         }

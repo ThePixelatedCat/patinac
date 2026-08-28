@@ -20,7 +20,7 @@ pub struct HandledError;
 
 impl Display for HandledError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}: Detailed error was printed to stderr")
+        "Detailed error was printed to stderr".fmt(f)
     }
 }
 
@@ -79,12 +79,14 @@ impl Report {
     }
 
     /// Sets the label of the [`Report`].
+    #[must_use]
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
     /// Attaches a note to the [`Report`].
+    #[must_use]
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
@@ -115,11 +117,15 @@ impl<'callback> ErrorHandler<'callback> {
         }
     }
 
+    /// Constructs an error handler for use in tests, providing simple debug output of errors.
+    #[expect(clippy::use_debug, reason = "debug output is desirable for tests")]
+    pub const fn test() -> Self {
+        Self::new(&|report, span, module| {
+            eprintln!("{report:?} (mod: {module:?}, span: {span:?})");
+        })
+    }
+
     /// Reports the provided diagnostic and produces a [`HandledError`] for the caller to use.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Semantically useful to enforce that an error can only be reported once"
-    )]
     pub fn report(
         &self,
         diagnostic: impl Diagnostic,
@@ -145,17 +151,6 @@ impl<'callback> ErrorHandler<'callback> {
             Ok(val)
         }
     }
-
-    /// An error handler used for tests. Provides simple debug output of errors.
-    #[expect(
-        clippy::use_debug,
-        reason = "This handler is for use in tests, where debug output is desirable"
-    )]
-    pub const TEST: Self = ErrorHandler::new(&|report, span, module| {
-        eprintln!("{report:?} (mod: {module:?}, span: {span:?})");
-    });
-    /// An error handler that discards the errors. Primarily for tests intended to produce errors, to avoid clogging the terminal.
-    pub const DUMMY: Self = ErrorHandler::new(&|_, _, _| {});
 }
 
 /// Signals the kind of diagnostic being reported.

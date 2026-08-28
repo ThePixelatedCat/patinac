@@ -17,7 +17,7 @@ proptest! {
     #[test]
     fn doesnt_crash(toks in vec(TokKind::arbitrary(), 8..=512)) {
         let raw = toks.iter().map(|t| t.reverse()).join(" ");
-        let _ = Parser::new(ModuleId::default(), &raw, ErrorHandler::DUMMY).parse();
+        let _ = Parser::new(ModuleId::default(), &raw, ErrorHandler::new(&|_, _, _| {})).parse();
     }
 }
 
