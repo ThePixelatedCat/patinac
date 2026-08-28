@@ -1,5 +1,3 @@
-use std::iter;
-
 use irs::{
     ModuleId,
     hir::{BlockExpr, Expr, ExprId, Hir, InfixOp, LitExpr, PrefixOp, Stmt},

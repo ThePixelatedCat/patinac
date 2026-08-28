@@ -1,12 +1,12 @@
-fn closures(): () = {
+def closures(): () = {
     let f = fn(mut a, b) -> a = a + b
     let b = 5
     let g = fn(mut a) -> f(mut a, b)
 }
 
-fn array_disjoint_swap(): () = {
+def array_disjoint_swap(): () = {
     let mut foo = [1, 1]
     swap(mut foo.[0], mut foo.[1])
 }
 
-fn swap(mut a: Int, mut b: Int): () = {}
+def swap(mut a: Int, mut b: Int): () = {}

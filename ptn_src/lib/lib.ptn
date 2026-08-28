@@ -1,10 +1,10 @@
-pub fn swap(mut a: Int, mut b: Int): () = { 
+pub def swap(mut a: Int, mut b: Int): () = { 
     let a_tmp = a
     a = b
     b = a_tmp
 }
 
-pub fn replace(mut a: Int, b: Int): Int = {
+pub def replace(mut a: Int, b: Int): Int = {
     let old_a = a
     a = b
     old_a

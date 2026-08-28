@@ -27,7 +27,7 @@ impl Parser<'_> {
         }
     }
 
-    pub fn expr(&mut self) -> Result<Expr> {
+    pub(crate) fn expr(&mut self) -> Result<Expr> {
         self.expr_inner(0)
     }
 
@@ -403,19 +403,18 @@ impl Parser<'_> {
             }
             TokKind::Match => {
                 self.consume(TokKind::Match)?;
-                let (arms, arms_span) = self.delimited_list(
-                    |this| {
-                        let pat = this.pattern()?;
-                        this.consume(TokKind::Arrow)?;
-                        let body = this.expr()?;
 
-                        Ok(MatchArm { pat, body })
-                    },
-                    TokKind::LBrace,
-                    TokKind::RBrace,
-                )?;
+                self.consume(TokKind::LBrace)?;
+                let mut arms = Vec::new();
+                while !self.at(TokKind::RBrace) {
+                    let pat = self.pattern()?;
+                    self.consume(TokKind::Arrow)?;
+                    let body = self.expr()?;
+                    arms.push(MatchArm { pat, body });
+                }
+                let arms_end = self.consume(TokKind::RBrace)?.span.end;
 
-                let span = lhs.span.start..arms_span.end;
+                let span = lhs.span.start..arms_end;
                 Ok(ExprKind::Match {
                     scrutinee: Box::new(lhs),
                     arms,

@@ -1,5 +1,5 @@
-pub opaque record Point(x: Float, y: Float)
+pub opaque type Point(x: Float, y: Float)
 
-pub fn new_point(x: Float, y: Float): Point = Point(x, y)
+pub def new_point(x: Float, y: Float): Point = Point(x, y)
 
-pub fn get_x(this: Point): Float = this.x
+pub def get_x(this: Point): Float = this.x

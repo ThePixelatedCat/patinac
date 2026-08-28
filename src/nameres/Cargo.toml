@@ -12,10 +12,6 @@ irs.path = "../irs"
 slotmap = "1.1.1"
 foldhash = "0.2.0"
 itertools = "0.15.0"
-parse = { path = "../parse", features = ["test"], optional = true }
 
 [lints]
 workspace = true
-
-[features]
-test = ["dep:parse"]

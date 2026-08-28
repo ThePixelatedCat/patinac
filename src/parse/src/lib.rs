@@ -52,7 +52,7 @@ impl<'src> Parser<'src> {
     }
 
     /// Constructs a [`Parser`] for `src`, using testing-suitable defaults for the [`ModuleId`] and [`ErrorHandler`].
-    #[cfg(any(test, feature = "test"))]
+    #[cfg(test)]
     pub fn new_test(src: &'src str) -> Self {
         Self::new(ModuleId::default(), src, ErrorHandler::TEST)
     }
@@ -71,7 +71,14 @@ impl<'src> Parser<'src> {
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
                 Ok(Item::DefItem(item)) => ast.exec_items.push(item),
                 Ok(Item::BlockItem(item)) => ast.block_items.push(item),
-                Err(_) => {}
+                Err(_) => self.skip_to(&[
+                    TokKind::Import,
+                    TokKind::Pub,
+                    TokKind::Opaque,
+                    TokKind::Type,
+                    TokKind::Def,
+                    TokKind::Impl,
+                ]),
             }
         }
 
@@ -164,6 +171,16 @@ impl<'src> Parser<'src> {
             self.next()
                 .expect("known to be at a valid token because `at` returned true")
         })
+    }
+
+    /// Consumes tokens up until any of the provided kinds, or until end-of-file.
+    fn skip_to(&mut self, kinds: &[TokKind]) {
+        while !self
+            .peek()
+            .is_ok_and(|tok| tok.kind == TokKind::Eof || kinds.contains(&tok.kind))
+        {
+            self.pos += 1;
+        }
     }
 
     fn err(&self, error: ErrorKind, span: Range<u32>) -> HandledError {

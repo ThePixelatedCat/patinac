@@ -1,10 +1,10 @@
-fn main(): () = {
+def main(): () = {
     let mut v = ()
     stupid((), mut v, 42)
     ()
 }
 
-fn stupid(x: (), mut y: (), z: Int): ((), Int) = {
+def stupid(x: (), mut y: (), z: Int): ((), Int) = {
     y = x
     (y, z)
 }

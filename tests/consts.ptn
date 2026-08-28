@@ -1,2 +1,2 @@
-const B: UInt = A * 2
-const A: UInt = 5
+def B: UInt = A * 2
+def A: UInt = 5

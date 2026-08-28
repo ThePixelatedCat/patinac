@@ -1,3 +1,3 @@
-fn looping_inc(mut n: Int): () = loop { n = n + 1 }
+def looping_inc(mut n: Int): () = loop { n = n + 1 }
 
-fn for_(): () = for x in [1, 2, 3] { print x + 5 }
+def for_(): () = for x in [1, 2, 3] { print x + 5 }

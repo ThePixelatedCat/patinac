@@ -393,19 +393,3 @@ impl ResolveInfo<'_, '_> {
         self.handler.report(error, span, self.scopes.module())
     }
 }
-
-#[cfg(any(test, feature = "test"))]
-#[allow(clippy::unwrap_used, reason = "test utility")]
-pub fn test_resolve_expr(input: &str) -> Result<(hir::ExprId, Hir)> {
-    let package = &Package::default();
-    let mut info = ResolveInfo {
-        package,
-        asts: &SecondaryMap::default(),
-        handler: ErrorHandler::TEST,
-        hir: Hir::default(),
-        scopes: ScopeInfo::new(package),
-    };
-    let expr = parse::Parser::new_test(input).expr().unwrap();
-    let expr = info.resolve_expr(&expr)?;
-    Ok((expr, info.hir))
-}

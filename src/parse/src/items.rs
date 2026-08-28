@@ -24,16 +24,17 @@ impl Parser<'_> {
             TokKind::Opaque => {
                 self.consume(TokKind::Opaque)?;
                 match self.peek()?.kind {
-                    TokKind::Record => self.record_item(public.is_some(), true).map(Item::from),
-                    TokKind::Union => self.union_item(public.is_some(), true).map(Item::from),
+                    TokKind::Type => self.type_item(public.is_some(), true).map(Item::from),
                     _ => Err(self.unexpected(Some("opaque must be followed by a type item"))),
                 }
             }
-            TokKind::Record => self.record_item(public.is_some(), false).map(Item::from),
-            TokKind::Union => self.union_item(public.is_some(), false).map(Item::from),
+            TokKind::Type => self.type_item(public.is_some(), false).map(Item::from),
             TokKind::Impl => self.impl_item().map(Item::from),
             TokKind::Def => self.def_item(public.is_some()).map(Item::from),
-            _ => Err(self.unexpected(None)),
+            _ => match public {
+                Some(_) => Err(self.unexpected(Some("expected `type`, `opaque`, or `def`"))),
+                None => Err(self.unexpected(None)),
+            },
         }
     }
 
@@ -43,30 +44,33 @@ impl Parser<'_> {
         Ok(Import(path, span))
     }
 
-    fn record_item(&mut self, public: bool, opaque: bool) -> Result<TyItem> {
-        self.consume(TokKind::Record)?;
+    fn type_item(&mut self, public: bool, opaque: bool) -> Result<TyItem> {
+        self.consume(TokKind::Type)?;
 
-        let ident = self.ident();
-        let generics = self.generic_params();
-        let (fields, _) = self.fields()?;
-        let generics = generics?;
-        let ident = ident?;
+        let ident = self.ident()?;
+        let generics = self.generic_params()?;
+
+        let kind = match self.peek()?.kind {
+            TokKind::LParen => self.record_kind()?,
+            TokKind::LBrace => self.union_kind()?,
+            _ => return Err(self.unexpected(Some("expected `(` for a record or `{` for a union"))),
+        };
 
         Ok(TyItem {
             public,
             opaque,
             ident,
             generics,
-            kind: TyItemKind::Record(fields),
+            kind,
         })
     }
 
-    fn union_item(&mut self, public: bool, opaque: bool) -> Result<TyItem> {
-        self.consume(TokKind::Union)?;
+    fn record_kind(&mut self) -> Result<TyItemKind> {
+        self.fields().map(|(fields, _)| TyItemKind::Record(fields))
+    }
 
-        let ident = self.ident();
-        let generics = self.generic_params();
-        let (variants, _) = self.delimited_list(
+    fn union_kind(&mut self) -> Result<TyItemKind> {
+        self.delimited_list(
             |this| {
                 let ident = this.ident()?;
                 let (fields, _) = this.fields()?;
@@ -74,17 +78,8 @@ impl Parser<'_> {
             },
             TokKind::LBrace,
             TokKind::RBrace,
-        )?;
-        let generics = generics?;
-        let ident = ident?;
-
-        Ok(TyItem {
-            public,
-            opaque,
-            ident,
-            generics,
-            kind: TyItemKind::Union(variants),
-        })
+        )
+        .map(|(variants, _)| TyItemKind::Union(variants))
     }
 
     fn fields(&mut self) -> Result<(Vec<Field>, Range<u32>)> {
@@ -130,11 +125,15 @@ impl Parser<'_> {
 
         let ident = self.ident()?;
         let generics = self.generic_params()?;
-        let kind = if self.at(TokKind::LParen) {
-            self.func_kind()
-        } else {
-            self.const_kind()
-        }?;
+        let kind = match self.peek()?.kind {
+            TokKind::LParen => self.func_kind()?,
+            TokKind::Colon => self.const_kind()?,
+            _ => {
+                return Err(
+                    self.unexpected(Some("expected `(` for a function or `=` for a constant"))
+                );
+            }
+        };
 
         Ok(DefItem {
             public,

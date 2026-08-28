@@ -72,4 +72,5 @@ test! {
     dir vis;
     fails dir vis_err;
     option;
+    types;
 }

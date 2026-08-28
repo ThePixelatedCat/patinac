@@ -1,16 +1,16 @@
-record Vec2(x: Float, y: Float)
+type Vec2(x: Float, y: Float)
 
 impl Vec2 {
-    const ID: Vec2 = Vec2(1.0, 1.0)
+    def ID: Vec2 = Vec2(1.0, 1.0)
 
-    fn dot(self, rhs: Vec2): Float = self.x * rhs.x + self.y * rhs.y
-    fn double(mut self): () = {
+    def dot(self, rhs: Vec2): Float = self.x * rhs.x + self.y * rhs.y
+    def double(mut self): () = {
         self.x = self.x * 2
         self.y = self.y * 2
     }
 }
 
-fn main(): () = {
+def main(): () = {
     let a = Vec2(1.0, 1.0)
     let mut b = a
     b.double()

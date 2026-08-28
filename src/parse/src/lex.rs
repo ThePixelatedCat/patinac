@@ -43,11 +43,11 @@ pub enum TokKind {
 
     /* DELIMITERS */
     /// `(`.
-    #[display("(")]
+    #[display("`(`")]
     #[token("(")]
     LParen,
     /// `)`.
-    #[display(")")]
+    #[display("`)`")]
     #[token(")")]
     RParen,
     /// `{`.
@@ -59,210 +59,206 @@ pub enum TokKind {
     #[token("}")]
     RBrace,
     /// `[`.
-    #[display("[")]
+    #[display("`[`")]
     #[token("[")]
     LBracket,
     /// `]`.
-    #[display("]")]
+    #[display("`]`")]
     #[token("]")]
     RBracket,
 
     /* SYMBOLS */
     /// `=`.
-    #[display("=")]
+    #[display("`=`")]
     #[token("=")]
     Eq,
     /// `.`.
-    #[display(".")]
+    #[display("`.`")]
     #[token(".")]
     Dot,
     /// `,`.
-    #[display(",")]
+    #[display("`,`")]
     #[token(",")]
     Comma,
     /// `:`.
-    #[display(":")]
+    #[display("`:`")]
     #[token(":")]
     Colon,
     /// `_`.
-    #[display("_")]
+    #[display("`_`")]
     #[token("_")]
     Underscore,
     /// `->`.
-    #[display("->")]
+    #[display("`->`")]
     #[token("->")]
     Arrow,
     /// `::`.
-    #[display("::")]
+    #[display("`::`")]
     #[token("::")]
     PathSep,
 
     /* OPERATORS */
     /// `+`.
-    #[display("+")]
+    #[display("`+`")]
     #[token("+")]
     Plus,
     /// `+.`.
-    #[display("+.")]
+    #[display("`+.`")]
     #[token("+.")]
     PlusF,
     /// `-`.
-    #[display("-")]
+    #[display("`-`")]
     #[token("-")]
     Minus,
     /// `-.`.
-    #[display("-.")]
+    #[display("`-.`")]
     #[token("-.")]
     MinusF,
     /// `*`.
-    #[display("*")]
+    #[display("`*`")]
     #[token("*")]
     Times,
     /// `*.`.
-    #[display("*.")]
+    #[display("`*.`")]
     #[token("*.")]
     TimesF,
     /// `/`.
-    #[display("/")]
+    #[display("`/`")]
     #[token("/")]
     Divide,
     /// `/.`.
-    #[display("/.")]
+    #[display("`/.`")]
     #[token("/.")]
     DivideF,
     /// `^`.
-    #[display("^")]
+    #[display("`^`")]
     #[token("^")]
     Exponent,
     /// `&&`.
-    #[display("&&")]
+    #[display("`&&`")]
     #[token("&&")]
     And,
     /// `||`.
-    #[display("||")]
+    #[display("`||`")]
     #[token("||")]
     Or,
     /// `!`.
-    #[display("!")]
+    #[display("`!`")]
     #[token("!")]
     Bang,
     /// `==`.
-    #[display("==")]
+    #[display("`==`")]
     #[token("==")]
     Eqq,
     /// `!=`.
-    #[display("!=")]
+    #[display("`!=`")]
     #[token("!=")]
     Neq,
     /// `<`.
-    #[display("<")]
+    #[display("`<`")]
     #[token("<")]
     Lt,
     /// `>`.
-    #[display(">")]
+    #[display("`>`")]
     #[token(">")]
     Gt,
     /// `<=`.
-    #[display("<=")]
+    #[display("`<=`")]
     #[token("<=")]
     Leq,
     /// `>=`.
-    #[display(">=")]
+    #[display("`>=`")]
     #[token(">=")]
     Geq,
 
     /* KEYWORDS */
     /// `Fn`.
-    #[display("Fn")]
+    #[display("`Fn`")]
     #[token("Fn")]
     FnTy,
     /// `let`.
-    #[display("let")]
+    #[display("`let`")]
     #[token("let")]
     Let,
     /// `mut`.
-    #[display("mut")]
+    #[display("`mut`")]
     #[token("mut")]
     Mut,
     /// `import`.
-    #[display("import")]
+    #[display("`import`")]
     #[token("import")]
     Import,
     /// `pub`.
-    #[display("pub")]
+    #[display("`pub`")]
     #[token("pub")]
     Pub,
     /// `opaque`.
-    #[display("opaque")]
+    #[display("`opaque`")]
     #[token("opaque")]
     Opaque,
-    /// `record`.
-    #[display("record")]
-    #[token("record")]
-    Record,
-    /// `union`.
-    #[display("union")]
-    #[token("union")]
-    Union,
+    /// `type`.
+    #[display("`type`")]
+    #[token("type")]
+    Type,
     /// `impl`.
-    #[display("impl")]
+    #[display("`impl`")]
     #[token("impl")]
     Impl,
     /// `def`.
-    #[display("def")]
+    #[display("`def`")]
     #[token("def")]
     Def,
     /// `fn`.
-    #[display("fn")]
+    #[display("`fn`")]
     #[token("fn")]
     Fn,
     /// `if`.
-    #[display("if")]
+    #[display("`if`")]
     #[token("if")]
     If,
     /// `else`.
-    #[display("else")]
+    #[display("`else`")]
     #[token("else")]
     Else,
     /// `match`.
-    #[display("match")]
+    #[display("`match`")]
     #[token("match")]
     Match,
     /// `for`.
-    #[display("for")]
+    #[display("`for`")]
     #[token("for")]
     For,
     /// `in`.
-    #[display("in")]
+    #[display("`in`")]
     #[token("in")]
     In,
     /// `loop`.
-    #[display("loop")]
+    #[display("`loop`")]
     #[token("loop")]
     Loop,
     /// `return`.
-    #[display("return")]
+    #[display("`return`")]
     #[token("return")]
     Return,
     /// `break`.
-    #[display("break")]
+    #[display("`break`")]
     #[token("break")]
     Break,
     /// `continue`.
-    #[display("continue")]
+    #[display("`continue`")]
     #[token("continue")]
     Continue,
     /// `true`.
-    #[display("true")]
+    #[display("`true`")]
     #[token("true")]
     True,
     /// `false`.
-    #[display("false")]
+    #[display("`false`")]
     #[token("false")]
     False,
 
     /// `print`.
-    #[display("print")]
+    #[display("`print`")]
     #[token("print")]
     Print,
 

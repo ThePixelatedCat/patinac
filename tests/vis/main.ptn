@@ -1,1 +1,1 @@
-fn main(): () = lib::foo()
+def main(): () = lib::foo()

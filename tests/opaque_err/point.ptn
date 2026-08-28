@@ -1,1 +1,1 @@
-pub opaque record Point(x: Float, y: Float)
+pub opaque type Point(x: Float, y: Float)

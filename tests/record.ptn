@@ -1,10 +1,10 @@
-record Point(x: Float, y: Float)
+type Point(x: Float, y: Float)
 
-fn get_x(this: Point): Float = this.x
+def get_x(this: Point): Float = this.x
 
-fn make_point(x: Float): Point = Point(x, 0.0)
+def make_point(x: Float): Point = Point(x, 0.0)
 
-fn main(): () = {
+def main(): () = {
     let point = make_point(1.0)
     get_x(point)
     // add assert in future

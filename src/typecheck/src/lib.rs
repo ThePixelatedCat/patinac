@@ -3,8 +3,6 @@
 mod error;
 mod infer;
 mod substitute;
-#[cfg(test)]
-mod test;
 mod types;
 mod unify;
 

@@ -464,7 +464,6 @@ dependencies = [
  "ident",
  "irs",
  "itertools 0.15.0",
- "parse",
  "slotmap",
 ]
 
@@ -491,7 +490,7 @@ dependencies = [
  "errors",
  "ident",
  "irs",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "logos",
  "pretty_assertions",
  "proptest",
@@ -822,8 +821,7 @@ dependencies = [
  "errors",
  "ident",
  "irs",
- "itertools 0.14.0",
- "nameres",
+ "itertools 0.15.0",
  "slotmap",
 ]
 

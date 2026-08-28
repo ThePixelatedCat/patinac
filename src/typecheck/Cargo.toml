@@ -10,13 +10,9 @@ errors.path = "../errors"
 irs.path = "../irs"
 # External
 ena = "0.14.3"
-itertools = "0.14.0"
+itertools = "0.15.0"
 derive_more = { version = "2.1.1", features = ["display", "from"] }
 slotmap = "1.1.1"
-
-[dev-dependencies]
-# Internal
-nameres = { path = "../nameres", features = ["test"] }
 
 [lints]
 workspace = true

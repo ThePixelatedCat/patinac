@@ -9,7 +9,7 @@ ident.path = "../ident"
 errors.path = "../errors"
 irs.path = "../irs"
 # External
-itertools = "0.14.0"
+itertools = "0.15.0"
 derive_more = { version = "2.1.1", features = ["from", "display"] }
 logos = "0.16.1"
 
@@ -22,6 +22,3 @@ proptest-derive = "0.8.0"
 
 [lints]
 workspace = true
-
-[features]
-test = []
