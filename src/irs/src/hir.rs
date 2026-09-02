@@ -148,20 +148,29 @@ pub struct TyInfo {
     /// Whether the type is opaque (meaning it's fields/variants are private).
     pub opaque: bool,
     /// The fields of the type.
-    pub fields: HashMap<Ident, Field>,
+    pub fields: Vec<Field>,
     /// The ID of the type's constructor function.
     pub ctor: VarId,
     /// The module containing the type's definition.
     pub module: ModuleId,
 }
 
+impl TyInfo {
+    /// Returns the field with the provided name, if it exists.
+    pub fn get_field(&self, ident: Ident) -> Option<&Field> {
+        self.fields
+            .iter()
+            .find_map(|field| (field.ident.ident == ident).then_some(field))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 /// A field of a `record` or of a `union` variant.
 pub struct Field {
+    /// The name of the field.
+    pub ident: SpanIdent,
     /// The type of the field.
     pub ty: Ty,
-    /// The span of the field.
-    pub span: Range<u32>,
 }
 
 /// An "executable item". These are the items that contain expressions, namely constants and functions.

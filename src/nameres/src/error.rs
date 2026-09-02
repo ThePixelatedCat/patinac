@@ -23,7 +23,7 @@ impl Diagnostic for ErrorKind {
     fn report(self) -> Report {
         match self {
             Self::UnknownName(kind, ident) => Report::error(format!("unresolved {kind}"))
-                .with_label(format!("cannot resolve `{ident}`")),
+                .with_label(format!("cannot find {kind} `{ident}`")),
             Self::PrivateItem(kind, ident) => Report::error(format!("private {kind}"))
                 .with_label(format!("`{ident}` is not visible")),
             Self::DuplicateItem(kind, ident) => Report::error(format!("duplicate {kind}"))

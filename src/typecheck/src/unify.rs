@@ -92,7 +92,7 @@ fn unify_field_ty(
         return;
     }
 
-    let Some(field) = ty_info.fields.get(&field_name.ident) else {
+    let Some(field) = ty_info.get_field(field_name.ident) else {
         handler.report(
             ErrorKind::NoSuchField(hir.ty_ident(base_id).ident, field_name.ident),
             field_name.span,

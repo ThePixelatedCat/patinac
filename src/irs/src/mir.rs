@@ -317,10 +317,10 @@ pub enum Ty {
 
 impl Ty {
     /// Size of a pointer in bytes. FIXME: Support for non-64 bit architectures?
-    const PTR_SIZE: u64 = 8;
+    const PTR_SIZE: u32 = 8;
 
     /// Returns the inline size of this type, in bytes.
-    pub fn size(&self) -> u64 {
+    pub fn size(&self) -> u32 {
         match self {
             Self::Int | Self::UInt | Self::Float => 8,
             Self::Byte | Self::Bool => 1,
@@ -342,7 +342,7 @@ impl Ty {
     }
 
     /// Returns the alignment of this type, in bytes.
-    pub fn alignment(&self) -> u64 {
+    pub fn alignment(&self) -> u32 {
         match self {
             Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool | Self::Array(_) => {
                 self.size()

@@ -3,7 +3,7 @@ use std::range::Range;
 use derive_more::From;
 
 use ident::SpanIdent;
-use irs::ast::{BlockItem, DefItem, DefKind, Field, Import, Param, TyItem, TyItemKind, Variant};
+use irs::ast::{DefItem, DefKind, Field, ImplItem, Import, Param, TyItem, TyItemKind, Variant};
 
 use crate::{ErrorKind, Parser, Result, TokKind};
 
@@ -11,7 +11,7 @@ use crate::{ErrorKind, Parser, Result, TokKind};
 pub enum Item {
     Import(Import),
     TyItem(TyItem),
-    BlockItem(BlockItem),
+    Impl(ImplItem),
     DefItem(DefItem),
 }
 
@@ -95,7 +95,7 @@ impl Parser<'_> {
         )
     }
 
-    fn impl_item(&mut self) -> Result<BlockItem> {
+    fn impl_item(&mut self) -> Result<ImplItem> {
         let span = self.consume(TokKind::Impl)?.span;
 
         let ty = self.ty()?;
@@ -108,8 +108,8 @@ impl Parser<'_> {
                 Item::TyItem(item) => {
                     return Err(self.err(ErrorKind::NotDefInImpl, item.ident.span));
                 }
-                Item::BlockItem(BlockItem::Impl { span, .. }) => {
-                    return Err(self.err(ErrorKind::NotDefInImpl, span));
+                Item::Impl(item) => {
+                    return Err(self.err(ErrorKind::NotDefInImpl, item.span));
                 }
                 Item::DefItem(item) => item,
             };
@@ -117,7 +117,11 @@ impl Parser<'_> {
             items.push(item);
         }
 
-        Ok(BlockItem::Impl { span, ty, items })
+        Ok(ImplItem {
+            span,
+            ty,
+            defs: items,
+        })
     }
 
     fn def_item(&mut self, public: bool) -> Result<DefItem> {

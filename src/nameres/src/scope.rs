@@ -2,8 +2,8 @@ use foldhash::{HashMap, HashMapExt as _};
 use ident::Ident;
 use irs::{
     ModuleId, Package,
-    ast::Path,
-    hir::{TyId, VarId},
+    ast::PathSlice,
+    hir::{Ty, TyId, VarId},
 };
 use slotmap::SecondaryMap;
 
@@ -15,6 +15,7 @@ pub struct ScopeInfo<'pkg> {
     module: ModuleId,
     local_stack: Vec<HashMap<Ident, VarId>>,
     modules: SecondaryMap<ModuleId, ModuleScope>,
+    assocs: HashMap<(Ty, Ident), (Visibility, VarId)>,
 }
 
 impl<'pkg> ScopeInfo<'pkg> {
@@ -26,6 +27,7 @@ impl<'pkg> ScopeInfo<'pkg> {
             module: package.root(),
             local_stack: Vec::new(),
             modules,
+            assocs: HashMap::new(),
         }
     }
 
@@ -76,6 +78,16 @@ impl<'pkg> ScopeInfo<'pkg> {
             .map(|(_, id)| id)
     }
 
+    pub fn add_assoc_def(
+        &mut self,
+        ty: Ty,
+        vis: Visibility,
+        ident: Ident,
+        id: VarId,
+    ) -> Option<VarId> {
+        self.assocs.insert((ty, ident), (vis, id)).map(|(_, id)| id)
+    }
+
     pub fn add_var(&mut self, ident: Ident, id: VarId) -> Option<VarId> {
         self.local_stack
             .last_mut()
@@ -83,116 +95,131 @@ impl<'pkg> ScopeInfo<'pkg> {
             .insert(ident, id)
     }
 
-    pub fn resolve_ty(&self, path: &Path) -> Result<TyId, ErrorKind> {
-        let module = self.resolve_base(path)?;
-        let (vis, id) = self.modules[module]
-            .get_ty(path.end())
-            .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Type, path.end()))?;
-        if module != self.module && vis == Visibility::Private {
-            Err(ErrorKind::PrivateItem(ItemKind::Type, path.end()))
+    pub fn resolve_ty(&self, path: PathSlice<'_>) -> Result<TyId, ErrorKind> {
+        let (head, tail) = path.split();
+        let base = match head {
+            Some(head) => self.resolve_module(head)?,
+            None => self.module,
+        };
+        let (vis, id) = self.modules[base]
+            .get_ty(tail)
+            .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Type, tail))?;
+        if base != self.module && vis == Visibility::Private {
+            Err(ErrorKind::PrivateItem(ItemKind::Type, tail))
         } else {
             Ok(id)
         }
     }
 
-    pub fn resolve_var(&self, path: &Path) -> Result<VarId, ErrorKind> {
-        if path.len() == 1 {
-            self.local_stack
+    pub fn resolve_var(&self, path: PathSlice<'_>) -> Result<VarId, ErrorKind> {
+        match path.split() {
+            (Some(head), tail) => {
+                let def = match self.resolve_module(head) {
+                    Ok(module) => self.modules[module].get_def(tail),
+                    Err(_) => match self.resolve_ty(head) {
+                        Ok(ty) => self.assocs.get(&(Ty::Named(ty), tail)).copied(),
+                        Err(_) => {
+                            return Err(ErrorKind::UnknownName(ItemKind::Module, head.last()));
+                        }
+                    },
+                };
+
+                let (vis, id) = def.ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, tail))?;
+
+                if vis == Visibility::Private {
+                    Err(ErrorKind::PrivateItem(ItemKind::Value, tail))
+                } else {
+                    Ok(id)
+                }
+            }
+            (None, tail) => self
+                .local_stack
                 .iter()
                 .rev()
-                .find_map(|scope| scope.get(&path.end()).copied())
-                .or_else(|| self.mod_scope().get_def(path.end()).map(|(_, id)| id))
-                .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, path.end()))
-        } else {
-            let module = self.resolve_base(path)?;
-            let (vis, id) = self.modules[module]
-                .get_def(path.end())
-                .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, path.end()))?;
-            if vis == Visibility::Private {
-                Err(ErrorKind::PrivateItem(ItemKind::Value, path.end()))
-            } else {
-                Ok(id)
-            }
+                .find_map(|scope| scope.get(&tail).copied())
+                .or_else(|| self.mod_scope().get_def(tail).map(|(_, id)| id))
+                .ok_or_else(|| ErrorKind::UnknownName(ItemKind::Value, tail)),
         }
     }
 
-    /// Resolves the module of a path, up until the final segment.
-    pub fn resolve_base(&self, path: &Path) -> Result<ModuleId, ErrorKind> {
-        let mut curr_mod = self.module;
-        for segment in path.iter().take(path.len() - 1) {
-            let (vis, new_mod) = self.get_child(curr_mod, segment)?;
+    fn resolve_module(&self, path: PathSlice<'_>) -> Result<ModuleId, ErrorKind> {
+        match path.split() {
+            (Some(head), tail) => {
+                let base = self.resolve_module(head)?;
+                let (vis, id) = self.modules[base]
+                    .get_mod(tail)
+                    .ok_or(ErrorKind::UnknownName(ItemKind::Module, tail))?;
 
-            if curr_mod != self.module && vis == Visibility::Private {
-                return Err(ErrorKind::PrivateItem(ItemKind::Module, path.end()));
+                if vis == Visibility::Private {
+                    Err(ErrorKind::PrivateItem(ItemKind::Module, tail))
+                } else {
+                    Ok(id)
+                }
             }
-
-            curr_mod = new_mod;
+            (None, tail) => self
+                .mod_scope()
+                .get_mod(tail)
+                .ok_or(ErrorKind::UnknownName(ItemKind::Module, tail))
+                .map(|(_, id)| id),
         }
-        Ok(curr_mod)
     }
 
-    fn get_child(
-        &self,
-        parent: ModuleId,
-        ident: Ident,
-    ) -> Result<(Visibility, ModuleId), ErrorKind> {
-        self.modules[parent]
-            .get_mod(ident)
-            .ok_or(ErrorKind::UnknownName(ItemKind::Module, ident))
-    }
-
-    pub fn import(&mut self, path: &Path) -> Result<(), ErrorKind> {
-        let base = self.resolve_base(path)?;
-        let module = self.modules[base].get_mod(path.end());
-        let ty = self.modules[base].get_ty(path.end());
-        let def = self.modules[base].get_def(path.end());
+    pub fn import(&mut self, path: PathSlice<'_>) -> Result<(), ErrorKind> {
+        let (head, tail) = path.split();
+        let base = match head {
+            Some(head) => self.resolve_module(head)?,
+            None => self.module,
+        };
+        let module = self.modules[base].get_mod(tail);
+        let ty = self.modules[base].get_ty(tail);
+        let def = self.modules[base].get_def(tail);
 
         if module.is_none() && ty.is_none() && def.is_none() {
-            return Err(ErrorKind::UnknownName(ItemKind::Unknown, path.end()));
+            return Err(ErrorKind::UnknownName(ItemKind::Unknown, tail));
         }
 
         if let Some((vis, module)) = module {
             if base != self.module && vis == Visibility::Private {
-                return Err(ErrorKind::PrivateItem(ItemKind::Module, path.end()));
+                return Err(ErrorKind::PrivateItem(ItemKind::Module, tail));
             }
 
             if self
                 .mod_scope_mut()
                 .modules
-                .insert(path.end(), (Visibility::Private, module))
+                .insert(tail, (Visibility::Private, module))
                 .is_some()
             {
-                return Err(ErrorKind::DuplicateItem(ItemKind::Module, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Module, tail));
             }
         }
 
         if let Some((vis, ty)) = ty {
             if base != self.module && vis == Visibility::Private {
-                return Err(ErrorKind::PrivateItem(ItemKind::Type, path.end()));
+                return Err(ErrorKind::PrivateItem(ItemKind::Type, tail));
             }
 
             if self
                 .mod_scope_mut()
                 .tys
-                .insert(path.end(), (Visibility::Private, ty))
+                .insert(tail, (Visibility::Private, ty))
                 .is_some()
             {
-                return Err(ErrorKind::DuplicateItem(ItemKind::Type, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Type, tail));
             }
         }
 
         if let Some((vis, def)) = def {
             if base != self.module && vis == Visibility::Private {
-                return Err(ErrorKind::PrivateItem(ItemKind::Value, path.end()));
+                return Err(ErrorKind::PrivateItem(ItemKind::Value, tail));
             }
 
             if self
                 .mod_scope_mut()
                 .defs
-                .insert(path.end(), (Visibility::Private, def))
+                .insert(tail, (Visibility::Private, def))
                 .is_some()
             {
-                return Err(ErrorKind::DuplicateItem(ItemKind::Value, path.end()));
+                return Err(ErrorKind::DuplicateItem(ItemKind::Value, tail));
             }
         }
 

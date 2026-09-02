@@ -4,6 +4,7 @@
 use std::{
     fmt::{self, Display, Formatter},
     iter,
+    ops::Deref,
     range::Range,
 };
 
@@ -18,10 +19,10 @@ pub struct Ast {
     pub imports: Vec<Import>,
     /// The type definitions of a module, containing both `union` and `record` definitions.
     pub ty_items: Vec<TyItem>,
-    /// The block items of a module, with each block containing other nested item. This includes `impl` blocks.
-    pub block_items: Vec<BlockItem>,
+    /// The `impl` blocks of a module.
+    pub impls: Vec<ImplItem>,
     /// The "executable items" of a module. These are the items that contain expressions.
-    pub def_items: Vec<DefItem>,
+    pub defs: Vec<DefItem>,
 }
 
 /// A path made of one or more identifiers.
@@ -29,18 +30,6 @@ pub struct Ast {
 pub struct Path {
     head: Vec<Ident>,
     tail: Ident,
-}
-
-impl Display for Path {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut string = String::new();
-        for ident in &self.head {
-            string.push_str(&ident.str());
-            string.push_str("::");
-        }
-        string.push_str(&self.tail.str());
-        string.fmt(f)
-    }
 }
 
 impl Path {
@@ -77,16 +66,12 @@ impl Path {
     }
 
     /// Returns the first identifier of the path.
-    pub fn start(&self) -> Ident {
-        if self.head.is_empty() {
-            self.tail
-        } else {
-            self.head[0]
-        }
+    pub fn first(&self) -> Ident {
+        self.head.first().copied().unwrap_or(self.tail)
     }
 
     /// Returns the last identifier of the path, which is the name of the referenced item.
-    pub const fn end(&self) -> Ident {
+    pub const fn last(&self) -> Ident {
         self.tail
     }
 
@@ -100,6 +85,14 @@ impl Path {
     pub fn iter(&self) -> impl Iterator<Item = Ident> {
         self.head.iter().copied().chain(iter::once(self.tail))
     }
+
+    /// Returns a slice borrowed from this path.
+    pub fn as_slice(&self) -> PathSlice<'_> {
+        PathSlice {
+            head: &self.head,
+            tail: self.tail,
+        }
+    }
 }
 
 impl From<Ident> for Path {
@@ -108,12 +101,71 @@ impl From<Ident> for Path {
     }
 }
 
+impl Display for Path {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.as_slice().fmt(f)
+    }
+}
+
+/// A borrowed slice of a [`Path`]. Guaranteed to always have at least one segment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PathSlice<'a> {
+    head: &'a [Ident],
+    tail: Ident,
+}
+
+impl PathSlice<'_> {
+    /// Create a path made of a single identifier.
+    pub const fn single(ident: Ident) -> Self {
+        Self {
+            head: &[],
+            tail: ident,
+        }
+    }
+
+    /// Returns the number of segments in the path.
+    #[expect(clippy::len_without_is_empty, reason = "can't be empty")]
+    pub const fn len(&self) -> usize {
+        self.head.len() + 1
+    }
+
+    /// Returns the first identifier of the path.
+    pub fn first(&self) -> Ident {
+        self.head.first().copied().unwrap_or(self.tail)
+    }
+
+    /// Returns the last identifier of the path, which is the name of the referenced item.
+    pub const fn last(&self) -> Ident {
+        self.tail
+    }
+
+    /// Splits the slice into it's head as a new slice, and it's tail.
+    ///
+    /// The new slice will be None if this slice has a length of 1.
+    pub fn split(self) -> (Option<Self>, Ident) {
+        let new_slice = self.head.last().map(|&tail| Self {
+            head: &self.head[..self.head.len() - 1],
+            tail,
+        });
+        (new_slice, self.tail)
+    }
+}
+
+impl Display for PathSlice<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for ident in self.head {
+            write!(f, "{}::", &*ident.str())?;
+        }
+        self.tail.str().fmt(f)
+    }
+}
+
 /// An `import` item, abbreviating the path required to refer to an item.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Import(pub Path, pub Range<u32>);
 
 /// The definition of a type, either a `record` or a `union`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct TyItem {
     /// Whether the type is public.
     pub public: bool,
@@ -128,7 +180,7 @@ pub struct TyItem {
 }
 
 /// The information of a [`TyItem`] specific to whether it's a `record` or an `union`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum TyItemKind {
     /// A `record` type.
     Record(Vec<Field>),
@@ -137,7 +189,7 @@ pub enum TyItemKind {
 }
 
 /// A variant of a `union`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Variant {
     /// The name of the variant.
     pub ident: SpanIdent,
@@ -146,7 +198,7 @@ pub struct Variant {
 }
 
 /// A field of a `record` or of a `union` variant.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Field {
     /// The name of the field.
     pub ident: SpanIdent,
@@ -154,18 +206,15 @@ pub struct Field {
     pub ty: Ty,
 }
 
-/// A block of nested items.
+/// An `impl` block, associating it's nested items with a type.
 #[derive(Debug, PartialEq)]
-pub enum BlockItem {
-    /// An `impl` block, associating it's nested items with a type.
-    Impl {
-        /// The span of the `impl` token.
-        span: Range<u32>,
-        /// The type this impl block is associated with.
-        ty: Ty,
-        /// The items within the block.
-        items: Vec<DefItem>,
-    },
+pub struct ImplItem {
+    /// The span of the `impl` token.
+    pub span: Range<u32>,
+    /// The type this impl block is associated with.
+    pub ty: Ty,
+    /// The items within the block.
+    pub defs: Vec<DefItem>,
 }
 
 /// An "executable item". These are the items that contain expressions, namely constants and functions.
@@ -532,7 +581,7 @@ impl PrefixOp {
 }
 
 /// A spanned [type][TyKind].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Ty {
     /// The kind of the type.
     pub kind: TyKind,
@@ -540,26 +589,17 @@ pub struct Ty {
     pub span: Range<u32>,
 }
 
-/// The kinds of types.
-#[derive(Debug, PartialEq, Eq)]
+/// The kinds of type syntaxes that can appear in source.
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum TyKind {
-    /// 64-bit signed integer.
-    Int,
-    /// 64-bit unsigned integer.
-    UInt,
-    /// 8-bit unsigned integer.
-    Byte,
-    /// Double-precision floating point number (binary64).
-    Float,
-    /// Truth value (`true`/`false`).
-    Bool,
     /// A dynamic homogenous array.
     Array(Box<Ty>),
     /// A heterogenous tuple (compile-time length).
     Tuple(Vec<Ty>),
     /// A first-class function value, implemented as a closure.
     Func(Vec<ParamTy>, Box<Ty>),
-    /// A user-defined type, such as a `record` or `union`.
+    /// A type with an identifier name and possible generics.
+    /// Covers user-defined types and named primitive types.
     Named(Path, Vec<Ty>),
 }
 
@@ -584,7 +624,7 @@ impl TyKind {
 }
 
 /// A parameter of a function type.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ParamTy {
     /// The type of the paremeter.
     pub ty: Ty,

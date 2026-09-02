@@ -267,12 +267,12 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
 
         assert_eq!(
             self.target.get_target_data().get_store_size(&lowered_ty),
-            ty.size(),
+            ty.size().into(),
             "ty: {ty:?}"
         );
         assert_eq!(
             u64::from(self.target.get_target_data().get_abi_alignment(&lowered_ty)),
-            ty.alignment(),
+            ty.alignment().into(),
             "ty: {ty:?}"
         );
 

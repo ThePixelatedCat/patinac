@@ -91,6 +91,22 @@ impl<'hir> LowerInfo<'hir, '_> {
     fn lower_ctor(&mut self, ty: TyId) {
         let var = self.lower_var(self.hir.ty_info(ty).ctor);
 
+        todo!("Fix field ordering");
+
+        // let params = self
+        //     .hir
+        //     .ty_info(ty)
+        //     .fields
+        //     .iter()
+        //     .map(|field| {
+        //         self.mir.add_var(VarInfo {
+        //             ident: field.ident.ident,
+        //             ty: self.lower_ty(&field.ty),
+        //             mutable: false,
+        //         })
+        //     })
+        //     .collect();
+
         let field_tys = self.layout_record_fields(ty);
         let (params, values) = field_tys
             .iter()
@@ -171,7 +187,7 @@ impl<'hir> LowerInfo<'hir, '_> {
             .ty_info(ty)
             .fields
             .iter()
-            .map(|(ident, f)| (*ident, self.lower_ty(&f.ty)))
+            .map(|field| (field.ident.ident, self.lower_ty(&field.ty)))
             .collect();
         fields.sort_by_cached_key(|(_, ty)| Reverse(ty.alignment()));
         let (field_names, field_tys): (Vec<_>, Vec<_>) = fields.into_iter().unzip();
@@ -184,12 +200,14 @@ impl<'hir> LowerInfo<'hir, '_> {
     }
 
     fn field_index(&self, ty: TyId, ident: Ident) -> u32 {
-        self.field_map[ty]
+        let index = self.field_map[ty]
             .iter()
             .copied()
             .position(|ident_b| ident_b == ident)
             .expect("type does not have that field")
             .try_into()
-            .expect("too many fields")
+            .expect("too many fields");
+        println!("index of {ident} is {index}");
+        index
     }
 }

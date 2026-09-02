@@ -69,8 +69,8 @@ impl<'src> Parser<'src> {
             match self.item() {
                 Ok(Item::Import(item)) => ast.imports.push(item),
                 Ok(Item::TyItem(item)) => ast.ty_items.push(item),
-                Ok(Item::DefItem(item)) => ast.def_items.push(item),
-                Ok(Item::BlockItem(item)) => ast.block_items.push(item),
+                Ok(Item::DefItem(item)) => ast.defs.push(item),
+                Ok(Item::Impl(item)) => ast.impls.push(item),
                 Err(_) => self.skip_to(&[
                     TokKind::Import,
                     TokKind::Pub,

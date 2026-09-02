@@ -12,7 +12,7 @@ use crate::{ErrorKind, ResolveInfo};
 impl ResolveInfo<'_, '_> {
     pub fn resolve_expr(&mut self, expr: &ast::Expr) -> Result<ExprId> {
         let new_expr = match &expr.kind {
-            ExprKind::Var(path) => match self.scopes.resolve_var(path) {
+            ExprKind::Var(path) => match self.scopes.resolve_var(path.as_slice()) {
                 Ok(id) => hir::Expr::Var(id),
                 Err(e) => return Err(self.err(e, expr.span)),
             },
@@ -301,7 +301,7 @@ impl ResolveInfo<'_, '_> {
         match &expr.kind {
             ExprKind::Var(path) => {
                 // Unbound variables are either parameters, which don't need capturing, or actually unbound, which will produce an error anyway.
-                if let Ok(id) = self.scopes.resolve_var(path)
+                if let Ok(id) = self.scopes.resolve_var(path.as_slice())
                     && !self.hir.var_info(id).global
                 {
                     captures.insert(id);

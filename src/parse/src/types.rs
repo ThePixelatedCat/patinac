@@ -1,4 +1,4 @@
-use std::{ops::Deref as _, range::Range};
+use std::range::Range;
 
 use irs::ast::{ParamTy, Ty, TyKind};
 
@@ -36,21 +36,6 @@ impl Parser<'_> {
                     (vec![], span.end)
                 };
                 let span = Range::from(span.start..end);
-
-                if path.len() == 1 {
-                    let prim_ty = match path.end().str().deref() {
-                        "Int" => Some(TyKind::Int),
-                        "UInt" => Some(TyKind::UInt),
-                        "Byte" => Some(TyKind::Byte),
-                        "Bool" => Some(TyKind::Bool),
-                        "Float" => Some(TyKind::Float),
-                        _ => None,
-                    };
-                    if let Some(ty) = prim_ty {
-                        return Ok(ty.span(span));
-                    }
-                }
-
                 Ok(TyKind::Named(path, generics).span(span))
             }
             _ => Err(self.unexpected(None)),

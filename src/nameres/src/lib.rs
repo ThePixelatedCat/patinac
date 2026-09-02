@@ -6,14 +6,14 @@ mod scope;
 
 use std::range::Range;
 
-use foldhash::{HashMap, HashMapExt as _};
+use itertools::Itertools;
 use slotmap::SecondaryMap;
 
 use errors::{ErrorHandler, HandledError, Result, TryCollectEager as _};
 use irs::{
     ModuleId, Package,
-    ast::{self, Ast, Binding, BlockItem, Import, Pat, PatKind, Path, TyItem, TyItemKind, TyKind},
-    hir::{self, Field, Hir, Param, TyInfo, VarId, VarInfo},
+    ast::{self, Ast, Binding, Import, Pat, PatKind, TyItem, TyItemKind, TyKind},
+    hir::{self, Field, Hir, Param, TyId, TyInfo, VarId, VarInfo},
 };
 
 use crate::{
@@ -59,6 +59,7 @@ impl ResolveInfo<'_, '_> {
 
         let ast = &self.asts[module];
 
+        let mut ty_ids = Vec::new();
         for ty in &ast.ty_items {
             let id = self.hir.reserve_ty(ty.ident);
             let vis = if ty.public {
@@ -72,21 +73,43 @@ impl ResolveInfo<'_, '_> {
                     ty.ident.span,
                 );
             }
+            ty_ids.push((ty, id));
+        }
+        for (ty, id) in ty_ids {
+            self.resolve_ty_item(ty, id);
         }
 
-        for ty in &ast.ty_items {
-            self.resolve_ty_item(ty);
-        }
-
-        for block in &ast.block_items {
-            match block {
-                BlockItem::Impl { span, ty, items } => {
-                    todo!("Impl Blocks")
+        let mut def_ids = Vec::new();
+        for impl_ in &ast.impls {
+            for def in &impl_.defs {
+                let Ok(ty) = self.resolve_ty(&impl_.ty) else {
+                    continue;
+                };
+                let id = self.hir.add_var(VarInfo {
+                    ident: def.ident,
+                    mutable: false,
+                    global: true,
+                    module: self.scopes.module(),
+                });
+                let vis = if def.public {
+                    Visibility::Public
+                } else {
+                    Visibility::Private
+                };
+                if self
+                    .scopes
+                    .add_assoc_def(ty, vis, def.ident.ident, id)
+                    .is_some()
+                {
+                    self.err(
+                        ErrorKind::DuplicateItem(ItemKind::Value, def.ident.ident),
+                        def.ident.span,
+                    );
                 }
+                def_ids.push((def, id));
             }
         }
-
-        for def in &ast.def_items {
+        for def in &ast.defs {
             let id = self.hir.add_var(VarInfo {
                 ident: def.ident,
                 mutable: false,
@@ -104,25 +127,18 @@ impl ResolveInfo<'_, '_> {
                     def.ident.span,
                 );
             }
+            def_ids.push((def, id));
         }
 
         for Import(path, span) in &ast.imports {
-            if let Err(e) = self.scopes.import(path) {
+            if let Err(e) = self.scopes.import(path.as_slice()) {
                 self.err(e, *span);
             }
         }
 
-        for block in &ast.block_items {
-            self.resolve_block_item(block);
-        }
-
-        let main_index = is_root
-            .then(|| self.find_main(&ast.def_items).ok()?)
-            .flatten();
-
-        for (index, def) in ast.def_items.iter().enumerate() {
-            if let Ok(def) = self.resolve_def_item(&def.ident.ident.into(), def) {
-                if main_index.is_some_and(|main_index| main_index == index) {
+        for (ast_def, id) in def_ids {
+            if let Ok(def) = self.resolve_def_item(ast_def, id) {
+                if is_root && self.is_main(ast_def).is_ok_and(|x| x) {
                     self.hir.set_main(def);
                 } else {
                     self.hir.add_def(def);
@@ -131,55 +147,54 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn find_main(&self, execs: &[ast::DefItem]) -> Result<Option<usize>> {
-        for (idx, item) in execs.iter().enumerate() {
-            if let ast::DefKind::Func { params, ret_ty, .. } = &item.kind
-                && item.ident.ident == "main"
-            {
-                return if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
-                    Ok(Some(idx))
-                } else {
-                    Err(self.err(ErrorKind::InvalidMain, item.ident.span))
-                };
+    fn is_main(&self, def: &ast::DefItem) -> Result<bool> {
+        if let ast::DefKind::Func { params, ret_ty, .. } = &def.kind
+            && def.ident.ident == "main"
+        {
+            if params.is_empty() && ret_ty.kind == ast::TyKind::unit() {
+                Ok(true)
+            } else {
+                Err(self.err(ErrorKind::InvalidMain, def.ident.span))
             }
+        } else {
+            Ok(false)
         }
-
-        Ok(None)
     }
 
-    fn resolve_ty_item(&mut self, item: &TyItem) {
-        let id = self
-            .scopes
-            .resolve_ty(&item.ident.ident.into())
-            .expect("all items should have already been inserted into the scope");
-
+    fn resolve_ty_item(&mut self, item: &TyItem, id: TyId) {
         if !item.generics.is_empty() {
             todo!("Generics")
         }
 
+        // let id = self
+        //     .scopes
+        //     .resolve_ty(PathSlice::single(item.ident.ident))
+        //     .expect("all items should have already been inserted into the scope");
+
         match &item.kind {
             TyItemKind::Record(old_fields) => {
-                let mut fields = HashMap::new();
+                let mut fields = Vec::new();
                 for old_field in old_fields {
                     let Ok(ty) = self.resolve_ty(&old_field.ty) else {
                         continue;
                     };
                     let field = Field {
-                        span: old_field.ident.span,
+                        ident: old_field.ident,
                         ty,
                     };
-                    if fields.insert(old_field.ident.ident, field).is_some() {
-                        self.err(ErrorKind::DupFields(old_field.ident.ident), item.ident.span);
-                    }
+                    fields.push(field);
+                }
+                for dup in fields.iter().duplicates_by(|field| field.ident.ident) {
+                    self.err(ErrorKind::DupFields(dup.ident.ident), dup.ident.span);
                 }
 
                 let constructor_ty = hir::Ty::Func(
                     fields
-                        .values()
+                        .iter()
                         .map(|field| Param {
                             ty: field.ty.clone(),
                             mutable: false,
-                            span: field.span,
+                            span: field.ident.span,
                         })
                         .collect(),
                     Box::new(hir::Ty::Named(id)),
@@ -214,36 +229,24 @@ impl ResolveInfo<'_, '_> {
         }
     }
 
-    fn resolve_block_item(&mut self, item: &BlockItem) -> Result<()> {
-        match item {
-            BlockItem::Impl { span, ty, items } => {
-                todo!("Impl Blocks")
-                // let ty = self.resolve_ty(ty)?;
+    // fn resolve_impl(&mut self, impl_: &ImplItem) {
+    //     let Ok(ty) = self.resolve_ty(&impl_.ty) else {
+    //         return;
+    //     };
 
-                // for item in items {
-                //     let mut path = ty_path.clone();
-                //     path.push(item.ident.ident);
-                //     if let Ok(exec) = self.resolve_exec_item(&path, item, Some(&ty)) {
-                //         self.hir.add_exec(exec);
-                //     }
-                // }
+    //     for def in &impl_.defs {
+    //         if let Ok(def) = self.resolve_def_item(def) {
+    //             self.hir.add_def(def);
+    //         }
+    //     }
+    // }
 
-                // Ok(())
-            }
-        }
-    }
-
-    fn resolve_def_item(&mut self, path: &Path, item: &ast::DefItem) -> Result<hir::DefItem> {
-        if !item.generics.is_empty() {
+    fn resolve_def_item(&mut self, def: &ast::DefItem, id: VarId) -> Result<hir::DefItem> {
+        if !def.generics.is_empty() {
             todo!("Generics")
         }
 
-        let id = self
-            .scopes
-            .resolve_var(path)
-            .expect("all items should have already been inserted into the scope");
-
-        match &item.kind {
+        match &def.kind {
             ast::DefKind::Const { ty, val } => {
                 let val = self.resolve_expr(val);
                 let ty = self.resolve_ty(ty)?;
@@ -332,11 +335,6 @@ impl ResolveInfo<'_, '_> {
 
     fn resolve_ty(&mut self, ty: &ast::Ty) -> Result<hir::Ty> {
         match &ty.kind {
-            TyKind::Int => Ok(hir::Ty::Int),
-            TyKind::UInt => Ok(hir::Ty::UInt),
-            TyKind::Byte => Ok(hir::Ty::Byte),
-            TyKind::Float => Ok(hir::Ty::Float),
-            TyKind::Bool => Ok(hir::Ty::Bool),
             TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(self.resolve_ty(ty)?))),
             TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(self.resolve_tys(tys)?)),
             TyKind::Func(params, ret_ty) => {
@@ -358,9 +356,16 @@ impl ResolveInfo<'_, '_> {
                     todo!("Generics")
                 }
 
-                match self.scopes.resolve_ty(path) {
-                    Ok(id) => Ok(hir::Ty::Named(id)),
-                    Err(e) => Err(self.err(e, ty.span)),
+                match &*path.last().str() {
+                    "Int" => Ok(hir::Ty::Int),
+                    "UInt" => Ok(hir::Ty::UInt),
+                    "Byte" => Ok(hir::Ty::Byte),
+                    "Bool" => Ok(hir::Ty::Bool),
+                    "Float" => Ok(hir::Ty::Float),
+                    _ => match self.scopes.resolve_ty(path.as_slice()) {
+                        Ok(id) => Ok(hir::Ty::Named(id)),
+                        Err(e) => Err(self.err(e, ty.span)),
+                    },
                 }
             }
         }
