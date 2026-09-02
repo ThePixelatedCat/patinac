@@ -18,14 +18,6 @@ impl TypeChecker<'_> {
                 LitExpr::String(_) => todo!("String type"),
                 LitExpr::Bool(_) => PartialTy::Bool,
             },
-            Expr::Array(exprs) => {
-                let inner_ty = PartialTy::var(&mut self.table);
-                for expr in exprs {
-                    let ty = self.infer_expr(hir, module, *expr);
-                    self.constrain_eq(ty, inner_ty.clone(), hir.expr_span(*expr), module);
-                }
-                PartialTy::Array(Box::new(inner_ty))
-            }
             Expr::Tuple(exprs) => PartialTy::Tuple(self.infer_exprs(hir, module, exprs)),
             &Expr::Infix { op, lhs, rhs } => {
                 let lhs_ty = self.infer_expr(hir, module, lhs);
@@ -76,22 +68,6 @@ impl TypeChecker<'_> {
                         PartialTy::Float
                     }
                 }
-            }
-            &Expr::Index {
-                array: arr,
-                index: idx,
-            } => {
-                let idx_ty = self.infer_expr(hir, module, idx);
-                self.constrain_eq(idx_ty, PartialTy::UInt, hir.expr_span(idx), module);
-                let arr_ty = self.infer_expr(hir, module, arr);
-                let inner_ty = PartialTy::var(&mut self.table);
-                self.constrain_eq(
-                    arr_ty,
-                    PartialTy::Array(Box::new(inner_ty.clone())),
-                    hir.expr_span(arr),
-                    module,
-                );
-                inner_ty
             }
             &Expr::Field { base, field } => {
                 let base_ty = self.infer_expr(hir, module, base);
@@ -194,18 +170,7 @@ impl TypeChecker<'_> {
                 th_ty
             }
             Expr::For { id, iter, body } => {
-                let iter_ty = self.infer_expr(hir, module, *iter);
-                let item_ty = PartialTy::var(&mut self.table);
-                let var_ty = self.var_ty(hir, *id).clone();
-                self.constrain_eq(
-                    iter_ty,
-                    PartialTy::Array(Box::new(item_ty.clone())),
-                    hir.expr_span(*iter),
-                    module,
-                );
-                self.constrain_eq(var_ty, item_ty, hir.expr_span(*iter), module);
-                self.infer_block_expr(hir, module, body);
-                PartialTy::unit()
+                todo!()
             }
             Expr::Loop(body) => {
                 self.infer_block_expr(hir, module, body);

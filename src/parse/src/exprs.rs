@@ -41,7 +41,6 @@ impl Parser<'_> {
             | TokKind::False => self
                 .lit_expr()
                 .map(|(lit, span)| ExprKind::Lit(lit).span(span)),
-            TokKind::LBracket => self.array_lit_expr(),
             TokKind::LParen => self.tuple_lit_expr(),
             TokKind::Minus | TokKind::Bang => self.unop_expr(),
             TokKind::Fn => self.lambda_expr(),
@@ -253,11 +252,6 @@ impl Parser<'_> {
         Ok((lit, tok.span))
     }
 
-    fn array_lit_expr(&mut self) -> Result<Expr> {
-        self.delimited_list(Self::expr, TokKind::LBracket, TokKind::RBracket)
-            .map(|(exprs, span)| ExprKind::Array(exprs).span(span))
-    }
-
     fn tuple_lit_expr(&mut self) -> Result<Expr> {
         self.delimited_list(Self::expr, TokKind::LParen, TokKind::RParen)
             .map(|(exprs, span)| ExprKind::Tuple(exprs).span(span))
@@ -389,17 +383,6 @@ impl Parser<'_> {
                     }
                     .span(start..field.span.end))
                 }
-            }
-            TokKind::LBracket => {
-                self.consume(TokKind::LBracket)?;
-                let index = Box::new(self.expr()?);
-
-                let span = lhs.span.start..self.consume(TokKind::RBracket)?.span.end;
-                Ok(ExprKind::Index {
-                    array: Box::new(lhs),
-                    index,
-                }
-                .span(span))
             }
             TokKind::Match => {
                 self.consume(TokKind::Match)?;

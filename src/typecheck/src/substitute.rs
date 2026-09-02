@@ -57,7 +57,6 @@ fn sub_ty(table: &mut Table, ty: &PartialTy) -> Result<Ty, ()> {
         PartialTy::Tuple(tys) => Ok(Ty::Tuple(
             tys.iter().map(|ty| sub_ty(table, ty)).try_collect_eager()?,
         )),
-        PartialTy::Array(ty) => Ok(Ty::Array(Box::new(sub_ty(table, ty)?))),
         PartialTy::Fn(params, ret) => {
             let params = params
                 .iter()

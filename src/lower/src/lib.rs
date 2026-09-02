@@ -24,7 +24,6 @@ struct LowerInfo<'hir, 'err> {
     handler: ErrorHandler<'err>,
     mir: Mir,
     var_map: SecondaryMap<hir::VarId, mir::VarId>,
-    field_map: SecondaryMap<TyId, Vec<Ident>>,
     module: ModuleId,
     lambda_counter: u32,
 }
@@ -44,7 +43,6 @@ pub fn lower(
         handler,
         mir: Mir::default(),
         var_map: SecondaryMap::new(),
-        field_map: SecondaryMap::new(),
         module: ModuleId::null(),
         lambda_counter: 0,
     }
@@ -91,22 +89,6 @@ impl<'hir> LowerInfo<'hir, '_> {
     fn lower_ctor(&mut self, ty: TyId) {
         let var = self.lower_var(self.hir.ty_info(ty).ctor);
 
-        todo!("Fix field ordering");
-
-        // let params = self
-        //     .hir
-        //     .ty_info(ty)
-        //     .fields
-        //     .iter()
-        //     .map(|field| {
-        //         self.mir.add_var(VarInfo {
-        //             ident: field.ident.ident,
-        //             ty: self.lower_ty(&field.ty),
-        //             mutable: false,
-        //         })
-        //     })
-        //     .collect();
-
         let field_tys = self.layout_record_fields(ty);
         let (params, values) = field_tys
             .iter()
@@ -148,14 +130,13 @@ impl<'hir> LowerInfo<'hir, '_> {
         &self.expr_tys[expr]
     }
 
-    fn lower_ty(&mut self, ty: &'hir hir::Ty) -> mir::Ty {
+    fn lower_ty(&self, ty: &'hir hir::Ty) -> mir::Ty {
         match ty {
             hir::Ty::Int => mir::Ty::Int,
             hir::Ty::UInt => mir::Ty::UInt,
             hir::Ty::Byte => mir::Ty::Byte,
             hir::Ty::Float => mir::Ty::Float,
             hir::Ty::Bool => mir::Ty::Bool,
-            hir::Ty::Array(elem_ty) => mir::Ty::Array(Box::new(self.lower_ty(elem_ty))),
             hir::Ty::Tuple(elem_tys) => mir::Ty::Fields(self.layout_fields(elem_tys)),
             hir::Ty::Func(params, ret_ty) => {
                 let params = params
@@ -172,42 +153,31 @@ impl<'hir> LowerInfo<'hir, '_> {
         }
     }
 
-    fn layout_fields(
-        &mut self,
-        field_tys: impl IntoIterator<Item = &'hir hir::Ty>,
-    ) -> Vec<mir::Ty> {
-        let mut field_tys: Vec<_> = field_tys.into_iter().map(|ty| self.lower_ty(ty)).collect();
-        field_tys.sort_by_cached_key(|ty| Reverse(ty.alignment()));
-        field_tys
+    fn layout_fields(&self, field_tys: impl IntoIterator<Item = &'hir hir::Ty>) -> Vec<mir::Ty> {
+        field_tys.into_iter().map(|ty| self.lower_ty(ty)).collect()
     }
 
-    fn layout_record_fields(&mut self, ty: TyId) -> Vec<mir::Ty> {
-        let mut fields: Vec<_> = self
-            .hir
+    fn layout_record_fields(&self, ty: TyId) -> Vec<mir::Ty> {
+        self.hir
             .ty_info(ty)
             .fields
             .iter()
-            .map(|field| (field.ident.ident, self.lower_ty(&field.ty)))
-            .collect();
-        fields.sort_by_cached_key(|(_, ty)| Reverse(ty.alignment()));
-        let (field_names, field_tys): (Vec<_>, Vec<_>) = fields.into_iter().unzip();
-        self.field_map.insert(ty, field_names);
-        field_tys
+            .map(|field| self.lower_ty(&field.ty))
+            .collect()
     }
 
-    fn lower_expr_ty(&mut self, expr: hir::ExprId) -> mir::Ty {
+    fn lower_expr_ty(&self, expr: hir::ExprId) -> mir::Ty {
         self.lower_ty(self.expr_ty(expr))
     }
 
     fn field_index(&self, ty: TyId, ident: Ident) -> u32 {
-        let index = self.field_map[ty]
+        self.hir
+            .ty_info(ty)
+            .fields
             .iter()
-            .copied()
-            .position(|ident_b| ident_b == ident)
+            .position(|field| field.ident.ident == ident)
             .expect("type does not have that field")
             .try_into()
-            .expect("too many fields");
-        println!("index of {ident} is {index}");
-        index
+            .expect("too many fields")
     }
 }

@@ -15,12 +15,10 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         match self.mir.expr(expr) {
             Expr::Var(id) => self.emit_ident(*id),
             Expr::Lit(lit) => self.emit_lit(lit),
-            Expr::Array(elem_ty, elems) => self.emit_array(elem_ty, elems),
             Expr::Construct(field_tys, values) => self.emit_construct(field_tys, values),
             Expr::Infix { op, lhs, rhs } => self.emit_infix(*op, *lhs, *rhs),
             Expr::Prefix { op, expr } => self.emit_prefix(*op, *expr),
             Expr::Field { base, field } => self.emit_field(*base, *field),
-            Expr::Index { array, index } => self.emit_index(expr, *array, *index),
             Expr::Call { func, args, ret_ty } => self.emit_call(*func, args, ret_ty),
             Expr::Closure { func, captures } => self.emit_closure(*func, captures),
             Expr::Assign { place, value } => self.emit_assign(*place, *value),
@@ -40,7 +38,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Ty::Float => "%f\n",
             Ty::Bool => "%hhd\n",
             Ty::Fields(_) => todo!(),
-            Ty::Array(_) => todo!(),
             Ty::Func(_, _) => panic!("can't print this type"),
         };
         let format = self
@@ -64,7 +61,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 | LayoutValue::Fields(_, _) => true,
             },
             Expr::Field { base, .. } => self.is_place(*base),
-            Expr::Index { array, .. } => self.is_place(*array),
             _ => false,
         }
     }
@@ -80,22 +76,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .unwrap();
                 self.layout_indirect(&fields[usize::try_from(*field).unwrap()], field_ptr)
             }
-            Expr::Index { array, index } => {
-                let array = self.emit_place(*array);
-                let index = self.emit_expr(*index);
-                let LayoutValue::Scalar(
-                    ScalarKind::Array(elem_ty),
-                    ScalarLayout::Indirect(array_ptr),
-                ) = array
-                else {
-                    unreachable!("attempted to access direct array as place")
-                };
-                let array_ptr = self
-                    .builder
-                    .build_load(self.ptr_ty(), array_ptr, "")
-                    .unwrap();
-                self.build_index(LayoutValue::array(elem_ty, array_ptr), index)
-            }
             _ => unreachable!("not a place"),
         }
     }
@@ -110,23 +90,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .build_struct_gep(self.fields_ty(fields), base, *field, "")
                     .unwrap();
                 self.layout_indirect(&fields[usize::try_from(*field).unwrap()], field_ptr)
-            }
-            Expr::Index { array, index } => {
-                let array = self.emit_unique_place(*array);
-                let index = self.emit_expr(*index);
-                let LayoutValue::Scalar(
-                    ScalarKind::Array(elem_ty),
-                    ScalarLayout::Indirect(array_ptr),
-                ) = array
-                else {
-                    unreachable!("attempted to access direct array as place")
-                };
-                let array_ptr = self
-                    .builder
-                    .build_load(self.ptr_ty(), array_ptr, "")
-                    .unwrap();
-                self.build_call(self.array_unique(elem_ty), &[array_ptr.into()]);
-                self.build_index(LayoutValue::array(elem_ty, array_ptr), index)
             }
             _ => unreachable!("not a place"),
         }
@@ -144,33 +107,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             LitExpr::Float(value) => LayoutValue::float(self.const_float(*value)),
             LitExpr::Bool(value) => LayoutValue::int(IntSize::Bits8, self.const_bool(*value)),
         }
-    }
-
-    fn emit_array(&mut self, elem_ty: &'mir Ty, elems: &[ExprId]) -> LayoutValue<'mir, 'ctx> {
-        // Fast-path empty arrays.
-        if elems.is_empty() {
-            return LayoutValue::array(elem_ty, self.const_null());
-        }
-
-        // Allocate the array.
-        let len = u64::try_from(elems.len()).expect("I doubt we'll see 128bit CPUs any time soon");
-        let array = self
-            .build_call(self.array_new(elem_ty), &[self.const_uint(len).into()])
-            .unwrap()
-            .into_pointer_value();
-        let array = LayoutValue::array(elem_ty, array);
-
-        // Initialize each element.
-        for (index, expr) in elems.iter().enumerate() {
-            let index = self.const_uint(
-                u64::try_from(index).expect("I doubt we'll see 128bit CPUs any time soon"),
-            );
-            let elem_ptr = self.build_index(array, LayoutValue::int(IntSize::Bits64, index));
-            let elem = self.emit_expr(*expr);
-            self.build_move(elem, elem_ptr.as_pointer());
-        }
-
-        array
     }
 
     fn emit_construct(
@@ -307,25 +243,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         result
     }
 
-    fn emit_index(
-        &mut self,
-        expr: ExprId,
-        array: ExprId,
-        index: ExprId,
-    ) -> LayoutValue<'mir, 'ctx> {
-        if self.is_place(array) {
-            let elem_ptr = self.emit_place(expr);
-            self.build_dup(elem_ptr)
-        } else {
-            let array = self.emit_expr(array);
-            let index = self.emit_expr(index);
-            let elem_ptr = self.build_index(array, index);
-            let result = self.build_dup(elem_ptr);
-            self.build_drop(array);
-            result
-        }
-    }
-
     fn emit_call(
         &mut self,
         func: ExprId,
@@ -370,7 +287,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     Ty::Int | Ty::UInt => ScalarKind::Int(IntSize::Bits64),
                     Ty::Byte | Ty::Bool => ScalarKind::Int(IntSize::Bits8),
                     Ty::Float => ScalarKind::Float,
-                    Ty::Array(elem_ty) => ScalarKind::Array(elem_ty),
                     _ => unreachable!("not a scalar"),
                 };
                 LayoutValue::Scalar(kind, ScalarLayout::Direct(result))

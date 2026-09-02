@@ -8,7 +8,6 @@
     reason = "A large number of Inkwell functions return Results for error conditions we don't want to recover from"
 )]
 
-mod arrays;
 mod config;
 mod exprs;
 mod layout;
@@ -260,7 +259,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Ty::Float => self.ctx.f64_type().as_basic_type_enum(),
             Ty::Bool => self.ctx.bool_type().as_basic_type_enum(),
             Ty::Fields(fields) => self.fields_ty(fields),
-            Ty::Array(_) => self.array_ty(),
             // FIXME: Account for non-capturing functions.
             Ty::Func(..) => self.closure_ty(),
         };
@@ -277,18 +275,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
         );
 
         lowered_ty
-    }
-
-    fn array_ty(&self) -> BasicTypeEnum<'ctx> {
-        self.ptr_ty()
-    }
-
-    fn array_header_ty(&self) -> BasicTypeEnum<'ctx> {
-        let i64_ty = self.ctx.i64_type().as_basic_type_enum();
-        // Refcount, element count, capacity
-        self.ctx
-            .struct_type(&[i64_ty, i64_ty, i64_ty], false)
-            .as_basic_type_enum()
     }
 
     fn func_ty(&self, params: &[Param], ret_ty: &Ty, env: bool) -> FunctionType<'ctx> {
@@ -388,7 +374,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Ty::Int | Ty::UInt => LayoutValue::int(IntSize::Bits64, value),
             Ty::Byte | Ty::Bool => LayoutValue::int(IntSize::Bits8, value),
             Ty::Float => LayoutValue::float(value),
-            Ty::Array(elem_ty) => LayoutValue::array(elem_ty, value),
             // FIXME: Account for non-capturing functions.
             Ty::Func(params, ret_ty) => LayoutValue::Closure(
                 self.func_ty(params, ret_ty, true),
@@ -421,10 +406,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .unwrap();
                 LayoutValue::float(float)
             }
-            Ty::Array(elem_ty) => {
-                let array = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
-                LayoutValue::array(elem_ty, array)
-            }
             // FIXME: Account for non-capturing functions.
             Ty::Func(params, ret_ty) => {
                 LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
@@ -438,7 +419,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Ty::Int | Ty::UInt => LayoutValue::indirect_int(IntSize::Bits64, ptr),
             Ty::Byte | Ty::Bool => LayoutValue::indirect_int(IntSize::Bits8, ptr),
             Ty::Float => LayoutValue::indirect_float(ptr),
-            Ty::Array(elem_ty) => LayoutValue::indirect_array(elem_ty, ptr),
             // FIXME: Account for non-capturing functions.
             Ty::Func(params, ret_ty) => {
                 LayoutValue::Closure(self.func_ty(params, ret_ty, true), ptr)
@@ -476,13 +456,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                 _,
             )
             | LayoutValue::Zst => (), // Trivial types
-            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) => {
-                self.build_call(self.array_drop(elem_ty), &[ptr.into()]);
-            }
-            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
-                let ptr = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.build_call(self.array_drop(elem_ty), &[ptr.into()]);
-            }
             LayoutValue::Closure(_, ptr) => {
                 self.build_call(self.any_closure_drop(), &[ptr.into()]);
             }
@@ -517,15 +490,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     func_ty,
                     self.builder.build_load(self.ptr_ty(), ptr, "").unwrap(),
                 )
-            }
-            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
-                self.build_call(self.array_incr_refc(), &[array.into()]);
-                value
-            }
-            LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(ptr)) => {
-                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.build_call(self.array_incr_refc(), &[array.into()]);
-                LayoutValue::array(elem_ty, array)
             }
             LayoutValue::Closure(func_ty, ptr) => {
                 let new_ptr = self.build_alloca_entry(self.closure_ty(), "");
@@ -564,15 +528,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .unwrap();
                 self.builder.build_store(dst, float).unwrap();
             }
-            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
-                self.build_call(self.array_incr_refc(), &[array.into()]);
-                self.builder.build_store(dst, array).unwrap();
-            }
-            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(ptr)) => {
-                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.build_call(self.array_incr_refc(), &[array.into()]);
-                self.builder.build_store(dst, array).unwrap();
-            }
             LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(ptr)) => {
                 let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
                 self.builder.build_store(dst, func).unwrap();
@@ -606,10 +561,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                     .build_load(self.ctx.f64_type(), ptr, "")
                     .unwrap();
                 self.builder.build_store(dst, float).unwrap();
-            }
-            LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(ptr)) => {
-                let array = self.builder.build_load(self.array_ty(), ptr, "").unwrap();
-                self.builder.build_store(dst, array).unwrap();
             }
             LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Indirect(ptr)) => {
                 let func = self.builder.build_load(self.ptr_ty(), ptr, "").unwrap();
@@ -687,24 +638,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
                         "",
                     )
                     .unwrap()
-            }
-            (
-                LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(lhs)),
-                LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(rhs)),
-            ) => self
-                .build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()])
-                .unwrap()
-                .into_int_value(),
-            (
-                LayoutValue::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Indirect(lhs)),
-                LayoutValue::Scalar(ScalarKind::Array(_), ScalarLayout::Indirect(rhs)),
-            ) => {
-                let ty = self.array_ty();
-                let lhs = self.builder.build_load(ty, lhs, "").unwrap();
-                let rhs = self.builder.build_load(ty, rhs, "").unwrap();
-                self.build_call(self.array_equals(elem_ty), &[lhs.into(), rhs.into()])
-                    .unwrap()
-                    .into_int_value()
             }
             (
                 LayoutValue::Scalar(ScalarKind::FuncPtr(_), ScalarLayout::Direct(lhs)),
@@ -794,7 +727,6 @@ impl<'mir, 'ctx> CodegenState<'mir, 'ctx> {
             Ty::Byte => "h".to_string(),
             Ty::Float => "f".to_string(),
             Ty::Bool => "b".to_string(),
-            Ty::Array(elem_ty) => self.mangle_array_ty(elem_ty),
             Ty::Func(params, ret_ty) => {
                 let param_names = params.iter().fold(String::new(), |mut s, p| {
                     let prefix = if p.mutable { "M" } else { "P" };

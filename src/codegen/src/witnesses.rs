@@ -1,15 +1,12 @@
 use inkwell::{
-    AtomicOrdering, AtomicRMWBinOp, IntPredicate,
+    IntPredicate,
     types::{FunctionType, StructType},
     values::{BasicValue as _, FunctionValue},
 };
 
 use irs::mir::{Ty, VarId};
 
-use crate::{
-    CodegenState,
-    layout::{self, IntSize, LayoutValue},
-};
+use crate::{CodegenState, layout};
 
 impl<'ctx> CodegenState<'_, 'ctx> {
     pub(crate) fn drop_func_ty(&self) -> FunctionType<'ctx> {
@@ -166,320 +163,320 @@ impl<'ctx> CodegenState<'_, 'ctx> {
         func
     }
 
-    pub(crate) fn array_drop(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.drop", self.mangle_array_ty(elem_ty));
+    // pub(crate) fn array_drop(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
+    //     let func_name = format!("{}.drop", self.mangle_array_ty(elem_ty));
 
-        // Check if we already built this function.
-        if let Some(func) = self.module.get_function(&func_name) {
-            return func;
-        }
+    //     // Check if we already built this function.
+    //     if let Some(func) = self.module.get_function(&func_name) {
+    //         return func;
+    //     }
 
-        // Save the builder's current insertion block to restore at the end.
-        let old_insert_block = self.builder.get_insert_block().unwrap();
+    //     // Save the builder's current insertion block to restore at the end.
+    //     let old_insert_block = self.builder.get_insert_block().unwrap();
 
-        // Create the function and blocks, and extract the arguments.
-        let func = self.add_func(&func_name, self.drop_func_ty(), false);
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        let decr_block = self.ctx.append_basic_block(func, "decr");
-        let drop_block = self.ctx.append_basic_block(func, "drop");
-        let loop_block = self.ctx.append_basic_block(func, "loop");
-        let free_block = self.ctx.append_basic_block(func, "free");
-        let ret_block = self.ctx.append_basic_block(func, "return");
-        let array = func.get_first_param().unwrap().into_pointer_value();
+    //     // Create the function and blocks, and extract the arguments.
+    //     let func = self.add_func(&func_name, self.drop_func_ty(), false);
+    //     let entry_block = self.ctx.append_basic_block(func, "entry");
+    //     let decr_block = self.ctx.append_basic_block(func, "decr");
+    //     let drop_block = self.ctx.append_basic_block(func, "drop");
+    //     let loop_block = self.ctx.append_basic_block(func, "loop");
+    //     let free_block = self.ctx.append_basic_block(func, "free");
+    //     let ret_block = self.ctx.append_basic_block(func, "return");
+    //     let array = func.get_first_param().unwrap().into_pointer_value();
 
-        // Return immediately if the array hasn't been allocated.
-        // Also set up a stack allocation for later.
-        let (header, index) = {
-            self.builder.position_at_end(entry_block);
-            let index = self
-                .builder
-                .build_alloca(self.ctx.i64_type(), "index")
-                .unwrap();
-            let header = self.get_array_header(array);
-            let is_null = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, header, self.const_null(), "")
-                .unwrap();
-            self.builder
-                .build_conditional_branch(is_null, ret_block, decr_block)
-                .unwrap();
-            (header, index)
-        };
+    //     // Return immediately if the array hasn't been allocated.
+    //     // Also set up a stack allocation for later.
+    //     let (header, index) = {
+    //         self.builder.position_at_end(entry_block);
+    //         let index = self
+    //             .builder
+    //             .build_alloca(self.ctx.i64_type(), "index")
+    //             .unwrap();
+    //         let header = self.get_array_header(array);
+    //         let is_null = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, header, self.const_null(), "")
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(is_null, ret_block, decr_block)
+    //             .unwrap();
+    //         (header, index)
+    //     };
 
-        // Decrement refcount and branch to drop block if it hits 0 and the element type needs to be dropped.
-        // We rely on LLVM to optimise out the drop block if it isn't needed for the element type.
-        {
-            self.builder.position_at_end(decr_block);
-            let refc = self
-                .builder
-                .build_struct_gep(self.array_header_ty(), header, 0, "refc")
-                .unwrap();
-            let old_refc = self
-                .builder
-                .build_atomicrmw(
-                    AtomicRMWBinOp::Sub,
-                    refc,
-                    self.const_int(1),
-                    AtomicOrdering::AcquireRelease,
-                )
-                .unwrap();
-            let no_refs = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, old_refc, self.const_int(1), "")
-                .unwrap();
+    //     // Decrement refcount and branch to drop block if it hits 0 and the element type needs to be dropped.
+    //     // We rely on LLVM to optimise out the drop block if it isn't needed for the element type.
+    //     {
+    //         self.builder.position_at_end(decr_block);
+    //         let refc = self
+    //             .builder
+    //             .build_struct_gep(self.array_header_ty(), header, 0, "refc")
+    //             .unwrap();
+    //         let old_refc = self
+    //             .builder
+    //             .build_atomicrmw(
+    //                 AtomicRMWBinOp::Sub,
+    //                 refc,
+    //                 self.const_int(1),
+    //                 AtomicOrdering::AcquireRelease,
+    //             )
+    //             .unwrap();
+    //         let no_refs = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, old_refc, self.const_int(1), "")
+    //             .unwrap();
 
-            let target_block = if layout::trivial(elem_ty) {
-                free_block
-            } else {
-                drop_block
-            };
-            self.builder
-                .build_conditional_branch(no_refs, target_block, ret_block)
-                .unwrap();
-        }
+    //         let target_block = if layout::trivial(elem_ty) {
+    //             free_block
+    //         } else {
+    //             drop_block
+    //         };
+    //         self.builder
+    //             .build_conditional_branch(no_refs, target_block, ret_block)
+    //             .unwrap();
+    //     }
 
-        // Initialise the loop to drop all the elements.
-        let (count, index) = {
-            self.builder.position_at_end(drop_block);
-            let count = self
-                .builder
-                .build_struct_gep(self.array_header_ty(), header, 1, "count")
-                .unwrap();
-            let count = self
-                .builder
-                .build_load(self.ctx.i64_type(), count, "")
-                .unwrap()
-                .into_int_value();
-            self.builder
-                .build_store(index, self.ctx.i64_type().const_zero())
-                .unwrap();
-            let empty = self
-                .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    count,
-                    self.ctx.i64_type().const_zero(),
-                    "",
-                )
-                .unwrap();
-            self.builder
-                .build_conditional_branch(empty, free_block, loop_block)
-                .unwrap();
-            (count, index)
-        };
+    //     // Initialise the loop to drop all the elements.
+    //     let (count, index) = {
+    //         self.builder.position_at_end(drop_block);
+    //         let count = self
+    //             .builder
+    //             .build_struct_gep(self.array_header_ty(), header, 1, "count")
+    //             .unwrap();
+    //         let count = self
+    //             .builder
+    //             .build_load(self.ctx.i64_type(), count, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         self.builder
+    //             .build_store(index, self.ctx.i64_type().const_zero())
+    //             .unwrap();
+    //         let empty = self
+    //             .builder
+    //             .build_int_compare(
+    //                 IntPredicate::EQ,
+    //                 count,
+    //                 self.ctx.i64_type().const_zero(),
+    //                 "",
+    //             )
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(empty, free_block, loop_block)
+    //             .unwrap();
+    //         (count, index)
+    //     };
 
-        // Loop over each element and free it.
-        {
-            self.builder.position_at_end(loop_block);
-            let curr_index = self
-                .builder
-                .build_load(self.ctx.i64_type(), index, "")
-                .unwrap()
-                .into_int_value();
-            let elem_ptr = self.build_index(
-                LayoutValue::array(elem_ty, array),
-                LayoutValue::int(IntSize::Bits64, curr_index),
-            );
-            self.build_drop(elem_ptr);
-            let new_index = self
-                .builder
-                .build_int_add(curr_index, self.const_int(1), "")
-                .unwrap();
-            self.builder.build_store(index, new_index).unwrap();
-            let done = self
-                .builder
-                .build_int_compare(IntPredicate::UGE, new_index, count, "")
-                .unwrap();
-            self.builder
-                .build_conditional_branch(done, free_block, loop_block)
-                .unwrap();
-        }
+    //     // Loop over each element and free it.
+    //     {
+    //         self.builder.position_at_end(loop_block);
+    //         let curr_index = self
+    //             .builder
+    //             .build_load(self.ctx.i64_type(), index, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         let elem_ptr = self.build_index(
+    //             LayoutValue::array(elem_ty, array),
+    //             LayoutValue::int(IntSize::Bits64, curr_index),
+    //         );
+    //         self.build_drop(elem_ptr);
+    //         let new_index = self
+    //             .builder
+    //             .build_int_add(curr_index, self.const_int(1), "")
+    //             .unwrap();
+    //         self.builder.build_store(index, new_index).unwrap();
+    //         let done = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::UGE, new_index, count, "")
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(done, free_block, loop_block)
+    //             .unwrap();
+    //     }
 
-        // Free the memory allocation.
-        {
-            self.builder.position_at_end(free_block);
-            self.build_c_call(self.free(), &[header.into()]);
-            self.builder.build_unconditional_branch(ret_block).unwrap();
-        }
+    //     // Free the memory allocation.
+    //     {
+    //         self.builder.position_at_end(free_block);
+    //         self.build_c_call(self.free(), &[header.into()]);
+    //         self.builder.build_unconditional_branch(ret_block).unwrap();
+    //     }
 
-        // Return.
-        {
-            self.builder.position_at_end(ret_block);
-            self.builder.build_return(None).unwrap();
-        }
+    //     // Return.
+    //     {
+    //         self.builder.position_at_end(ret_block);
+    //         self.builder.build_return(None).unwrap();
+    //     }
 
-        self.builder.position_at_end(old_insert_block);
+    //     self.builder.position_at_end(old_insert_block);
 
-        func
-    }
+    //     func
+    // }
 
-    pub(crate) fn array_equals(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
-        let func_name = format!("{}.equals", self.mangle_array_ty(elem_ty));
+    // pub(crate) fn array_equals(&self, elem_ty: &Ty) -> FunctionValue<'ctx> {
+    //     let func_name = format!("{}.equals", self.mangle_array_ty(elem_ty));
 
-        // Check if we already built this function
-        if let Some(func) = self.module.get_function(&func_name) {
-            return func;
-        }
+    //     // Check if we already built this function
+    //     if let Some(func) = self.module.get_function(&func_name) {
+    //         return func;
+    //     }
 
-        // Save the builder's current insertion block to restore at the end
-        let old_insert_block = self.builder.get_insert_block().unwrap();
+    //     // Save the builder's current insertion block to restore at the end
+    //     let old_insert_block = self.builder.get_insert_block().unwrap();
 
-        // Create the copy function
-        let func = self.add_func(&func_name, self.equals_func_ty(), false);
-        let entry_block = self.ctx.append_basic_block(func, "entry");
-        let null_block = self.ctx.append_basic_block(func, "null");
-        let count_block = self.ctx.append_basic_block(func, "count");
-        let empty_block = self.ctx.append_basic_block(func, "empty");
-        let loop_block = self.ctx.append_basic_block(func, "loop");
-        let ret_block = self.ctx.append_basic_block(func, "return");
-        let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
-        let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
+    //     // Create the copy function
+    //     let func = self.add_func(&func_name, self.equals_func_ty(), false);
+    //     let entry_block = self.ctx.append_basic_block(func, "entry");
+    //     let null_block = self.ctx.append_basic_block(func, "null");
+    //     let count_block = self.ctx.append_basic_block(func, "count");
+    //     let empty_block = self.ctx.append_basic_block(func, "empty");
+    //     let loop_block = self.ctx.append_basic_block(func, "loop");
+    //     let ret_block = self.ctx.append_basic_block(func, "return");
+    //     let lhs = func.get_nth_param(0).unwrap().into_pointer_value();
+    //     let rhs = func.get_nth_param(1).unwrap().into_pointer_value();
 
-        // Always equal if the arrays share storage. This will also handle both arrays being unallocated.
-        // Also set up a stack allocation for later.
-        let index = {
-            self.builder.position_at_end(entry_block);
-            let index = self
-                .builder
-                .build_alloca(self.ctx.i64_type(), "index")
-                .unwrap();
-            self.builder
-                .build_store(index, self.ctx.i64_type().const_zero())
-                .unwrap();
+    //     // Always equal if the arrays share storage. This will also handle both arrays being unallocated.
+    //     // Also set up a stack allocation for later.
+    //     let index = {
+    //         self.builder.position_at_end(entry_block);
+    //         let index = self
+    //             .builder
+    //             .build_alloca(self.ctx.i64_type(), "index")
+    //             .unwrap();
+    //         self.builder
+    //             .build_store(index, self.ctx.i64_type().const_zero())
+    //             .unwrap();
 
-            let equal = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, lhs, lhs, "")
-                .unwrap();
-            self.builder
-                .build_conditional_branch(equal, ret_block, null_block)
-                .unwrap();
-            index
-        };
+    //         let equal = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, lhs, lhs, "")
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(equal, ret_block, null_block)
+    //             .unwrap();
+    //         index
+    //     };
 
-        // If either array is unallocated, they're not equal (both being unallocated is handled in the entry block).
-        {
-            self.builder.position_at_end(null_block);
-            let lhs_null = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, lhs, self.const_null(), "")
-                .unwrap();
-            let rhs_null = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, rhs, self.const_null(), "")
-                .unwrap();
-            let either_null = self.builder.build_or(lhs_null, rhs_null, "").unwrap();
-            self.builder
-                .build_conditional_branch(either_null, ret_block, count_block)
-                .unwrap();
-        }
+    //     // If either array is unallocated, they're not equal (both being unallocated is handled in the entry block).
+    //     {
+    //         self.builder.position_at_end(null_block);
+    //         let lhs_null = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, lhs, self.const_null(), "")
+    //             .unwrap();
+    //         let rhs_null = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, rhs, self.const_null(), "")
+    //             .unwrap();
+    //         let either_null = self.builder.build_or(lhs_null, rhs_null, "").unwrap();
+    //         self.builder
+    //             .build_conditional_branch(either_null, ret_block, count_block)
+    //             .unwrap();
+    //     }
 
-        // If the arrays' counts aren't equal, they're not equal.
-        let count = {
-            self.builder.position_at_end(count_block);
-            let lhs_header = self.get_array_header(lhs);
-            let lhs_count = self
-                .builder
-                .build_struct_gep(self.array_header_ty(), lhs_header, 1, "")
-                .unwrap();
-            let lhs_count = self
-                .builder
-                .build_load(self.ctx.i64_type(), lhs_count, "")
-                .unwrap()
-                .into_int_value();
-            let rhs_header = self.get_array_header(rhs);
-            let rhs_count = self
-                .builder
-                .build_struct_gep(self.array_header_ty(), rhs_header, 1, "")
-                .unwrap();
-            let rhs_count = self
-                .builder
-                .build_load(self.ctx.i64_type(), rhs_count, "")
-                .unwrap()
-                .into_int_value();
-            let counts_eq = self
-                .builder
-                .build_int_compare(IntPredicate::EQ, lhs_count, rhs_count, "")
-                .unwrap();
-            self.builder
-                .build_conditional_branch(counts_eq, empty_block, ret_block)
-                .unwrap();
-            lhs_count
-        };
+    //     // If the arrays' counts aren't equal, they're not equal.
+    //     let count = {
+    //         self.builder.position_at_end(count_block);
+    //         let lhs_header = self.get_array_header(lhs);
+    //         let lhs_count = self
+    //             .builder
+    //             .build_struct_gep(self.array_header_ty(), lhs_header, 1, "")
+    //             .unwrap();
+    //         let lhs_count = self
+    //             .builder
+    //             .build_load(self.ctx.i64_type(), lhs_count, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         let rhs_header = self.get_array_header(rhs);
+    //         let rhs_count = self
+    //             .builder
+    //             .build_struct_gep(self.array_header_ty(), rhs_header, 1, "")
+    //             .unwrap();
+    //         let rhs_count = self
+    //             .builder
+    //             .build_load(self.ctx.i64_type(), rhs_count, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         let counts_eq = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::EQ, lhs_count, rhs_count, "")
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(counts_eq, empty_block, ret_block)
+    //             .unwrap();
+    //         lhs_count
+    //     };
 
-        // If the arrays are empty, they're equal.
-        {
-            self.builder.position_at_end(empty_block);
-            let empty = self
-                .builder
-                .build_int_compare(
-                    IntPredicate::EQ,
-                    count,
-                    self.ctx.i64_type().const_zero(),
-                    "",
-                )
-                .unwrap();
-            self.builder
-                .build_conditional_branch(empty, ret_block, loop_block)
-                .unwrap();
-        }
+    //     // If the arrays are empty, they're equal.
+    //     {
+    //         self.builder.position_at_end(empty_block);
+    //         let empty = self
+    //             .builder
+    //             .build_int_compare(
+    //                 IntPredicate::EQ,
+    //                 count,
+    //                 self.ctx.i64_type().const_zero(),
+    //                 "",
+    //             )
+    //             .unwrap();
+    //         self.builder
+    //             .build_conditional_branch(empty, ret_block, loop_block)
+    //             .unwrap();
+    //     }
 
-        // Loop over each pair of elements to check their equality.
-        let equal = {
-            self.builder.position_at_end(loop_block);
-            let curr_index = self
-                .builder
-                .build_load(self.ctx.i64_type(), index, "")
-                .unwrap()
-                .into_int_value();
-            let curr_index_val = LayoutValue::int(IntSize::Bits64, curr_index);
-            let lhs_elem = self.build_index(LayoutValue::array(elem_ty, lhs), curr_index_val);
-            let rhs_elem = self.build_index(LayoutValue::array(elem_ty, rhs), curr_index_val);
-            // Need to load the elements if they're direct.
-            let equal = self.build_equals(
-                self.layout_direct(elem_ty, lhs_elem.as_pointer()),
-                self.layout_direct(elem_ty, rhs_elem.as_pointer()),
-            );
-            let new_index = self
-                .builder
-                .build_int_add(curr_index, self.const_uint(1), "")
-                .unwrap();
-            self.builder.build_store(index, new_index).unwrap();
-            let done = self
-                .builder
-                .build_int_compare(IntPredicate::UGE, new_index, count, "")
-                .unwrap();
-            let should_cont = self
-                .builder
-                .build_select(done, self.ctx.bool_type().const_zero(), equal, "")
-                .unwrap()
-                .into_int_value();
-            self.builder
-                .build_conditional_branch(should_cont, loop_block, ret_block)
-                .unwrap();
-            equal
-        };
+    //     // Loop over each pair of elements to check their equality.
+    //     let equal = {
+    //         self.builder.position_at_end(loop_block);
+    //         let curr_index = self
+    //             .builder
+    //             .build_load(self.ctx.i64_type(), index, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         let curr_index_val = LayoutValue::int(IntSize::Bits64, curr_index);
+    //         let lhs_elem = self.build_index(LayoutValue::array(elem_ty, lhs), curr_index_val);
+    //         let rhs_elem = self.build_index(LayoutValue::array(elem_ty, rhs), curr_index_val);
+    //         // Need to load the elements if they're direct.
+    //         let equal = self.build_equals(
+    //             self.layout_direct(elem_ty, lhs_elem.as_pointer()),
+    //             self.layout_direct(elem_ty, rhs_elem.as_pointer()),
+    //         );
+    //         let new_index = self
+    //             .builder
+    //             .build_int_add(curr_index, self.const_uint(1), "")
+    //             .unwrap();
+    //         self.builder.build_store(index, new_index).unwrap();
+    //         let done = self
+    //             .builder
+    //             .build_int_compare(IntPredicate::UGE, new_index, count, "")
+    //             .unwrap();
+    //         let should_cont = self
+    //             .builder
+    //             .build_select(done, self.ctx.bool_type().const_zero(), equal, "")
+    //             .unwrap()
+    //             .into_int_value();
+    //         self.builder
+    //             .build_conditional_branch(should_cont, loop_block, ret_block)
+    //             .unwrap();
+    //         equal
+    //     };
 
-        // Return the equality value.
-        {
-            self.builder.position_at_end(ret_block);
-            let ret_val = self.builder.build_phi(self.ctx.bool_type(), "").unwrap();
-            ret_val.add_incoming(&[
-                (&self.const_bool(true), entry_block),
-                (&self.const_bool(false), null_block),
-                (&self.const_bool(false), count_block),
-                (&self.const_bool(true), empty_block),
-                (&equal, loop_block),
-            ]);
-            self.builder
-                .build_return(Some(&ret_val.as_basic_value()))
-                .unwrap();
-        }
+    //     // Return the equality value.
+    //     {
+    //         self.builder.position_at_end(ret_block);
+    //         let ret_val = self.builder.build_phi(self.ctx.bool_type(), "").unwrap();
+    //         ret_val.add_incoming(&[
+    //             (&self.const_bool(true), entry_block),
+    //             (&self.const_bool(false), null_block),
+    //             (&self.const_bool(false), count_block),
+    //             (&self.const_bool(true), empty_block),
+    //             (&equal, loop_block),
+    //         ]);
+    //         self.builder
+    //             .build_return(Some(&ret_val.as_basic_value()))
+    //             .unwrap();
+    //     }
 
-        self.builder.position_at_end(old_insert_block);
+    //     self.builder.position_at_end(old_insert_block);
 
-        func
-    }
+    //     func
+    // }
 
     pub(crate) fn any_closure_drop(&self) -> FunctionValue<'ctx> {
         let func_name = "Closure.drop";

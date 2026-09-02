@@ -4,7 +4,7 @@ use itertools::Itertools as _;
 use errors::{Result, TryCollectEager as _};
 use irs::{
     ast::{self, ExprKind},
-    hir::{self, Arg, ExprId, LitExpr, VarId},
+    hir::{self, Arg, ExprId, VarId},
 };
 
 use crate::{ErrorKind, ResolveInfo};
@@ -25,7 +25,6 @@ impl ResolveInfo<'_, '_> {
                 };
                 hir::Expr::Lit(lit)
             }
-            ExprKind::Array(exprs) => hir::Expr::Array(self.resolve_exprs(exprs)?),
             ExprKind::Tuple(exprs) => hir::Expr::Tuple(self.resolve_exprs(exprs)?),
             ExprKind::Infix { op, lhs, rhs } => {
                 let rhs = self.resolve_expr(rhs);
@@ -49,14 +48,6 @@ impl ResolveInfo<'_, '_> {
                 base: self.resolve_expr(base)?,
                 field: *field,
             },
-            ExprKind::Index { array, index } => {
-                let array = self.resolve_expr(array);
-                let index = self.resolve_expr(index);
-                hir::Expr::Index {
-                    array: array?,
-                    index: index?,
-                }
-            }
             ExprKind::Call { func, args } => {
                 let func = self.resolve_expr(func);
                 let args: Vec<Arg> = args
@@ -248,9 +239,7 @@ impl ResolveInfo<'_, '_> {
                     );
                 }
             }
-            hir::Expr::Field { base, .. } | hir::Expr::Index { array: base, .. } => {
-                self.assert_is_place(*base);
-            }
+            hir::Expr::Field { base, .. } => self.assert_is_place(*base),
             _ => {
                 self.err(ErrorKind::NotPlaceExpr, self.hir.expr_span(place));
             }
@@ -260,26 +249,7 @@ impl ResolveInfo<'_, '_> {
     fn overlaps(&self, a: ExprId, b: ExprId) -> bool {
         match (self.hir.expr(a), self.hir.expr(b)) {
             (hir::Expr::Var(a), hir::Expr::Var(b)) => a == b,
-            (hir::Expr::Var(_), hir::Expr::Index { array: arr, .. }) => self.overlaps(a, *arr),
             (hir::Expr::Var(_), hir::Expr::Field { base, .. }) => self.overlaps(a, *base),
-            (
-                hir::Expr::Index {
-                    array: arr_a,
-                    index: idx_a,
-                },
-                hir::Expr::Index {
-                    array: arr_b,
-                    index: idx_b,
-                },
-            ) => {
-                if let hir::Expr::Lit(LitExpr::Int(idx_a)) = self.hir.expr(*idx_a)
-                    && let hir::Expr::Lit(LitExpr::Int(idx_b)) = self.hir.expr(*idx_b)
-                {
-                    idx_a == idx_b
-                } else {
-                    self.overlaps(*arr_a, *arr_b)
-                }
-            }
             (
                 hir::Expr::Field {
                     base: base_a,
@@ -290,9 +260,6 @@ impl ResolveInfo<'_, '_> {
                     field: field_b,
                 },
             ) => (field_a.ident == field_b.ident) && self.overlaps(*base_a, *base_b),
-            (hir::Expr::Index { array: arr, .. }, hir::Expr::Field { base, .. }) => {
-                self.overlaps(*arr, b) || self.overlaps(a, *base)
-            }
             _ => false,
         }
     }
@@ -308,7 +275,7 @@ impl ResolveInfo<'_, '_> {
                 }
             }
             ExprKind::Lit(_) | ExprKind::Break | ExprKind::Continue => {}
-            ExprKind::Array(exprs) | ExprKind::Tuple(exprs) => {
+            ExprKind::Tuple(exprs) => {
                 for e in exprs {
                     self.collect_captures(captures, e);
                 }
@@ -318,15 +285,9 @@ impl ResolveInfo<'_, '_> {
             | ExprKind::Prefix { expr: e, .. }
             | ExprKind::Print(e)
             | ExprKind::Return(e) => self.collect_captures(captures, e),
-            ExprKind::Infix {
-                lhs: e1, rhs: e2, ..
-            }
-            | ExprKind::Index {
-                array: e1,
-                index: e2,
-            } => {
-                self.collect_captures(captures, e1);
-                self.collect_captures(captures, e2);
+            ExprKind::Infix { lhs, rhs, .. } => {
+                self.collect_captures(captures, lhs);
+                self.collect_captures(captures, rhs);
             }
             ExprKind::Call { func, args } => {
                 self.collect_captures(captures, func);

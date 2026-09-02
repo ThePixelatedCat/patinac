@@ -179,9 +179,6 @@ fn unify_ty_ty(
                 unify_ty_ty(table, handler, span, module, &l, &r);
             }
         }
-        (PartialTy::Array(lhs_inner), PartialTy::Array(rhs_inner)) => {
-            unify_ty_ty(table, handler, span, module, &lhs_inner, &rhs_inner);
-        }
         (PartialTy::Fn(lhs_params, lhs_ret), PartialTy::Fn(rhs_params, rhs_ret)) => {
             unify_ty_ty(table, handler, span, module, &lhs_ret, &rhs_ret);
             if lhs_params.len() != rhs_params.len() {
@@ -289,7 +286,6 @@ fn normalize_ty(table: &mut Table, ty: &PartialTy) -> PartialTy {
         PartialTy::Tuple(tys) => {
             PartialTy::Tuple(tys.iter().map(|ty| normalize_ty(table, ty)).collect())
         }
-        PartialTy::Array(ty) => PartialTy::Array(Box::new(normalize_ty(table, ty))),
         PartialTy::Fn(params, ret) => {
             let params = params
                 .iter()
@@ -323,7 +319,6 @@ fn occurs_check(ty: &PartialTy, var: TyVar) -> bool {
         | PartialTy::Bool
         | PartialTy::Named(_) => false,
         PartialTy::Tuple(tys) => tys.iter().any(|ty| occurs_check(ty, var)),
-        PartialTy::Array(ty) => occurs_check(ty, var),
         PartialTy::Fn(params, ret) => {
             occurs_check(ret, var) || params.iter().any(|param| occurs_check(&param.ty, var))
         }

@@ -4,9 +4,15 @@ def closures(): () = {
     let g = fn(mut a) -> f(mut a, b)
 }
 
-def array_disjoint_swap(): () = {
-    let mut foo = [1, 1]
-    swap(mut foo.[0], mut foo.[1])
+type Point(x: Int, y: Int)
+
+def fields_disjoint_swap(): () = {
+    let mut foo = Point(1, 2)
+    swap(mut foo.x, mut foo.y)
 }
 
-def swap(mut a: Int, mut b: Int): () = {}
+def swap(mut a: Int, mut b: Int): () = {
+    let a_tmp = a
+    a = b
+    b = a_tmp
+}

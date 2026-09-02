@@ -4,7 +4,6 @@
 use std::{
     fmt::{self, Display, Formatter},
     iter,
-    ops::Deref,
     range::Range,
 };
 
@@ -312,8 +311,6 @@ pub enum ExprKind {
     Var(Path),
     /// A scalar literal value. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
-    /// An array literal.
-    Array(Vec<Expr>),
     /// A tuple literal.
     Tuple(Vec<Expr>),
     /// An infix operation. This includes assignment.
@@ -338,13 +335,6 @@ pub enum ExprKind {
         base: Box<Expr>,
         /// The name of the field being accessed.
         field: SpanIdent,
-    },
-    /// Array indexing.
-    Index {
-        /// The base expression being indexed into.
-        array: Box<Expr>,
-        /// The index to access.
-        index: Box<Expr>,
     },
     /// A function call.
     Call {
@@ -592,8 +582,6 @@ pub struct Ty {
 /// The kinds of type syntaxes that can appear in source.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum TyKind {
-    /// A dynamic homogenous array.
-    Array(Box<Ty>),
     /// A heterogenous tuple (compile-time length).
     Tuple(Vec<Ty>),
     /// A first-class function value, implemented as a closure.

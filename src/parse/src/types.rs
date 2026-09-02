@@ -7,12 +7,6 @@ use crate::{Parser, Result, TokKind};
 impl Parser<'_> {
     pub(crate) fn ty(&mut self) -> Result<Ty> {
         match self.peek()?.kind {
-            TokKind::LBracket => {
-                let start = self.consume(TokKind::LBracket)?.span.start;
-                let inner_ty = Box::new(self.ty()?);
-                let end = self.consume(TokKind::RBracket)?.span.end;
-                Ok(TyKind::Array(inner_ty).span(start..end))
-            }
             TokKind::LParen => self
                 .delimited_list(Self::ty, TokKind::LParen, TokKind::RParen)
                 .map(|(tys, span)| TyKind::Tuple(tys).span(span)),

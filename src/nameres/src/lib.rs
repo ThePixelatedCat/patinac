@@ -335,7 +335,6 @@ impl ResolveInfo<'_, '_> {
 
     fn resolve_ty(&mut self, ty: &ast::Ty) -> Result<hir::Ty> {
         match &ty.kind {
-            TyKind::Array(ty) => Ok(hir::Ty::Array(Box::new(self.resolve_ty(ty)?))),
             TyKind::Tuple(tys) => Ok(hir::Ty::Tuple(self.resolve_tys(tys)?)),
             TyKind::Func(params, ret_ty) => {
                 let params = params
@@ -357,15 +356,17 @@ impl ResolveInfo<'_, '_> {
                 }
 
                 match &*path.last().str() {
-                    "Int" => Ok(hir::Ty::Int),
-                    "UInt" => Ok(hir::Ty::UInt),
-                    "Byte" => Ok(hir::Ty::Byte),
-                    "Bool" => Ok(hir::Ty::Bool),
-                    "Float" => Ok(hir::Ty::Float),
-                    _ => match self.scopes.resolve_ty(path.as_slice()) {
-                        Ok(id) => Ok(hir::Ty::Named(id)),
-                        Err(e) => Err(self.err(e, ty.span)),
-                    },
+                    "Int" => return Ok(hir::Ty::Int),
+                    "UInt" => return Ok(hir::Ty::UInt),
+                    "Byte" => return Ok(hir::Ty::Byte),
+                    "Bool" => return Ok(hir::Ty::Bool),
+                    "Float" => return Ok(hir::Ty::Float),
+                    _ => (),
+                }
+
+                match self.scopes.resolve_ty(path.as_slice()) {
+                    Ok(id) => Ok(hir::Ty::Named(id)),
+                    Err(e) => Err(self.err(e, ty.span)),
                 }
             }
         }

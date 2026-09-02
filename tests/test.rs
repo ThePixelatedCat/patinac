@@ -50,7 +50,6 @@ macro_rules! test {
 }
 
 test! {
-    array;
     closure;
     // consts;
     fib;

@@ -5,9 +5,9 @@ def main(): () = {
     print apply(closure, 2)
 }
 
-def make_closure(): Fn(UInt) -> Int = {
-    let array: [Int] = [1, 2, 3, 4, 5]
-    fn(index) -> array.[index]
+def make_closure(): Fn(UInt) -> UInt = {
+    let x = 1
+    fn(y) -> x + y
 }
 
-def apply(f: Fn(UInt) -> Int, v: UInt): Int = f(v)
+def apply(f: Fn(UInt) -> UInt, v: UInt): UInt = f(v)

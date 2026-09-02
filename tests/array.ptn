@@ -1,8 +1,0 @@
-def main(): () = {
-    let mut foo = [1, 2, 3]
-    foo.[0] = foo.[1]
-    print fst(foo)
-    print foo == []
-}
-def fst(a: [Int]): Int = a.[0]
-

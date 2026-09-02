@@ -121,8 +121,6 @@ pub enum Expr {
     Var(VarId),
     /// A scalar literal value. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
-    /// An array literal, with the type of it's elements.
-    Array(Ty, Vec<ExprId>),
     /// A literal for a heterogenous aggreggate value (tuple or record).
     ///
     /// The two vecs should be the same lengths, forming field type - field value pairs.
@@ -149,13 +147,6 @@ pub enum Expr {
         base: ExprId,
         /// The index of the field being accessed.
         field: u32,
-    },
-    /// Array indexing.
-    Index {
-        /// The base expression being indexed into.
-        array: ExprId,
-        /// The index to access.
-        index: ExprId,
     },
     /// A function call.
     Call {
@@ -307,8 +298,6 @@ pub enum Ty {
     Float,
     /// Truth value (`true`/`false`).
     Bool,
-    /// A dynamic homogenous array.
-    Array(Box<Self>),
     /// A collection of heterogenous fields. Tuples and records both get lowered to this.
     Fields(Vec<Self>),
     /// A first-class function value, implemented as a closure.
@@ -336,7 +325,6 @@ impl Ty {
                 let end_padding = (align - (base_size % align)) % align;
                 base_size + end_padding
             }
-            Self::Array(_) => Self::PTR_SIZE,
             Self::Func(_, _) => Self::PTR_SIZE * 5, // Function, environment, drop, copy, equality.
         }
     }
@@ -344,9 +332,7 @@ impl Ty {
     /// Returns the alignment of this type, in bytes.
     pub fn alignment(&self) -> u32 {
         match self {
-            Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool | Self::Array(_) => {
-                self.size()
-            }
+            Self::Int | Self::UInt | Self::Float | Self::Byte | Self::Bool => self.size(),
             Self::Fields(field_tys) => field_tys.iter().map(Self::alignment).max().unwrap_or(1),
             Self::Func(_, _) => Self::PTR_SIZE,
         }

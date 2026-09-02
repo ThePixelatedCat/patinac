@@ -14,15 +14,6 @@ impl LowerInfo<'_, '_> {
         let new_expr = match self.hir.expr(expr) {
             hir::Expr::Var(var) => mir::Expr::Var(self.lower_var(*var)),
             hir::Expr::Lit(lit) => mir::Expr::Lit(self.lower_lit(expr, lit)),
-            hir::Expr::Array(elems) => {
-                let hir::Ty::Array(elem_ty) = self.expr_ty(expr) else {
-                    unreachable!("array expression of non-array type")
-                };
-                mir::Expr::Array(
-                    self.lower_ty(elem_ty),
-                    elems.iter().map(|&elem| self.lower_expr(elem)).collect(),
-                )
-            }
             hir::Expr::Tuple(elems) => {
                 let (field_tys, values) = elems
                     .iter()
@@ -47,10 +38,6 @@ impl LowerInfo<'_, '_> {
                 let field = self.field_index(*ty, field.ident);
                 mir::Expr::Field { base, field }
             }
-            &hir::Expr::Index { array, index } => mir::Expr::Index {
-                array: self.lower_expr(array),
-                index: self.lower_expr(index),
-            },
             hir::Expr::Call { func, args } => {
                 let func = self.lower_expr(*func);
                 let args = args

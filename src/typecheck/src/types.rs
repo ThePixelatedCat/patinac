@@ -41,8 +41,6 @@ pub enum PartialTy {
     Bool,
     #[display("({})", itertools::join(_0, ", "))]
     Tuple(Vec<Self>),
-    #[display("[{_0}]")]
-    Array(Box<Self>),
     #[display("fn({}) -> {_1}", itertools::join(_0, ", "))]
     Fn(Vec<Param>, Box<Self>),
     #[display("temp{_0:?}")]
@@ -78,7 +76,6 @@ impl From<&Ty> for PartialTy {
             Ty::Float => Self::Float,
             Ty::Bool => Self::Bool,
             Ty::Tuple(tys) => Self::Tuple(tys.iter().map(Self::from).collect()),
-            Ty::Array(ty) => Self::Array(Box::new(ty.as_ref().into())),
             Ty::Func(params, ret) => {
                 let params = params
                     .iter()
@@ -111,7 +108,6 @@ impl TryFrom<PartialTy> for Ty {
                 .map(Self::try_from)
                 .try_collect()
                 .map(Self::Tuple),
-            PartialTy::Array(elem_ty) => Self::try_from(*elem_ty).map(Box::new).map(Self::Array),
             PartialTy::Fn(params, ret_ty) => {
                 let params = params
                     .into_iter()

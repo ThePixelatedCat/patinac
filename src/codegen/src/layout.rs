@@ -7,7 +7,7 @@ use irs::mir::Ty;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum LayoutValue<'mir, 'ctx> {
-    Scalar(ScalarKind<'mir, 'ctx>, ScalarLayout<'ctx>),
+    Scalar(ScalarKind<'ctx>, ScalarLayout<'ctx>),
     Fields(&'mir [Ty], PointerValue<'ctx>),
     Closure(FunctionType<'ctx>, PointerValue<'ctx>),
     Zst,
@@ -41,21 +41,6 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
         Self::Scalar(
             ScalarKind::Float,
             ScalarLayout::Indirect(float.as_basic_value_enum().into_pointer_value()),
-        )
-    }
-
-    pub fn array<B: BasicValue<'ctx> + Copy>(elem_ty: &'mir Ty, ptr: B) -> Self {
-        assert!(ptr.as_basic_value_enum().is_pointer_value());
-        Self::Scalar(
-            ScalarKind::Array(elem_ty),
-            ScalarLayout::Direct(ptr.as_basic_value_enum()),
-        )
-    }
-
-    pub fn indirect_array<B: BasicValue<'ctx> + Copy>(elem_ty: &'mir Ty, ptr: B) -> Self {
-        Self::Scalar(
-            ScalarKind::Array(elem_ty),
-            ScalarLayout::Indirect(ptr.as_basic_value_enum().into_pointer_value()),
         )
     }
 
@@ -104,13 +89,6 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
         float.into_float_value()
     }
 
-    pub fn as_array(&self) -> (&'mir Ty, PointerValue<'ctx>) {
-        let Self::Scalar(ScalarKind::Array(elem_ty), ScalarLayout::Direct(ptr)) = self else {
-            panic!("not an array: {self:?}")
-        };
-        (elem_ty, ptr.into_pointer_value())
-    }
-
     pub fn as_fields(&self) -> (&'mir [Ty], PointerValue<'ctx>) {
         match self {
             &Self::Fields(fields, ptr) => (fields, ptr),
@@ -120,9 +98,6 @@ impl<'mir, 'ctx> LayoutValue<'mir, 'ctx> {
 
     pub fn as_pointer(&self) -> PointerValue<'ctx> {
         match self {
-            Self::Scalar(ScalarKind::Array(_), ScalarLayout::Direct(array)) => {
-                array.into_pointer_value()
-            }
             Self::Scalar(_, ScalarLayout::Indirect(ptr))
             | Self::Closure(_, ptr)
             | Self::Fields(_, ptr) => *ptr,
@@ -148,10 +123,9 @@ pub enum ScalarLayout<'ctx> {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum ScalarKind<'mir, 'ctx> {
+pub enum ScalarKind<'ctx> {
     Int(IntSize),
     Float,
-    Array(&'mir Ty),
     FuncPtr(FunctionType<'ctx>),
 }
 
@@ -170,7 +144,7 @@ pub enum StorageClass {
 
 pub const fn storage_class(ty: &Ty) -> StorageClass {
     match ty {
-        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool | Ty::Array(_) => StorageClass::Scalar,
+        Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => StorageClass::Scalar,
         // FIXME: Account for non-capturing functions.
         Ty::Func(_, _) => StorageClass::Indirect,
         Ty::Fields(elem_tys) => {
@@ -194,7 +168,7 @@ pub fn zst(ty: &Ty) -> bool {
 pub fn trivial(ty: &Ty) -> bool {
     match ty {
         Ty::Int | Ty::UInt | Ty::Byte | Ty::Float | Ty::Bool => true,
-        Ty::Array(_) | Ty::Func(_, _) => false, // FIXME: Account for non-capturing functions.
+        Ty::Func(_, _) => false, // FIXME: Account for non-capturing functions.
         Ty::Fields(fields) => all_trivial(fields),
     }
 }

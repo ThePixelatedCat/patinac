@@ -8,10 +8,5 @@ def same_swap(): () = {
     let mut a = 1
     swap(mut a, mut a)
 }
-def swap(mut a: Int, mut b: Int): () = {}
 
-def array_same_swap(): () = {
-    let mut foo = [1, 1]
-    swap(mut foo.[0], mut foo.[0])
-}
 def swap(mut a: Int, mut b: Int): () = {}

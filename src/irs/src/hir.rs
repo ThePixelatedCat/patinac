@@ -226,8 +226,6 @@ pub enum Expr {
     Var(VarId),
     /// A scalar literal value. The specific kinds of literals are represented by [`LitExpr`].
     Lit(LitExpr),
-    /// An array literal.
-    Array(Vec<ExprId>),
     /// A tuple literal.
     Tuple(Vec<ExprId>),
     /// An infix operation.
@@ -252,13 +250,6 @@ pub enum Expr {
         base: ExprId,
         /// The name of the field being accessed.
         field: SpanIdent,
-    },
-    /// Array indexing.
-    Index {
-        /// The base expression being indexed into.
-        array: ExprId,
-        /// The index to access.
-        index: ExprId,
     },
     /// A function call.
     Call {
@@ -439,8 +430,6 @@ pub enum Ty {
     Float,
     /// Truth value (`true`/`false`).
     Bool,
-    /// A dynamic homogenous array.
-    Array(Box<Self>),
     /// A heterogenous tuple (compile-time length).
     Tuple(Vec<Self>),
     /// A first-class function value, implemented as a closure.
